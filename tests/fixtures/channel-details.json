@@ -1,0 +1,826 @@
+{
+  "success": true,
+  "message": "Channel fetched successfully",
+  "data": {
+    "_id": "6a1c2a565f315cee0e41c395",
+    "description": "",
+    "status": 1,
+    "name": "Flow 1",
+    "type": "api",
+    "auto_inc_id": 157,
+    "payment_processor": {
+      "_id": "6a1c2b398dfb1e3612443518",
+      "status": 1,
+      "name": "Vrio",
+      "type": "payment_aggregation",
+      "provider_category": "vrio",
+      "config": {
+        "integration_name": "Vrio",
+        "api_endpoint": "https://api.vrio.app",
+        "app_base_url": "https://storefront.example.test",
+        "api_key": "REDACTED",
+        "connection_id": "1",
+        "campaign_id": "147"
+      }
+    },
+    "products": [
+      {
+        "_id": "6a1c2b63eee0a963217e72a9",
+        "channel_id": "6a1c2a565f315cee0e41c395",
+        "product_id": "6a1c29ef5f315cee0e41c377",
+        "variant_ids": [],
+        "add_ons": [],
+        "product": {
+          "_id": "6a1c29ef5f315cee0e41c377",
+          "categories": [
+            {
+              "_id": "67f380a4cf74d74d0824a383",
+              "name": "Supplement"
+            }
+          ],
+          "condition_treated": [
+            {
+              "_id": "69cca828e15bc9d8f46bdbf2",
+              "name": "HGH Deficiency"
+            }
+          ],
+          "description_long": "GLP-1 adjacent (helps with side effects); standalone-purchasable.",
+          "description_short": null,
+          "image": null,
+          "labtest": [],
+          "max_buy_qty": null,
+          "min_buy_qty": null,
+          "name": "Electrolyte Powder",
+          "product_id": "6a1c29ef5f315cee0e41c377",
+          "restrict_multiple": false,
+          "single": [
+            {
+              "intro_price": null,
+              "default_price": 19,
+              "sale_price": null,
+              "sale_start": null,
+              "sale_end": null,
+              "swap_with": []
+            }
+          ],
+          "sku": null,
+          "status": 1,
+          "stock": null,
+          "teleforms": [],
+          "type": "standard",
+          "variants": [],
+          "visibility": "Public",
+          "renewal_teleforms": []
+        },
+        "product_mappings": [
+          {
+            "_id": "6a1c55885f315cee0e41c456",
+            "type": "vrio",
+            "countries": [],
+            "status": 1,
+            "product_id": "6a1c29ef5f315cee0e41c377",
+            "variant_id": "6a1c29ef5f315cee0e41c377",
+            "integration": {
+              "type": "payment_aggregator",
+              "integration_id": "6a1c2b398dfb1e3612443518"
+            },
+            "mapping": {
+              "type": "vrio",
+              "offer_id": "340",
+              "offer_name": "One-Time Sale",
+              "product_id": "2844",
+              "variant_id": "2844",
+              "product_name": "Electrolyte Powder (30 servings)"
+            }
+          }
+        ]
+      },
+      {
+        "_id": "6a1c2b63eee0a963217e72aa",
+        "channel_id": "6a1c2a565f315cee0e41c395",
+        "product_id": "6a1c29c35f315cee0e41c369",
+        "variant_ids": [],
+        "add_ons": [],
+        "product": {
+          "_id": "6a1c29c35f315cee0e41c369",
+          "categories": [
+            {
+              "_id": "67f380a4cf74d74d0824a383",
+              "name": "Supplement"
+            }
+          ],
+          "condition_treated": [
+            {
+              "_id": "69cca84ee15bc9d8f46bdbf3",
+              "name": "Insomnia"
+            }
+          ],
+          "description_long": "Metabolic support; pairs naturally with GLP-1 discussions.",
+          "description_short": null,
+          "image": "69c3cdd306d9a0bfb5143de5/69c3cdd406d9a0bfb5143de7/products/6a1c29c35f315cee0e41c369-063b25d9-88c8-4a38-bed1-1e199f7fd002.png",
+          "labtest": [],
+          "max_buy_qty": null,
+          "min_buy_qty": null,
+          "name": "Berberine 500mg",
+          "product_id": "6a1c29c35f315cee0e41c369",
+          "restrict_multiple": false,
+          "single": [
+            {
+              "intro_price": null,
+              "default_price": 29,
+              "sale_price": null,
+              "sale_start": null,
+              "sale_end": null,
+              "swap_with": []
+            }
+          ],
+          "sku": null,
+          "status": 1,
+          "stock": null,
+          "teleforms": [],
+          "type": "standard",
+          "variants": [],
+          "visibility": "Public",
+          "renewal_teleforms": []
+        },
+        "product_mappings": [
+          {
+            "_id": "6a1c55985f315cee0e41c45f",
+            "type": "vrio",
+            "countries": [],
+            "status": 1,
+            "product_id": "6a1c29c35f315cee0e41c369",
+            "variant_id": "6a1c29c35f315cee0e41c369",
+            "integration": {
+              "type": "payment_aggregator",
+              "integration_id": "6a1c2b398dfb1e3612443518"
+            },
+            "mapping": {
+              "type": "vrio",
+              "offer_id": "340",
+              "offer_name": "One-Time Sale",
+              "product_id": "2843",
+              "variant_id": "2843",
+              "product_name": "Berberine 500 mg (60 ct)"
+            }
+          }
+        ]
+      },
+      {
+        "_id": "6a1c2b63eee0a963217e72ab",
+        "channel_id": "6a1c2a565f315cee0e41c395",
+        "product_id": "6a1c28245f315cee0e41c346",
+        "variant_ids": [
+          "6a1c28245f315cee0e41c343",
+          "6a1c28245f315cee0e41c344",
+          "6a1c28245f315cee0e41c345"
+        ],
+        "add_ons": [],
+        "product": {
+          "_id": "6a1c28245f315cee0e41c346",
+          "categories": [
+            {
+              "_id": "67f380a2cf74d74d0824a381",
+              "name": "Performance"
+            }
+          ],
+          "condition_treated": [
+            {
+              "_id": "69cca7a9e15bc9d8f46bdbf0",
+              "name": "Erectile Dysfunction"
+            }
+          ],
+          "description_long": null,
+          "description_short": null,
+          "image": "69c3cdd306d9a0bfb5143de5/69c3cdd406d9a0bfb5143de7/products/6a1c28245f315cee0e41c346-9e546885-3d62-4174-83ae-3ad9acd85a44.png",
+          "labtest": [],
+          "max_buy_qty": null,
+          "min_buy_qty": null,
+          "name": "Tadalafil",
+          "product_id": "6a1c28245f315cee0e41c346",
+          "restrict_multiple": true,
+          "single": [],
+          "sku": null,
+          "status": 1,
+          "stock": null,
+          "teleforms": [
+            {
+              "_id": "6a0bf7051cb6b9433b12f9be",
+              "name": "Titan-x"
+            }
+          ],
+          "type": "prescription",
+          "variants": [
+            {
+              "_id": "6a1c28245f315cee0e41c343",
+              "name": "5 mg daily",
+              "sku": null,
+              "description": null,
+              "intro_price": null,
+              "default_price": 49,
+              "sale_price": null,
+              "sale_start": null,
+              "sale_end": null,
+              "swap_with": []
+            },
+            {
+              "_id": "6a1c28245f315cee0e41c344",
+              "name": "10 mg PRN",
+              "sku": null,
+              "description": null,
+              "intro_price": null,
+              "default_price": 49,
+              "sale_price": null,
+              "sale_start": null,
+              "sale_end": null,
+              "swap_with": []
+            },
+            {
+              "_id": "6a1c28245f315cee0e41c345",
+              "name": "20 mg PRN",
+              "sku": null,
+              "description": null,
+              "intro_price": null,
+              "default_price": 49,
+              "sale_price": null,
+              "sale_start": null,
+              "sale_end": null,
+              "swap_with": []
+            }
+          ],
+          "visibility": "Public",
+          "renewal_teleforms": []
+        },
+        "product_mappings": [
+          {
+            "_id": "6a1f31ed1003c152e76b028a",
+            "type": "vrio",
+            "countries": [],
+            "status": 1,
+            "product_id": "6a1c28245f315cee0e41c346",
+            "variant_id": "6a1c28245f315cee0e41c343",
+            "integration": {
+              "type": "payment_aggregator",
+              "integration_id": "6a1c2b398dfb1e3612443518"
+            },
+            "mapping": {
+              "type": "vrio",
+              "offer_id": "337",
+              "offer_name": "Monthly / 30-Day Recurring",
+              "product_id": "2838",
+              "variant_id": "2838",
+              "product_name": "Tadalafil 5 mg Daily"
+            }
+          },
+          {
+            "_id": "6a1f31ed1003c152e76b028c",
+            "type": "vrio",
+            "countries": [],
+            "status": 1,
+            "product_id": "6a1c28245f315cee0e41c346",
+            "variant_id": "6a1c28245f315cee0e41c345",
+            "integration": {
+              "type": "payment_aggregator",
+              "integration_id": "6a1c2b398dfb1e3612443518"
+            },
+            "mapping": {
+              "type": "vrio",
+              "offer_id": "337",
+              "offer_name": "Monthly / 30-Day Recurring",
+              "product_id": "2840",
+              "variant_id": "2840",
+              "product_name": "Tadalafil 20 mg PRN"
+            }
+          },
+          {
+            "_id": "6a1f31ed1003c152e76b028e",
+            "type": "vrio",
+            "countries": [],
+            "status": 1,
+            "product_id": "6a1c28245f315cee0e41c346",
+            "variant_id": "6a1c28245f315cee0e41c344",
+            "integration": {
+              "type": "payment_aggregator",
+              "integration_id": "6a1c2b398dfb1e3612443518"
+            },
+            "mapping": {
+              "type": "vrio",
+              "offer_id": "337",
+              "offer_name": "Monthly / 30-Day Recurring",
+              "product_id": "2839",
+              "variant_id": "2839",
+              "product_name": "Tadalafil 10 mg PRN"
+            }
+          }
+        ]
+      },
+      {
+        "_id": "6a1c2b63eee0a963217e72ac",
+        "channel_id": "6a1c2a565f315cee0e41c395",
+        "product_id": "6a1c28f05f315cee0e41c359",
+        "variant_ids": [
+          "6a1c2a385f315cee0e41c388",
+          "6a1c2a385f315cee0e41c389"
+        ],
+        "add_ons": [],
+        "product": {
+          "_id": "6a1c28f05f315cee0e41c359",
+          "categories": [
+            {
+              "_id": "67f380a2cf74d74d0824a381",
+              "name": "Performance"
+            }
+          ],
+          "condition_treated": [
+            {
+              "_id": "69cca88be15bc9d8f46bdbf5",
+              "name": "Low Testosterone"
+            }
+          ],
+          "description_long": null,
+          "description_short": null,
+          "image": "69c3cdd306d9a0bfb5143de5/69c3cdd406d9a0bfb5143de7/products/6a1c28f05f315cee0e41c359-a4e9d09b-ab17-4360-b41b-e96d0bcc68fd.png",
+          "labtest": [
+            {
+              "_id": "6a1c2a1e5f315cee0e41c37f",
+              "kit_provided_by": "Provider",
+              "price": 89,
+              "meta": null,
+              "status": 1,
+              "name": "At-home Hormone Lab Panel",
+              "method": "test_kit",
+              "type": "lab_test",
+              "variants": []
+            }
+          ],
+          "max_buy_qty": null,
+          "min_buy_qty": null,
+          "name": "Enclomiphene - TRT",
+          "product_id": "6a1c28f05f315cee0e41c359",
+          "restrict_multiple": true,
+          "single": [],
+          "sku": null,
+          "status": 1,
+          "stock": null,
+          "teleforms": [
+            {
+              "_id": "6a0bf7051cb6b9433b12f9be",
+              "name": "Titan-x"
+            }
+          ],
+          "type": "prescription",
+          "variants": [
+            {
+              "_id": "6a1c2a385f315cee0e41c388",
+              "name": "12.5 mg",
+              "sku": null,
+              "description": null,
+              "intro_price": null,
+              "default_price": 149,
+              "sale_price": null,
+              "sale_start": null,
+              "sale_end": null,
+              "swap_with": []
+            },
+            {
+              "_id": "6a1c2a385f315cee0e41c389",
+              "name": "25 mg",
+              "sku": null,
+              "description": null,
+              "intro_price": null,
+              "default_price": 149,
+              "sale_price": null,
+              "sale_start": null,
+              "sale_end": null,
+              "swap_with": []
+            }
+          ],
+          "visibility": "Public",
+          "renewal_teleforms": []
+        },
+        "product_mappings": [
+          {
+            "_id": "6a1f32481003c152e76b0296",
+            "type": "vrio",
+            "countries": [],
+            "status": 1,
+            "product_id": "6a1c28f05f315cee0e41c359",
+            "variant_id": "6a1c2a385f315cee0e41c388",
+            "integration": {
+              "type": "payment_aggregator",
+              "integration_id": "6a1c2b398dfb1e3612443518"
+            },
+            "mapping": {
+              "type": "vrio",
+              "offer_id": "338",
+              "offer_name": "3 Month / 90-Day Prepaid",
+              "product_id": "2841",
+              "variant_id": "2841",
+              "product_name": "Enclomiphene 12.5 mg"
+            }
+          },
+          {
+            "_id": "6a1f32481003c152e76b0298",
+            "type": "vrio",
+            "countries": [],
+            "status": 1,
+            "product_id": "6a1c28f05f315cee0e41c359",
+            "variant_id": "6a1c2a385f315cee0e41c389",
+            "integration": {
+              "type": "payment_aggregator",
+              "integration_id": "6a1c2b398dfb1e3612443518"
+            },
+            "mapping": {
+              "type": "vrio",
+              "offer_id": "338",
+              "offer_name": "3 Month / 90-Day Prepaid",
+              "product_id": "2842",
+              "variant_id": "2842",
+              "product_name": "Enclomiphene 25 mg"
+            }
+          }
+        ]
+      },
+      {
+        "_id": "6a1c36d3eee0a963217e72af",
+        "channel_id": "6a1c2a565f315cee0e41c395",
+        "product_id": "6a1c35da5f315cee0e41c3d9",
+        "variant_ids": [],
+        "add_ons": [],
+        "product": {
+          "_id": "6a1c35da5f315cee0e41c3d9",
+          "categories": [],
+          "condition_treated": [
+            {
+              "_id": "69cca84ee15bc9d8f46bdbf3",
+              "name": "Insomnia"
+            }
+          ],
+          "description_long": null,
+          "description_short": null,
+          "image": "69c3cdd306d9a0bfb5143de5/69c3cdd406d9a0bfb5143de7/products/6a1c35da5f315cee0e41c3d9-78602215-c8e7-40ad-bb4d-0802cf505a98.png",
+          "labtest": [],
+          "max_buy_qty": null,
+          "min_buy_qty": null,
+          "name": "Anti-nausea kit - Ondansetron",
+          "product_id": "6a1c35da5f315cee0e41c3d9",
+          "restrict_multiple": false,
+          "single": [
+            {
+              "intro_price": null,
+              "default_price": 29,
+              "sale_price": null,
+              "sale_start": null,
+              "sale_end": null,
+              "swap_with": []
+            }
+          ],
+          "sku": null,
+          "status": 1,
+          "stock": null,
+          "teleforms": [],
+          "type": "standard",
+          "variants": [],
+          "visibility": "Public",
+          "renewal_teleforms": []
+        },
+        "product_mappings": [
+          {
+            "_id": "6a1c554b5f315cee0e41c443",
+            "type": "vrio",
+            "countries": [],
+            "status": 1,
+            "product_id": "6a1c35da5f315cee0e41c3d9",
+            "variant_id": "6a1c35da5f315cee0e41c3d9",
+            "integration": {
+              "type": "payment_aggregator",
+              "integration_id": "6a1c2b398dfb1e3612443518"
+            },
+            "mapping": {
+              "type": "vrio",
+              "offer_id": "340",
+              "offer_name": "One-Time Sale",
+              "product_id": "2847",
+              "variant_id": "2847",
+              "product_name": "Anti-Nausea Kit (Ondansetron)"
+            }
+          }
+        ]
+      },
+      {
+        "_id": "6a1c36d3eee0a963217e72b0",
+        "channel_id": "6a1c2a565f315cee0e41c395",
+        "product_id": "6a1c36c55f315cee0e41c3ef",
+        "variant_ids": [],
+        "add_ons": [],
+        "product": {
+          "_id": "6a1c36c55f315cee0e41c3ef",
+          "categories": [],
+          "condition_treated": [
+            {
+              "_id": "69cca84ee15bc9d8f46bdbf3",
+              "name": "Insomnia"
+            }
+          ],
+          "description_long": null,
+          "description_short": null,
+          "image": "69c3cdd306d9a0bfb5143de5/69c3cdd406d9a0bfb5143de7/products/6a1c36c55f315cee0e41c3ef-05680e1c-f5f8-44e1-a911-ddb7aef04ef6.png",
+          "labtest": [],
+          "max_buy_qty": null,
+          "min_buy_qty": null,
+          "name": "Men daily multivitamin",
+          "product_id": "6a1c36c55f315cee0e41c3ef",
+          "restrict_multiple": false,
+          "single": [
+            {
+              "intro_price": null,
+              "default_price": 19,
+              "sale_price": null,
+              "sale_start": null,
+              "sale_end": null,
+              "swap_with": []
+            }
+          ],
+          "sku": null,
+          "status": 1,
+          "stock": null,
+          "teleforms": [],
+          "type": "standard",
+          "variants": [],
+          "visibility": "Public",
+          "renewal_teleforms": []
+        },
+        "product_mappings": [
+          {
+            "_id": "6a1c55205f315cee0e41c433",
+            "type": "vrio",
+            "countries": [],
+            "status": 1,
+            "product_id": "6a1c36c55f315cee0e41c3ef",
+            "variant_id": "6a1c36c55f315cee0e41c3ef",
+            "integration": {
+              "type": "payment_aggregator",
+              "integration_id": "6a1c2b398dfb1e3612443518"
+            },
+            "mapping": {
+              "type": "vrio",
+              "offer_id": "340",
+              "offer_name": "One-Time Sale",
+              "product_id": "2849",
+              "variant_id": "2849",
+              "product_name": "Men's Daily Multivitamin"
+            }
+          }
+        ]
+      },
+      {
+        "_id": "6a1c2b63eee0a963217e72ad",
+        "channel_id": "6a1c2a565f315cee0e41c395",
+        "product_id": "6a1c268d5f315cee0e41c325",
+        "variant_ids": [
+          "6a1f12f71003c152e76b0197",
+          "6a1f12f71003c152e76b0198",
+          "6a1f12f71003c152e76b0199"
+        ],
+        "add_ons": [
+          {
+            "_id": "6a1c26fa5f315cee0e41c337",
+            "sku": "S",
+            "description_short": null,
+            "description_long": null,
+            "visibility": "Public",
+            "min_buy_qty": null,
+            "max_buy_qty": null,
+            "stock": null,
+            "variants": [],
+            "single": [
+              {
+                "intro_price": null,
+                "sale_price": null,
+                "sale_start": null,
+                "sale_end": null,
+                "default_price": 2
+              }
+            ],
+            "labtest": null,
+            "image": null,
+            "restrict_multiple": false,
+            "status": 1,
+            "name": "Syringe",
+            "type": "add_on",
+            "categories": [],
+            "condition_treated": [
+              "69cca84ee15bc9d8f46bdbf3"
+            ],
+            "teleforms": []
+          }
+        ],
+        "product": {
+          "_id": "6a1c268d5f315cee0e41c325",
+          "categories": [
+            {
+              "_id": "67f380a5cf74d74d0824a384",
+              "name": "Weight Loss"
+            }
+          ],
+          "condition_treated": [
+            {
+              "_id": "69cca8a0e15bc9d8f46bdbf6",
+              "name": "Obesity"
+            }
+          ],
+          "description_long": null,
+          "description_short": null,
+          "image": "69c3cdd306d9a0bfb5143de5/69c3cdd406d9a0bfb5143de7/products/6a1c268d5f315cee0e41c325-b4070feb-c814-435d-a7d1-0d5e7913bd6b.jpg",
+          "labtest": [],
+          "max_buy_qty": 1,
+          "min_buy_qty": 1,
+          "name": "Semaglutide - Vial",
+          "product_id": "6a1c268d5f315cee0e41c325",
+          "restrict_multiple": true,
+          "single": [],
+          "sku": "SV",
+          "status": 1,
+          "stock": null,
+          "teleforms": [
+            {
+              "_id": "6a1f12de1003c152e76b0190",
+              "name": "Semaglutide (GLP-1) Weight Management Intake"
+            }
+          ],
+          "type": "prescription",
+          "variants": [
+            {
+              "_id": "6a1f12f71003c152e76b0197",
+              "name": "0.25 mg",
+              "sku": "P025",
+              "description": null,
+              "intro_price": null,
+              "default_price": 299,
+              "sale_price": null,
+              "sale_start": null,
+              "sale_end": null,
+              "swap_with": []
+            },
+            {
+              "_id": "6a1f12f71003c152e76b0198",
+              "name": "0.05 mg",
+              "sku": "P05",
+              "description": null,
+              "intro_price": null,
+              "default_price": 299,
+              "sale_price": null,
+              "sale_start": null,
+              "sale_end": null,
+              "swap_with": []
+            },
+            {
+              "_id": "6a1f12f71003c152e76b0199",
+              "name": "1.0 mg",
+              "sku": "P1",
+              "description": null,
+              "intro_price": null,
+              "default_price": 299,
+              "sale_price": null,
+              "sale_start": null,
+              "sale_end": null,
+              "swap_with": []
+            }
+          ],
+          "visibility": "Public",
+          "renewal_teleforms": [
+            {
+              "_id": "6a1f12de1003c152e76b0190",
+              "name": "Semaglutide (GLP-1) Weight Management Intake"
+            }
+          ]
+        },
+        "product_mappings": [
+          {
+            "_id": "6a1f31aa1003c152e76b027e",
+            "type": "vrio",
+            "countries": [],
+            "status": 1,
+            "product_id": "6a1c268d5f315cee0e41c325",
+            "variant_id": "6a1f12f71003c152e76b0197",
+            "integration": {
+              "type": "payment_aggregator",
+              "integration_id": "6a1c2b398dfb1e3612443518"
+            },
+            "mapping": {
+              "type": "vrio",
+              "offer_id": "337",
+              "offer_name": "Monthly / 30-Day Recurring",
+              "product_id": "2835",
+              "variant_id": "2835",
+              "product_name": "Semaglutide 0.25 mg"
+            }
+          },
+          {
+            "_id": "6a1f31ab1003c152e76b0280",
+            "type": "vrio",
+            "countries": [],
+            "status": 1,
+            "product_id": "6a1c268d5f315cee0e41c325",
+            "variant_id": "6a1f12f71003c152e76b0199",
+            "integration": {
+              "type": "payment_aggregator",
+              "integration_id": "6a1c2b398dfb1e3612443518"
+            },
+            "mapping": {
+              "type": "vrio",
+              "offer_id": "339",
+              "offer_name": "6 Month Prepaid",
+              "product_id": "2837",
+              "variant_id": "2837",
+              "product_name": "Semaglutide 1.0 mg"
+            }
+          },
+          {
+            "_id": "6a1f31ab1003c152e76b0282",
+            "type": "vrio",
+            "countries": [],
+            "status": 1,
+            "product_id": "6a1c268d5f315cee0e41c325",
+            "variant_id": "6a1f12f71003c152e76b0198",
+            "integration": {
+              "type": "payment_aggregator",
+              "integration_id": "6a1c2b398dfb1e3612443518"
+            },
+            "mapping": {
+              "type": "vrio",
+              "offer_id": "338",
+              "offer_name": "3 Month / 90-Day Prepaid",
+              "product_id": "2836",
+              "variant_id": "2836",
+              "product_name": "Semaglutide 0.5 mg"
+            }
+          },
+          {
+            "_id": "6a5a0d96bef7f608b0ed5f78",
+            "type": "checkout_champ",
+            "countries": [],
+            "status": 1,
+            "product_id": "6a1c268d5f315cee0e41c325",
+            "variant_id": "6a1f12f71003c152e76b0197",
+            "integration": {
+              "type": "payment_aggregator",
+              "integration_id": "6a5a0d26a176a36d23483dab"
+            },
+            "mapping": {
+              "type": "checkout_champ",
+              "offer_id": "423",
+              "offer_name": "AsterMD Dev Test",
+              "product_id": "7271",
+              "variant_id": "7271",
+              "product_name": "(6121) Derma Roller"
+            }
+          },
+          {
+            "_id": "6a5a0d96bef7f608b0ed5f7b",
+            "type": "checkout_champ",
+            "countries": [],
+            "status": 1,
+            "product_id": "6a1c268d5f315cee0e41c325",
+            "variant_id": "6a1f12f71003c152e76b0198",
+            "integration": {
+              "type": "payment_aggregator",
+              "integration_id": "6a5a0d26a176a36d23483dab"
+            },
+            "mapping": {
+              "type": "checkout_champ",
+              "offer_id": "423",
+              "offer_name": "AsterMD Dev Test",
+              "product_id": "7263",
+              "variant_id": "697",
+              "product_name": "5% / 60ml"
+            }
+          },
+          {
+            "_id": "6a5a0d96bef7f608b0ed5f7e",
+            "type": "checkout_champ",
+            "countries": [],
+            "status": 1,
+            "product_id": "6a1c268d5f315cee0e41c325",
+            "variant_id": "6a1f12f71003c152e76b0199",
+            "integration": {
+              "type": "payment_aggregator",
+              "integration_id": "6a5a0d26a176a36d23483dab"
+            },
+            "mapping": {
+              "type": "checkout_champ",
+              "offer_id": "423",
+              "offer_name": "AsterMD Dev Test",
+              "product_id": "7263",
+              "variant_id": "701",
+              "product_name": "10% / 60ml"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "meta": {},
+  "error": null,
+  "request_id": "ea202d4f-a9c9-4dde-9abd-30bdd2d1145c"
+}

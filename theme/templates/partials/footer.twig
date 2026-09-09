@@ -1,0 +1,64 @@
+{# Transcribed from the static design mockup (home page), FOOTER anchor (treatments/company/legal/
+   contact columns, badges, 503A disclaimer). Logo svg replaced with the shared
+   partials/logo.twig include; internal links routed via url(); image srcs → /assets/img/. #}
+<footer id="contact" class="border-t border-border bg-background">
+  <div class="mx-auto max-w-[1440px] px-6 py-14 lg:px-[120px] lg:py-16">
+    <div class="flex flex-col justify-between gap-10 lg:flex-row lg:items-start">
+      <div class="flex flex-col gap-6 lg:gap-8">
+        <a href="{{ url('/') }}" class="shrink-0" aria-label="AsterMD home">
+          {% include 'partials/logo.twig' with {logo_class: 'h-[30px] w-auto'} %}
+        </a>
+        <div class="flex flex-wrap items-center gap-4">
+          <img src="/assets/img/footer-badge-2.png" alt="LegitScript Certified" class="h-16 w-auto" />
+          <img src="/assets/img/footer-badge-3.png" alt="HIPAA Compliant" class="h-9 w-auto" />
+          <img src="/assets/img/footer-badge-1.png" alt="DMCA Protected" class="h-6 w-auto" />
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-x-8 gap-y-10 sm:grid-cols-4 lg:gap-x-12">
+        <div>
+          <h3 class="font-heading text-base font-medium text-heading">Treatments</h3>
+          <ul class="mt-4 space-y-2.5 text-[15px] text-body">
+            {% for product in footer_products %}
+            <li><a href="{{ url('/products/' ~ product.slug) }}" class="transition-colors hover:text-primary">{{ product.name }}</a></li>
+            {% endfor %}
+          </ul>
+        </div>
+        <div>
+          <h3 class="font-heading text-base font-medium text-heading">Company</h3>
+          <ul class="mt-4 space-y-2.5 text-[15px] text-body">
+            <li><a href="{{ url('/') }}#about" class="transition-colors hover:text-primary">About</a></li>
+            <li><a href="{{ url('/') }}#how-it-works" class="transition-colors hover:text-primary">How It Works</a></li>
+            <li><a href="{{ url('/') }}#contact" class="transition-colors hover:text-primary">Contact</a></li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="font-heading text-base font-medium text-heading">Legal</h3>
+          <ul class="mt-4 space-y-2.5 text-[15px] text-body">
+            <li><a href="#" class="transition-colors hover:text-primary">HIPAA Compliance</a></li>
+            <li><a href="#" class="transition-colors hover:text-primary">Telehealth Consent</a></li>
+            <li><a href="#" class="transition-colors hover:text-primary">Privacy Policy</a></li>
+            <li><a href="#" class="transition-colors hover:text-primary">Terms of Service</a></li>
+            <li><a href="#" class="transition-colors hover:text-primary">Refund Policy</a></li>
+            <li><a href="#" class="transition-colors hover:text-primary">Shipping &amp; Returns</a></li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="font-heading text-base font-medium text-heading">Contact</h3>
+          <ul class="mt-4 space-y-4 text-[15px] text-body">
+            <li class="max-w-[220px] leading-6">123 Address Placeholder, City, ST, 10001</li>
+            <li><a href="mailto:support@mail.com" class="leading-6 text-link hover:underline">support@mail.com</a></li>
+            <li><a href="tel:0000000000" class="leading-6 text-link hover:underline">(000) 000-0000</a></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="mt-12 border-t border-border pt-8 text-center">
+      <p class="mx-auto max-w-[947px] text-sm leading-relaxed text-muted">
+        Compounded drug are prepared by licensed 503A pharmacies. Compounded drugs are not FDA-approved and have not been evaluated by the FDA for safety or effectiveness
+      </p>
+      <p class="mt-4 text-sm leading-relaxed text-muted">© 2026 AsterMD. All rights reserved.</p>
+    </div>
+  </div>
+</footer>

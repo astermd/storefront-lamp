@@ -1,0 +1,19 @@
+{% extends 'layouts/base.twig' %}
+{% block page %}
+{% include 'partials/header-checkout.twig' %}
+{# Narrower container than the marketing/funnel default, matching this
+   layout's own header and content width. #}
+{% include 'partials/cart-notice.twig' with {notice_container: 'max-w-[1260px] px-6 lg:px-16'} %}
+{# `<main>` class defaults to checkout.html's own class (this layout serves the
+   checkout page, so that's the sensible default), but is an overridable block so
+   upsell.twig/thank-you.twig — which also extend this layout but need a different
+   `<main>` class per their own mockups — can override `main_class` instead of being
+   stuck with checkout's grid. #}
+<main class="{% block main_class %}lg:grid lg:grid-cols-2{% endblock %}">
+{% block content %}{% endblock %}
+</main>
+{% include 'partials/footer-compliance.twig' %}
+{% endblock %}
+{% block scripts %}
+<script src="{{ asset('script.js') }}" defer></script>
+{% endblock %}

@@ -1,0 +1,12 @@
+{# A question this renderer cannot draw. It is shown rather than skipped, and
+   it blocks submission, because the alternative is an intake that silently
+   omits whatever was asked ([10.13]). The wording is for whoever configures
+   the store, not for a developer. #}
+<div role="alert" data-intake-unsupported="{{ field.type }}"
+     class="rounded-sm border-2 border-danger bg-danger-light px-5 py-4">
+  <p class="text-sm font-semibold text-danger">This question cannot be shown here.</p>
+  <p class="mt-2 text-sm leading-relaxed text-heading">
+    &ldquo;{{ field.label }}&rdquo; is a <strong>{{ field.type }}</strong> question, which this storefront does not
+    yet know how to display. The form cannot be submitted until it is changed to a supported question type.
+  </p>
+</div>

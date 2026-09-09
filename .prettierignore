@@ -1,0 +1,36 @@
+# Dependencies
+node_modules
+*.md
+
+# Build output
+dist
+build
+
+# Coverage
+coverage
+
+# Logs
+*.log
+logs
+
+# Environment files
+.env*
+
+# Package files
+package-lock.json
+yarn.lock
+
+# Docker
+Dockerfile*
+docker-compose*
+
+# Git
+.git
+
+# IDE
+.vscode
+.idea
+
+# OS
+.DS_Store
+Thumbs.db

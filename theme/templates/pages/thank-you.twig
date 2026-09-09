@@ -1,0 +1,270 @@
+{# Transcribed from the static design mockup (thank-you page)'s <main> grid. Extends
+   layouts/checkout.twig — same header-checkout/footer-compliance partials as
+   checkout.twig. layouts/checkout.twig's <main> class is now an overridable
+   `main_class` block; this page overrides it below with the mockup's own
+   `lg:grid lg:grid-cols-2 lg:gap-x-10` (the layout's bare-default `lg:grid
+   lg:grid-cols-2`, used by checkout.twig, was missing this page's `lg:gap-x-10`).
+
+   Every order, contact, shipping, payment and totals figure now comes from the
+   `receipt` view model the controller renders with — the durable snapshot of the
+   local order rows, so a refresh shows the same page as the first load.
+
+   `receipt.hasOrder()` is the one structural branch. A journey whose orders could
+   not be read still reaches this page by design — an accounting failure must not
+   lock a buyer out of their own receipt — so the summary column and the order
+   details card are omitted rather than drawn empty, and what is left says the one
+   thing that is still true: the intake was received and is pending review.
+
+   No page JS: this page has no inline scripts of its own in the mockup (only
+   lucide.createIcons() + the shared script.js, both already handled by the
+   base/layout templates). #}
+{% extends 'layouts/checkout.twig' %}
+{% set page_title = 'Order Confirmed' %}
+{% set page_description = 'Your AsterMD order is confirmed and pending physician review.' %}
+{% block main_class %}lg:grid lg:grid-cols-2 lg:gap-x-10{% endblock %}
+{% block content %}
+
+  <!-- ==================== CONFIRMATION ==================== -->
+  <div class="px-6 py-10 sm:px-10 lg:py-14 lg:pl-24 lg:pr-0">
+    <div class="mx-auto max-w-[500px] flex flex-col gap-6 lg:mx-0 lg:ml-auto">
+
+      <div class="flex items-center gap-4">
+        <span class="flex size-10 shrink-0 items-center justify-center rounded-full border-2 border-primary">
+          <i data-lucide="check" class="size-5 text-primary" stroke-width="3"></i>
+        </span>
+        <div>
+          {# The first placed reference is the order the buyer will quote to support.
+             Omitted rather than shown as "Order #" when there is none to name. #}
+          {% if receipt.orderNumber %}
+          <p class="text-sm text-muted">Order #{{ receipt.orderNumber }}</p>
+          {% endif %}
+          {# Greeted by nothing rather than by a placeholder when the stored name is
+             empty: "Thank you, !" is worse than "Thank you!". #}
+          <h1 class="font-heading text-[24px] font-bold text-heading sm:text-[28px]">{% if receipt.buyerFirstName %}Thank you, <span id="thankyou-name">{{ receipt.buyerFirstName }}</span>!{% else %}Thank you!{% endif %}</h1>
+        </div>
+      </div>
+
+      <!-- ==================== DELIVERY MAP ==================== -->
+      {# Also gated on there being an address: a map centred on nowhere is worse
+         than no map. #}
+      {% if maps_api_key and receipt.shippingAddress %}
+      <div class="overflow-hidden rounded-lg">
+        <iframe
+          src="https://www.google.com/maps/embed/v1/place?key={{ maps_api_key }}&q={{ receipt.shippingAddress|url_encode }}"
+          class="h-[220px] w-full border-0"
+          loading="lazy"
+          referrerpolicy="no-referrer-when-downgrade"
+          title="Shipping address map"
+        ></iframe>
+      </div>
+      {% endif %}
+
+      <!-- ==================== STATUS CARD ==================== -->
+      <div class="rounded-lg border border-border bg-background p-6">
+        <h2 class="font-heading text-base font-medium sm:text-lg text-heading">Intake Received &amp; Pending Review</h2>
+        <p class="mt-3 text-sm leading-6 text-body">
+          We've received your submission and placed your order on hold. Our licensed physician is currently reviewing your health information to see if this treatment is right for you.
+        </p>
+        {# No patient-portal URL is configured, so this link is a placeholder. #}
+        <a href="#" class="mt-6 inline-flex h-[41px] w-full items-center justify-center gap-2 rounded-sm bg-primary px-5 text-base font-medium text-primary-foreground transition-colors hover:bg-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-hover">
+          Go to Patient Portal
+          <i data-lucide="arrow-right" class="size-[14px]"></i>
+        </a>
+      </div>
+
+      <!-- ==================== WHAT HAPPENS NEXT ==================== -->
+      {# The mockup's `Case ID: PMD1493450` is gone from this header. The clinical
+         record carries no case id at the moment a treatment is created, so an
+         unconditional render prints a fiction and a conditional one prints an
+         empty label on every real order. Reading a real one back is later work. #}
+      <div class="rounded-lg border border-border bg-background p-6">
+        <h2 class="font-heading text-base font-medium sm:text-lg text-heading">What happens next?</h2>
+
+        <div class="mt-5 flex flex-col gap-5">
+          <div>
+            <div class="flex items-center gap-2">
+              <p class="text-base font-medium text-heading">Provider / Doctor Review</p>
+              <span class="inline-flex items-center gap-1 rounded-full bg-warning-light px-2.5 py-1 text-xs font-medium text-warning">
+                <i data-lucide="hourglass" class="size-3"></i>
+                In Progress
+              </span>
+            </div>
+            <div class="mt-3 flex items-start gap-3">
+              <span class="flex size-9 shrink-0 items-center justify-center rounded-full bg-warning-light">
+                <i data-lucide="user-search" class="size-4 text-warning"></i>
+              </span>
+              <p class="mt-1.5 text-sm leading-6 text-body">Our clinical team is currently reviewing your intake forms and health information. This typically takes 24-48 hours.</p>
+            </div>
+          </div>
+
+          <div>
+            <div class="flex items-center gap-2">
+              <p class="text-base font-medium text-heading">Prescription &amp; Delivery</p>
+              <span class="inline-flex items-center gap-1 rounded-full bg-surface px-2.5 py-1 text-xs font-medium text-muted">
+                <i data-lucide="circle-pause" class="size-3"></i>
+                On Hold
+              </span>
+            </div>
+            <div class="mt-3 flex items-start gap-3">
+              <span class="flex size-9 shrink-0 items-center justify-center rounded-full bg-surface">
+                <i data-lucide="truck" class="size-4 text-icon-muted"></i>
+              </span>
+              <p class="mt-1.5 text-sm leading-6 text-body">If approved, your prescription will be sent to our pharmacy and shipped discreetly to your address. If additional information is needed, your doctor will message you.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ==================== ORDER DETAILS ==================== -->
+      {% if receipt.hasOrder() %}
+      <div class="rounded-lg border border-border bg-background p-6">
+        <h2 class="font-heading text-base font-medium sm:text-lg text-heading">Order details</h2>
+
+        {# Territory and postal code share a line in the mockup, so they are joined
+           once here and used by both address blocks below. #}
+        {% set region = (receipt.shipping.territory ~ ' ' ~ receipt.shipping.postal_code)|trim %}
+
+        <div class="mt-5 grid grid-cols-1 gap-6 sm:grid-cols-2">
+          {# Each block below is omitted rather than drawn as a bare heading when
+             the receipt has nothing to put under it. #}
+          {% if receipt.buyerEmail or receipt.buyerPhone %}
+          <div>
+            <p class="text-sm font-medium text-heading">Contact information</p>
+            {% if receipt.buyerEmail %}
+            <p class="mt-3 text-sm text-body">{{ receipt.buyerEmail }}</p>
+            {% endif %}
+            {% if receipt.buyerPhone %}
+            <p class="mt-1 text-sm text-body">{{ receipt.buyerPhone }}</p>
+            {% endif %}
+          </div>
+          {% endif %}
+          {# The mockup badges the card as Mastercard. The order row keeps four
+             digits and nothing else — no scheme is recorded anywhere — so the
+             badge is dropped rather than guessed at, and the whole block is
+             omitted when even the four digits are missing. #}
+          {% if receipt.cardLastFour %}
+          <div>
+            <p class="text-sm font-medium text-heading">Payment method</p>
+            <p class="mt-3 text-sm text-body">Card ending in {{ receipt.cardLastFour }}</p>
+          </div>
+          {% endif %}
+
+          {% if receipt.shipping.name or receipt.shippingAddress %}
+          <div>
+            <p class="text-sm font-medium text-heading">Shipping address</p>
+            <p class="mt-3 text-sm leading-6 text-body">
+              {% if receipt.shipping.name %}{{ receipt.shipping.name }}<br />{% endif %}
+              {% if receipt.shipping.address_line %}{{ receipt.shipping.address_line }}<br />{% endif %}
+              {% if receipt.shipping.city %}{{ receipt.shipping.city }}<br />{% endif %}
+              {% if region %}{{ region }}<br />{% endif %}
+              {% if receipt.shipping.country %}{{ receipt.shipping.country }}{% endif %}
+            </p>
+          </div>
+          {# The mockup shows a second, different billing address. There is no
+             separate billing address in this deployment — the card is billed to the
+             shipping address — so the same block is repeated rather than a second
+             set of fields invented. A reader who expects two addresses is reading
+             the mockup, not the data. #}
+          <div>
+            <p class="text-sm font-medium text-heading">Billing address</p>
+            <p class="mt-3 text-sm leading-6 text-body">
+              {% if receipt.shipping.name %}{{ receipt.shipping.name }}<br />{% endif %}
+              {% if receipt.shipping.address_line %}{{ receipt.shipping.address_line }}<br />{% endif %}
+              {% if receipt.shipping.city %}{{ receipt.shipping.city }}<br />{% endif %}
+              {% if region %}{{ region }}<br />{% endif %}
+              {% if receipt.shipping.country %}{{ receipt.shipping.country }}{% endif %}
+            </p>
+          </div>
+          {% endif %}
+        </div>
+
+        {# The mockup's `DHL Ecommerce Parcel Direct - 5 to 9 business days` block is
+           gone: nobody chose a courier. There are no shipping lines in this
+           deployment and `app.features.shipping_selector` is off, so naming a
+           carrier here would be naming one at random. #}
+      </div>
+      {% endif %}
+
+    </div>
+  </div>
+
+  <!-- ==================== ORDER SUMMARY ==================== -->
+  {# Omitted entirely with no order to summarise, rather than drawn as an empty
+     panel with zeroes in it. #}
+  {% if receipt.hasOrder() %}
+  <div class="border-border bg-background-2 px-6 py-10 sm:px-10 lg:border-l lg:px-12 lg:py-14">
+    <div class="mx-auto max-w-[410px] lg:mx-0 lg:sticky lg:top-10">
+
+      <!-- ==================== LINE ITEMS ==================== -->
+      {# The receipt's stored lines are the durable order snapshot — slug, name,
+         kind, quantity and price — so there is no product image and no plan name
+         to render: neither is part of what was charged, and re-reading the catalog
+         here would let a later price or a renamed variant rewrite a kept receipt.
+         Every line therefore gets the mockup's placeholder tile, with the same
+         `pill` icon checkout.twig already uses for a line with no image. #}
+      <div class="flex flex-col gap-4">
+        {% for line in receipt.lines %}
+        <div class="flex items-center gap-3">
+          <div class="relative shrink-0">
+            <span class="flex size-14 items-center justify-center rounded-sm bg-surface">
+              <i data-lucide="pill" class="size-6 text-icon-muted"></i>
+            </span>
+            <span class="absolute -right-1.5 -top-1.5 flex size-5 items-center justify-center rounded-full bg-heading text-xs font-medium text-background">{{ line.quantity }}</span>
+          </div>
+          <div class="flex-1">
+            <p class="text-sm text-heading">{{ line.name }}</p>
+          </div>
+          {# A free attachment shows at 0¢ rather than being hidden, exactly as it
+             did on the checkout summary: a supply the buyer is receiving belongs on
+             the receipt whether or not it was charged for. #}
+          <p class="shrink-0 text-base font-medium text-heading">{{ line.line_total_cents|money }}</p>
+        </div>
+        {% endfor %}
+      </div>
+
+      {# The mockup's disabled discount-code box is gone. Nothing can be applied to
+         an order that has already been charged, and an input that can never be
+         enabled invites a buyer to try. #}
+
+      <!-- ==================== TOTALS ==================== -->
+      {# No shipping and no tax rows, for the same reason the checkout summary has
+         none: the total is exactly subtotal minus discount, in integer cents.
+         `Consultation Fee — Included` stays because it is true of the price, not a
+         line item that was added to it. #}
+      <div class="mt-6 flex flex-col gap-2 border-t border-border pt-6 text-sm text-heading">
+        <div class="flex items-center justify-between">
+          <span>Subtotal • {{ receipt.itemCount }} item{{ receipt.itemCount == 1 ? '' : 's' }}</span>
+          <span>{{ receipt.subtotalCents|money }}</span>
+        </div>
+        <div class="flex items-center justify-between">
+          <span>Consultation Fee</span>
+          <span>Included</span>
+        </div>
+        {% if receipt.hasDiscount() %}
+        <div class="flex items-center justify-between">
+          <span>Discount{% if receipt.promotionCode %} • {{ receipt.promotionCode }}{% endif %}</span>
+          <span>−{{ receipt.discountCents|money }}</span>
+        </div>
+        {% endif %}
+      </div>
+      <div class="mt-4 flex items-center justify-between border-t border-border pt-4">
+        <span class="text-base font-medium sm:text-lg text-heading">Total</span>
+        <span class="text-base font-medium sm:text-lg text-heading"><span class="mr-1 text-sm font-normal text-muted align-middle">{{ receipt.currency }}</span>{{ receipt.paidTotalCents|money }}</span>
+      </div>
+
+      <!-- ==================== PAYMENT NOTICE ==================== -->
+      {# The mockup said the card was only authorized and would not be charged
+         unless a doctor approved the prescription. That is not what happens here:
+         the charge is single-step and the money has already moved by the time this
+         page renders, so the notice says so. Skipped when nothing was charged. #}
+      {% if receipt.paidTotalCents > 0 %}
+      <div class="mt-6 flex items-start gap-3 rounded-sm border border-primary bg-primary-light px-4 py-4">
+        <i data-lucide="info" class="mt-0.5 size-5 shrink-0 text-primary"></i>
+        <p class="text-sm leading-relaxed text-heading">Your card has been charged {{ receipt.paidTotalCents|money }}. Your order is on hold until a licensed physician has reviewed your information.</p>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+{% endblock %}

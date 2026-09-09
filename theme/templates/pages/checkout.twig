@@ -1,0 +1,474 @@
+{# Transcribed from the static design mockup (checkout page)'s <main> grid. Extends
+   layouts/checkout.twig, whose <main class="lg:grid lg:grid-cols-2"> wrapper matches
+   this page's own <main> class from the mockup exactly (this layout serves only the
+   checkout page). Header/footer are the layout's partials/header-checkout.twig and
+   partials/footer-compliance.twig includes.
+
+   DEVIATION (locked business decision): the CONSENT checkboxes below ship WITHOUT
+   the `checked` attribute the mockup pre-checks them with — consent is an explicit
+   affirmative action, so nothing here is ever pre-ticked.
+
+   DEVIATION: the mockup's shipping-method selector (two DHL options at $7.50 and
+   $12.50) is gone, along with the shipping and tax rows of its totals block. This
+   theme prices all-inclusive: there is no shipping cost and no tax anywhere in the
+   model, so a priced courier choice was a control that could never be charged for.
+
+   DEVIATION: the mockup's state <select> carried no `value` attributes, so its
+   options would have posted "New York" where the server expects "NY". The codes are
+   the values here, and the five inhabited US territories the server accepts are in
+   the list too.
+
+   DEVIATION: four of the mockup's controls are gone because nothing behind them
+   could store what was typed in — a box that silently discards its own value is
+   worse than no box. They are the "Company (optional)" and "Apartment, suite, etc.
+   (optional)" fields (the order carries one address line), the "Use shipping address
+   as billing address" checkbox (billing IS shipping, so it is now a stated line
+   rather than a choice), and the "Notify me with news and offers" checkbox in
+   Contact (the marketing consent below owns that answer, and two controls for one
+   permission is how they come to disagree).
+
+   Image srcs → /assets/img/...; "Apple Pay.svg" is renamed apple-pay-badge.svg in the
+   theme's asset set. payment-icons.svg, PayPal.svg, paypal-logo.svg, afterpay-logo.svg,
+   usa.svg keep their mockup names. Product images come from the catalog; a product
+   with none keeps the mockup's placeholder icon tile.
+
+   Inline scripts extracted to theme/js/checkout.js: the payment-panel show/hide sync
+   is verbatim; the mockup's "Pay Now" navigation handler is gone now that the form
+   posts for real. #}
+{% extends 'layouts/checkout.twig' %}
+{% set page_title = 'Checkout' %}
+{% set page_description = 'Complete your AsterMD order: choose a treatment plan, delivery, and payment.' %}
+{% block content %}
+
+  {# ONE form for the whole page, spanning both columns of the layout's
+     `<main>` grid. A form cannot be nested in another form, so the summary
+     column's sub-actions (plan switch, promo apply/remove, bump) used to be
+     sibling forms carrying the buyer's fields again as hidden inputs — which
+     meant a bump toggle posted whatever the server last rendered and wrote it
+     back over what the buyer had since typed. Here each sub-action is a submit
+     button that redirects this one form with `formaction`, so it posts exactly
+     what is in the boxes right now, with no script involved ([27.10], [8.7]).
+
+     `contents` keeps the two column divs as the grid items of `<main>`, the
+     way partials/cart-remove-form.twig already spans a grid row. #}
+  <form method="post" action="{{ url('/checkout') }}" id="checkout-form" data-checkout-form novalidate class="contents">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}" />
+
+    {# Pressing Enter in a text field submits a form's *first* submit
+       button, wherever the cursor is. With one form spanning the page that
+       would otherwise be Pay Now, so typing a discount code and pressing
+       Enter would charge the card at full price. This button is first in tree
+       order and applies the code instead: Enter in the discount box does what
+       the buyer meant, Enter anywhere else re-renders and keeps everything
+       typed, and no keystroke can place an order. Paying is only ever a click
+       on Pay Now. #}
+    <button type="submit" formaction="{{ url('/checkout/promo') }}" class="sr-only" tabindex="-1" aria-hidden="true">Apply discount code</button>
+
+  <!-- ==================== CHECKOUT FORM ==================== -->
+  <div class="px-6 py-10 sm:px-10 lg:px-16 lg:py-14">
+    <div class="mx-auto max-w-[500px] lg:mx-0 lg:ml-auto">
+
+      <!-- ==================== EXPRESS CHECKOUT ==================== -->
+      <p class="text-center text-sm text-muted">Express checkout</p>
+      <div class="mt-5 grid grid-cols-2 gap-3">
+        <button type="button" class="flex items-center justify-center transition-opacity hover:opacity-90">
+          <img src="/assets/img/PayPal.svg" alt="Pay with PayPal" class="h-12 w-auto max-w-full" />
+        </button>
+        <button type="button" class="flex items-center justify-center transition-opacity hover:opacity-90">
+          <img src="/assets/img/apple-pay-badge.svg" alt="Pay with Apple Pay" class="h-12 w-auto max-w-full" />
+        </button>
+      </div>
+
+      <div class="mt-6 flex items-center gap-4">
+        <span class="h-px flex-1 bg-border"></span>
+        <span class="text-sm text-muted">OR</span>
+        <span class="h-px flex-1 bg-border"></span>
+      </div>
+
+      {% if checkout.notice %}
+      <p role="alert" class="mt-6 rounded-sm border border-danger bg-background px-4 py-3 text-sm font-medium text-danger">{{ checkout.notice }}</p>
+      {% endif %}
+
+      <!-- ==================== CONTACT ==================== -->
+      <h2 class="mt-5 font-heading text-base font-bold sm:text-lg text-heading">Contact</h2>
+      <div class="mt-4 flex flex-col gap-4">
+        <div class="relative">
+          <input type="email" id="checkout-email" name="email" value="{{ checkout.prefill.email|default('') }}" autocomplete="email" placeholder=" " class="field-input w-full rounded-sm border border-border bg-background px-4 text-sm text-heading"
+            {% if checkout.errors.email|default(null) %}aria-invalid="true" aria-describedby="checkout-error-email"{% endif %} />
+          <label for="checkout-email" class="field-label">Email</label>
+          {% include 'partials/checkout/field-error.twig' with { field: 'email' } %}
+        </div>
+
+        <div class="relative">
+          <input type="tel" id="checkout-phone" name="phone" value="{{ checkout.prefill.phone|default('') }}" autocomplete="tel" placeholder=" " class="field-input w-full rounded-sm border border-border bg-background px-4 pr-16 text-sm text-heading"
+            {% if checkout.errors.phone|default(null) %}aria-invalid="true" aria-describedby="checkout-error-phone"{% endif %} />
+          <span class="pointer-events-none absolute right-4 top-1/2 flex -translate-y-1/2 items-center gap-1 text-base text-muted" aria-hidden="true">
+            <img src="/assets/img/usa.svg" alt="" class="h-[19px] w-[34px] rounded-[2px]" />
+            <i data-lucide="chevron-down" class="size-4"></i>
+          </span>
+          <label for="checkout-phone" class="field-label">Phone</label>
+          {% include 'partials/checkout/field-error.twig' with { field: 'phone' } %}
+        </div>
+      </div>
+
+      <!-- ==================== DELIVERY ==================== -->
+      <h2 class="mt-8 font-heading text-base font-bold sm:text-lg text-heading">Delivery</h2>
+      <div class="mt-4 flex flex-col gap-4">
+        <div class="relative">
+          <label for="checkout-country" class="sr-only">Country</label>
+          {# No `name`: the country is fixed ([13.36] is a declared gap), and the
+             server's territory set says the same thing. It stays on the page
+             because a delivery block with no country reads as an omission. #}
+          <select id="checkout-country" class="focus-ring-primary h-12 w-full appearance-none rounded-sm border border-border bg-background px-4 py-0 pr-10 text-sm text-heading">
+            <option>United States</option>
+          </select>
+          <i data-lucide="chevron-down" class="pointer-events-none absolute right-4 top-1/2 size-4 -translate-y-1/2 text-heading"></i>
+        </div>
+
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div class="relative">
+            <input type="text" id="checkout-first-name" name="first_name" value="{{ checkout.prefill.first_name|default('') }}" autocomplete="given-name" placeholder=" " class="field-input w-full rounded-sm border border-border bg-background px-4 text-sm text-heading"
+              {% if checkout.errors.first_name|default(null) %}aria-invalid="true" aria-describedby="checkout-error-first_name"{% endif %} />
+            <label for="checkout-first-name" class="field-label">First name</label>
+            {% include 'partials/checkout/field-error.twig' with { field: 'first_name' } %}
+          </div>
+          <div class="relative">
+            <input type="text" id="checkout-last-name" name="last_name" value="{{ checkout.prefill.last_name|default('') }}" autocomplete="family-name" placeholder=" " class="field-input w-full rounded-sm border border-border bg-background px-4 text-sm text-heading"
+              {% if checkout.errors.last_name|default(null) %}aria-invalid="true" aria-describedby="checkout-error-last_name"{% endif %} />
+            <label for="checkout-last-name" class="field-label">Last name</label>
+            {% include 'partials/checkout/field-error.twig' with { field: 'last_name' } %}
+          </div>
+        </div>
+
+        <div class="relative">
+          <input type="text" id="checkout-address" name="address_line" value="{{ checkout.prefill.address_line|default('') }}" autocomplete="street-address" placeholder=" " class="field-input w-full rounded-sm border border-border bg-background px-4 pr-10 text-sm text-heading"
+            {% if checkout.errors.address_line|default(null) %}aria-invalid="true" aria-describedby="checkout-error-address_line"{% endif %} />
+          <i data-lucide="search" class="pointer-events-none absolute right-4 top-1/2 size-4 -translate-y-1/2 text-icon-muted"></i>
+          <label for="checkout-address" class="field-label">Address</label>
+          {% include 'partials/checkout/field-error.twig' with { field: 'address_line' } %}
+        </div>
+
+        <div class="relative">
+          <input type="text" id="checkout-city" name="city" value="{{ checkout.prefill.city|default('') }}" autocomplete="address-level2" placeholder=" " class="field-input w-full rounded-sm border border-border bg-background px-4 text-sm text-heading"
+            {% if checkout.errors.city|default(null) %}aria-invalid="true" aria-describedby="checkout-error-city"{% endif %} />
+          <label for="checkout-city" class="field-label">City</label>
+          {% include 'partials/checkout/field-error.twig' with { field: 'city' } %}
+        </div>
+
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div class="relative">
+            <label for="checkout-state" class="sr-only">State</label>
+            {% set territories = {
+              'AL': 'Alabama', 'AK': 'Alaska', 'AZ': 'Arizona', 'AR': 'Arkansas', 'CA': 'California',
+              'CO': 'Colorado', 'CT': 'Connecticut', 'DE': 'Delaware', 'DC': 'District of Columbia',
+              'FL': 'Florida', 'GA': 'Georgia', 'HI': 'Hawaii', 'ID': 'Idaho', 'IL': 'Illinois',
+              'IN': 'Indiana', 'IA': 'Iowa', 'KS': 'Kansas', 'KY': 'Kentucky', 'LA': 'Louisiana',
+              'ME': 'Maine', 'MD': 'Maryland', 'MA': 'Massachusetts', 'MI': 'Michigan', 'MN': 'Minnesota',
+              'MS': 'Mississippi', 'MO': 'Missouri', 'MT': 'Montana', 'NE': 'Nebraska', 'NV': 'Nevada',
+              'NH': 'New Hampshire', 'NJ': 'New Jersey', 'NM': 'New Mexico', 'NY': 'New York',
+              'NC': 'North Carolina', 'ND': 'North Dakota', 'OH': 'Ohio', 'OK': 'Oklahoma', 'OR': 'Oregon',
+              'PA': 'Pennsylvania', 'RI': 'Rhode Island', 'SC': 'South Carolina', 'SD': 'South Dakota',
+              'TN': 'Tennessee', 'TX': 'Texas', 'UT': 'Utah', 'VT': 'Vermont', 'VA': 'Virginia',
+              'WA': 'Washington', 'WV': 'West Virginia', 'WI': 'Wisconsin', 'WY': 'Wyoming',
+              'AS': 'American Samoa', 'GU': 'Guam', 'MP': 'Northern Mariana Islands',
+              'PR': 'Puerto Rico', 'VI': 'U.S. Virgin Islands'
+            } %}
+            <select id="checkout-state" name="territory" autocomplete="address-level1" class="focus-ring-primary h-12 w-full appearance-none rounded-sm border border-border bg-background px-4 py-0 pr-10 text-sm text-heading"
+              {% if checkout.errors.territory|default(null) %}aria-invalid="true" aria-describedby="checkout-error-territory"{% endif %}>
+              <option value="">Choose your state</option>
+              {% for code, name in territories %}
+              <option value="{{ code }}"{% if checkout.prefill.territory|default('') == code %} selected{% endif %}>{{ name }}</option>
+              {% endfor %}
+            </select>
+            <i data-lucide="chevron-down" class="pointer-events-none absolute right-4 top-1/2 size-4 -translate-y-1/2 text-heading"></i>
+            {% include 'partials/checkout/field-error.twig' with { field: 'territory' } %}
+          </div>
+          <div class="relative">
+            <input type="text" id="checkout-postal" name="postal_code" value="{{ checkout.prefill.postal_code|default('') }}" autocomplete="postal-code" placeholder=" " class="field-input w-full rounded-sm border border-border bg-background px-4 text-sm text-heading"
+              {% if checkout.errors.postal_code|default(null) %}aria-invalid="true" aria-describedby="checkout-error-postal_code"{% endif %} />
+            <label for="checkout-postal" class="field-label">Postal code</label>
+            {% include 'partials/checkout/field-error.twig' with { field: 'postal_code' } %}
+          </div>
+        </div>
+      </div>
+
+      <!-- ==================== PAYMENT ==================== -->
+      <h2 class="mt-8 font-heading text-base font-bold sm:text-lg text-heading">Payment</h2>
+      <p class="mt-1 text-sm text-muted">All transactions are secure and encrypted.</p>
+
+      {# [15.4c]: the payment section is provider-dependent and cannot be a fixed
+         block of markup, so it is a slot the adapter fills. The configured
+         provider collects cards in the theme's own fields; a tokenizing one
+         hosts its own surface, and gets the second branch without this template
+         being rewritten. #}
+      {% if checkout.capabilities.rendersOwnCardFields %}
+      <div class="mt-3.5 overflow-hidden rounded-md border border-border bg-background" data-select-group id="payment-method-group">
+        <div class="border-b border-border">
+          <button type="button" data-select-option data-payment="card" aria-pressed="true" class="group flex w-full items-center justify-between gap-3 rounded-t-md bg-background p-3 text-left transition-colors aria-pressed:bg-primary-light">
+            <span class="flex items-center gap-3">
+              <span class="flex w-[18px] h-[18px] shrink-0 items-center justify-center rounded-full border-2 border-border-darker group-aria-pressed:border-primary">
+                <span class="size-2 rounded-full group-aria-pressed:bg-primary"></span>
+              </span>
+              <span class="text-sm font-semibold text-heading">Credit card</span>
+            </span>
+            <span class="flex shrink-0 items-center">
+              <img src="/assets/img/payment-icons.svg" alt="Mastercard, Visa, Amex, Discover" class="h-6 w-auto" />
+            </span>
+          </button>
+          <div data-payment-panel="card" class="flex flex-col gap-4 border-t border-border bg-background-2 px-5 py-5">
+            {# No value attribute on any of the three, ever. The buyer's contact
+               details are preserved so the form re-fills after a decline
+               ([13.30]); the card is not a contact detail ([15.8]). #}
+            <div class="relative">
+              <input type="text" id="checkout-card-number" name="card_number" inputmode="numeric" autocomplete="cc-number" placeholder=" " class="field-input w-full rounded-sm border border-border bg-background px-4 pr-10 text-sm text-heading" />
+              <i data-lucide="lock" class="pointer-events-none absolute right-4 top-1/2 size-4 -translate-y-1/2 text-icon-muted"></i>
+              <label for="checkout-card-number" class="field-label">Card number</label>
+            </div>
+            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div class="relative">
+                <input type="text" id="checkout-card-expiry" name="card_expiry" inputmode="numeric" autocomplete="cc-exp" placeholder=" " class="field-input w-full rounded-sm border border-border bg-background px-4 text-sm text-heading" />
+                <label for="checkout-card-expiry" class="field-label">Expiration date (MM / YY)</label>
+              </div>
+              <div class="relative">
+                <input type="text" id="checkout-card-cvc" name="card_cvc" inputmode="numeric" autocomplete="cc-csc" placeholder=" " class="field-input w-full rounded-sm border border-border bg-background px-4 pr-10 text-sm text-heading" />
+                <i data-lucide="circle-help" class="pointer-events-none absolute right-4 top-1/2 size-4 -translate-y-1/2 text-icon-muted"></i>
+                <label for="checkout-card-cvc" class="field-label">Security code</label>
+              </div>
+            </div>
+            <div class="relative">
+              <input type="text" id="checkout-card-name" autocomplete="cc-name" placeholder=" " class="field-input w-full rounded-sm border border-border bg-background px-4 text-sm text-heading" />
+              <label for="checkout-card-name" class="field-label">Name on card</label>
+            </div>
+            <p class="text-sm text-muted">Billing address is the delivery address above.</p>
+          </div>
+        </div>
+
+        <div class="border-b border-border">
+          <button type="button" data-select-option data-payment="paypal" aria-pressed="false" class="group flex w-full items-center justify-between gap-3 bg-background p-3 text-left transition-colors aria-pressed:bg-primary-light">
+            <span class="flex items-center gap-3">
+              <span class="flex w-[18px] h-[18px] shrink-0 items-center justify-center rounded-full border-2 border-border-darker group-aria-pressed:border-primary">
+                <span class="size-2 rounded-full group-aria-pressed:bg-primary"></span>
+              </span>
+              <span class="text-sm font-semibold text-heading">PayPal</span>
+            </span>
+            <img src="/assets/img/paypal-logo.svg" alt="PayPal" class="h-3.5 w-auto shrink-0" />
+          </button>
+        </div>
+
+        <div>
+          <button type="button" data-select-option data-payment="afterpay" aria-pressed="false" class="group flex w-full items-center justify-between gap-3 rounded-b-md bg-background p-3 text-left transition-colors aria-pressed:bg-primary-light">
+            <span class="flex items-center gap-3">
+              <span class="flex w-[18px] h-[18px] shrink-0 items-center justify-center rounded-full border-2 border-border-darker group-aria-pressed:border-primary">
+                <span class="size-2 rounded-full group-aria-pressed:bg-primary"></span>
+              </span>
+              <span class="text-sm font-semibold text-heading">Afterpay</span>
+            </span>
+            <img src="/assets/img/afterpay-logo.svg" alt="Afterpay" class="h-3.5 w-auto shrink-0" />
+          </button>
+        </div>
+      </div>
+      {% else %}
+      <div class="mt-3.5 overflow-hidden rounded-md border border-border bg-background p-5" data-payment-surface>
+        {# The provider hosts its own card fields. Nothing of the card is ours to
+           render, to name, or to see. #}
+        <div id="payment-provider-surface" data-provider="{{ checkout.capabilities.providerCategory }}"></div>
+        <noscript>
+          <p class="text-sm text-muted">Your payment provider's secure card form needs JavaScript to load.</p>
+        </noscript>
+      </div>
+      {% endif %}
+
+      <!-- ==================== CONSENT + SUBMIT ==================== -->
+      {# [26.2]: consent is an explicit affirmative action, so no control here
+         ever carries a `checked` attribute — not on a first render, and not on
+         a re-render after a decline. The copy is operator-authored config
+         rather than visitor input, which is what makes |raw safe. #}
+      <div class="mt-6 flex flex-col gap-4">
+        {% for consent in checkout.consents %}
+        <label class="flex cursor-pointer items-start gap-3 rounded-md border {% if checkout.errors[consent.key]|default(null) %}border-danger{% else %}border-border{% endif %} px-5 py-4">
+          {# The red border below is the only thing that said "this one" to a
+             sighted buyer; these two attributes say it to everybody else, and
+             they are the same pair every other control on this page carries.
+             The id is the one partials/checkout/field-error.twig emits, so the
+             message the buyer is sent to is the message actually rendered. #}
+          <input type="checkbox" class="peer sr-only" name="consents[{{ consent.key }}]" value="on" data-consent="{{ consent.key }}"
+            {% if checkout.errors[consent.key]|default(null) %}aria-invalid="true" aria-describedby="checkout-error-{{ consent.key }}"{% endif %} />
+          <span class="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded border border-border-darker bg-background transition-colors peer-checked:border-primary peer-checked:bg-primary">
+            <i data-lucide="check" class="size-3 text-background" stroke-width="3"></i>
+          </span>
+          <span class="text-sm text-body">{{ consent.html|raw }}</span>
+        </label>
+        {% include 'partials/checkout/field-error.twig' with { field: consent.key } %}
+        {% endfor %}
+      </div>
+
+      {# `data-checkout-submit` marks this button, and only this button, as the
+         one that places the order. theme/js/checkout.js hooks it by that attribute to
+         put it in a busy state while the order posts, so an impatient second click has
+         nothing to click. The hook stays off every `formaction` button on purpose: a
+         promo apply or a plan switch must stay live so the buyer can keep editing.
+
+         `data-busy-label` is the text the script swaps in, so the button keeps a real
+         accessible name in the busy state and the state reads without relying on
+         colour. `aria-busy:` styles the same state visually, from the same attribute.
+
+         This is comfort, not correctness. The button works with the script absent, and
+         no script can stop a reload, a browser retry or a second tab from posting this
+         form twice — only the server can ([8.7]). #}
+      <button type="submit" id="checkout-pay" data-checkout-submit data-busy-label="Placing order…" class="mt-6 flex h-[41px] w-full items-center justify-center rounded-sm bg-primary px-5 text-base font-medium text-primary-foreground transition-colors hover:bg-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-hover aria-busy:cursor-progress aria-busy:opacity-75 sm:h-[41px]">
+        Pay Now
+      </button>
+    </div>
+  </div>
+
+  <!-- ==================== ORDER SUMMARY ==================== -->
+  <div class="border-border bg-background-2 px-6 py-10 sm:px-10 lg:border-l lg:px-12 lg:py-14">
+    <div class="mx-auto max-w-[410px] lg:mx-0 lg:sticky lg:top-10">
+
+      <!-- ==================== TREATMENT PLAN SELECTOR ==================== -->
+      {% if checkout.plans %}
+      <h2 class="font-heading text-base font-bold sm:text-lg text-heading">Select Treatment Plan</h2>
+      <p class="mt-0.5 text-xs text-muted">{{ checkout.plans.name }}</p>
+
+      {# The plan slug is the same for every option, so it is one hidden input
+         outside the loop; the variant rides on each button as its own
+         name/value, so only the option actually clicked is submitted. #}
+      <input type="hidden" name="slug" value="{{ checkout.plans.slug }}" />
+      <div class="mt-3.5 flex flex-col gap-2 rounded-md border border-border bg-background overflow-hidden" data-select-group>
+        {% for option in checkout.plans.options %}
+        <button type="submit" formaction="{{ url('/checkout/plan') }}" name="variant_id" value="{{ option.id }}" data-select-option aria-pressed="{{ option.id == checkout.plans.chosen ? 'true' : 'false' }}" class="group flex w-full items-center justify-between gap-3 rounded-md border border-transparent p-3 text-left transition-colors hover:border-primary/40 aria-pressed:border-primary aria-pressed:bg-primary-light">
+          <span class="flex gap-3">
+            <span class="flex mt-1 w-[18px] h-[18px] shrink-0 items-center justify-center rounded-full border-2 border-border-darker group-aria-pressed:border-primary">
+              <span class="size-2 rounded-full group-aria-pressed:bg-primary"></span>
+            </span>
+            <span>
+              <span class="block text-sm font-semibold text-heading">{{ option.name }}</span>
+              <span class="block text-sm text-muted mt-1">Billed once</span>
+            </span>
+          </span>
+          <span class="shrink-0 text-sm font-semibold text-heading">{{ option.price_cents|money }}</span>
+        </button>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      <!-- ==================== LINE ITEMS ==================== -->
+      <div class="mt-8 flex flex-col gap-4">
+        {% for line in checkout.lines %}
+        <div class="flex items-center gap-3">
+          <div class="relative shrink-0">
+            {% if line.image %}
+            <img src="{{ line.image }}" alt="{{ line.name }}" class="size-14 rounded-sm object-cover" />
+            {% else %}
+            <span class="flex size-14 items-center justify-center rounded-sm bg-surface">
+              <i data-lucide="pill" class="size-6 text-icon-muted"></i>
+            </span>
+            {% endif %}
+            <span class="absolute -right-1.5 -top-1.5 flex size-5 items-center justify-center rounded-full bg-heading text-xs font-medium text-background">{{ line.quantity }}</span>
+          </div>
+          <div class="flex-1">
+            <p class="text-sm text-heading">{{ line.name }}</p>
+            {% if line.variant_name %}
+            <p class="mt-0.5 flex items-center gap-1 text-sm text-muted">
+              <i data-lucide="refresh-cw" class="size-3.5"></i>
+              {{ line.variant_name }}
+            </p>
+            {% endif %}
+          </div>
+          {# A free attachment shows at 0¢ rather than being hidden: a supply the
+             buyer is receiving belongs on the summary whether or not it is
+             charged for ([7.14a]). #}
+          <p class="shrink-0 text-base font-medium text-heading">{{ line.line_total_cents|money }}</p>
+        </div>
+        {% endfor %}
+      </div>
+
+      <!-- ==================== DISCOUNT CODE ==================== -->
+      {# [13.18], [14.4]: hidden outright when the active adapter declares no
+         promotion support, rather than shown and failing at runtime. #}
+      {% if checkout.capabilities.supportsPromotions %}
+      {% if checkout.promotion %}
+      <div class="mt-6 flex items-center justify-between gap-3 rounded-sm border border-border bg-background px-4 py-3">
+        <span class="text-sm text-heading">Discount <span class="font-semibold">{{ checkout.promotion.code }}</span> applied</span>
+        <button type="submit" formaction="{{ url('/checkout/promo/remove') }}" class="shrink-0 text-sm font-medium text-primary underline hover:text-primary-hover">Remove</button>
+      </div>
+      {% else %}
+      <div class="mt-6 flex gap-3">
+        <label for="checkout-discount" class="sr-only">Discount code or gift card</label>
+        <input type="text" id="checkout-discount" name="discount_code" placeholder="Discount code or gift card" class="focus-ring-primary h-12 min-w-0 flex-1 rounded-sm border border-border bg-background px-4 py-0 text-sm text-heading placeholder:text-sm placeholder:text-body" />
+        <button type="submit" formaction="{{ url('/checkout/promo') }}" class="flex h-12 items-center justify-center shrink-0 rounded-sm border border-border bg-background px-6 text-base font-medium text-heading transition-colors hover:border-primary hover:text-primary">Apply</button>
+      </div>
+      {% endif %}
+      {% endif %}
+
+      <!-- ==================== TOTALS ==================== -->
+      {# No shipping and no tax rows: [13.35] is a declared gap, so the total is
+         exactly subtotal minus discount, in integer cents. #}
+      <div class="mt-6 flex flex-col gap-2 border-t border-border pt-6 text-[14px] text-heading">
+        <div class="flex items-center justify-between">
+          <span>Subtotal • {{ checkout.itemCount }} item{{ checkout.itemCount == 1 ? '' : 's' }}</span>
+          <span>{{ checkout.totals.subtotalCents|money }}</span>
+        </div>
+        <div class="flex items-center justify-between">
+          <span>Consultation Fee</span>
+          <span>Included</span>
+        </div>
+        {% if checkout.totals.discountCents > 0 %}
+        <div class="flex items-center justify-between">
+          <span>Discount{% if checkout.promotion %} • {{ checkout.promotion.code }}{% endif %}</span>
+          <span>−{{ checkout.totals.discountCents|money }}</span>
+        </div>
+        {% endif %}
+      </div>
+      <div class="mt-4 flex items-center justify-between border-t border-border pt-4">
+        <span class="text-base font-medium sm:text-lg text-heading">Total</span>
+        <span class="text-base font-medium sm:text-lg text-heading"><span class="mr-1 text-sm font-normal text-muted align-middle">{{ checkout.currency }}</span>{{ checkout.totals.totalCents|money }}</span>
+      </div>
+
+      <!-- ==================== PAYMENT AUTHORIZATION NOTICE ==================== -->
+      <div class="mt-6 flex items-start gap-3 rounded-sm border border-primary bg-primary-light px-4 py-4">
+        <i data-lucide="info" class="mt-0.5 size-5 shrink-0 text-primary"></i>
+        <p class="text-sm leading-relaxed text-heading">Payment authorization will be held; you will only be charged if approved and prescribed by a doctor.</p>
+      </div>
+
+      <!-- ==================== ORDER BUMPS ==================== -->
+      {# §27: an accepted bump is an ordinary cart line on the main charge, not a
+         second order. Each "Add" is a submit button on the page's one form, so
+         accepting one posts the buyer's details exactly as they are typed right
+         now: the summary changes without the buyer leaving the page or losing
+         anything typed ([27.10]). #}
+      {% if checkout.bumps %}
+      <div class="mt-8 flex flex-col gap-4">
+        {% for bump in checkout.bumps %}
+        <div class="flex items-center gap-3">
+          {% if bump.image %}
+          <img src="{{ bump.image }}" alt="{{ bump.name }}" class="size-14 shrink-0 rounded-sm object-cover" />
+          {% else %}
+          <span class="flex size-14 shrink-0 items-center justify-center rounded-sm bg-surface">
+            <i data-lucide="pill" class="size-6 text-icon-muted"></i>
+          </span>
+          {% endif %}
+          <div class="flex-1">
+            <p class="text-sm text-heading">{{ bump.headline }}</p>
+            {% if bump.body %}<p class="text-sm text-muted">{{ bump.body }}</p>{% endif %}
+            <p class="text-sm text-muted">
+              {{ bump.price_cents|money }}
+              {% if bump.discounted %}<span class="ml-1 text-muted line-through">{{ bump.catalog_price_cents|money }}</span>{% endif %}
+            </p>
+          </div>
+          {# The slug rides on the button so only the bump actually clicked is
+             submitted; a hidden input per row would post every one of them. #}
+          <button type="submit" formaction="{{ url('/checkout/bump') }}" name="bump_slug" value="{{ bump.slug }}" class="shrink-0 rounded-sm border border-border bg-background px-5 py-2 text-sm font-medium text-heading transition-colors hover:border-primary hover:text-primary">Add</button>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  </form>
+
+{% endblock %}
+{% block scripts %}
+{{ parent() }}
+<script src="{{ asset('checkout.js') }}" defer></script>
+{% endblock %}

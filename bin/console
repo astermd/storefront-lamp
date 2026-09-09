@@ -1,0 +1,232 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+/* Core file — part of the AsterMD storefront core. Local edits are lost when core is updated. */
+
+/**
+ * CLI entry point (Symfony Console). Registers the storefront's console
+ * commands — `db:migrate`, `cache:clear`, `emr:ping`, `provider:ping`,
+ * `media:prune`, `theme:sync`, `config:validate`, and the four scheduled jobs
+ * `emr:reconcile`, `provider:reconcile`, `abandonment:signals` and
+ * `db:prune` —
+ * against the same config and storage layout the HTTP app uses, so
+ * migrations and cache state stay in sync with whatever the web process
+ * would see. Storage subdirectories are created here (not just in
+ * AppFactory) because this script can run before any HTTP request ever has.
+ */
+
+require dirname(__DIR__) . '/vendor/autoload.php';
+
+use AsterMD\Storefront\Catalog\CatalogProvider;
+use AsterMD\Storefront\Catalog\CatalogValidator;
+use AsterMD\Storefront\Abandonment\AbandonmentSweep;
+use AsterMD\Storefront\Checkout\EmrCheckoutEventReporter;
+use AsterMD\Storefront\Console\AbandonmentCommand;
+use AsterMD\Storefront\Console\CacheClearCommand;
+use AsterMD\Storefront\Console\FormsCachePurgeCommand;
+use AsterMD\Storefront\Console\FormsRecordCommand;
+use AsterMD\Storefront\Console\MediaPruneCommand;
+use AsterMD\Storefront\Console\MigrateCommand;
+use AsterMD\Storefront\Console\PingCommand;
+use AsterMD\Storefront\Console\ProviderPingCommand;
+use AsterMD\Storefront\Console\PruneCommand;
+use AsterMD\Storefront\Console\ReconcileCommand;
+use AsterMD\Storefront\Console\ReconcileOrdersCommand;
+use AsterMD\Storefront\Console\StatusCommand;
+use AsterMD\Storefront\Console\SyncCommand;
+use AsterMD\Storefront\Console\ValidateCommand;
+use AsterMD\Storefront\Database\ConnectionFactory;
+use AsterMD\Storefront\Emr\ClientFactory;
+use AsterMD\Storefront\Forms\DefinitionCache;
+use AsterMD\Storefront\Forms\EmrTeleformGateway;
+use AsterMD\Storefront\Observability\OperationalCounts;
+use AsterMD\Storefront\Reconciliation\ForwardReconciliation;
+use AsterMD\Storefront\Reconciliation\ReverseReconciliation;
+use AsterMD\Storefront\Reconciliation\ReverseReconciliationReport;
+use AsterMD\Storefront\Repository\CheckoutAttemptRepository;
+use AsterMD\Storefront\Repository\EventRepository;
+use AsterMD\Storefront\Repository\OrderRepository;
+use AsterMD\Storefront\Repository\RateLimitRepository;
+use AsterMD\Storefront\Repository\SessionRepository;
+use AsterMD\Storefront\Retention\LogSweep;
+use AsterMD\Storefront\Retention\RetentionPolicy;
+use AsterMD\Storefront\Retention\RetentionSweep;
+use AsterMD\Storefront\Payment\AdapterRegistry;
+use AsterMD\Storefront\Payment\PaymentAdapter;
+use AsterMD\Storefront\Payment\Vrio\VrioAdapter;
+use AsterMD\Storefront\Payment\Vrio\VrioApiFactory;
+use AsterMD\Storefront\Payment\Vrio\VrioCredentials;
+use AsterMD\Storefront\Support\OperatorLog;
+use AsterMD\Storefront\Support\Config;
+use Symfony\Component\Console\Application;
+
+$rootDir = dirname(__DIR__);
+Dotenv\Dotenv::createImmutable($rootDir)->safeLoad();
+$config = Config::load($rootDir . '/config', Config::environment());
+
+// Ensure storage subdirectories exist (non-fatal).
+foreach (['logs', 'cache', 'sessions', 'database'] as $dir) {
+    $path = $rootDir . '/storage/' . $dir;
+    if (!is_dir($path)) {
+        @mkdir($path, 0775, true);
+    }
+}
+
+// The version is read from composer.json rather than repeated here: it also has to
+// agree with package.json and the release tag, and a fourth copy is a fourth thing to
+// forget. A checkout with no composer.json is not a deployment, so `dev` is enough.
+$composer = @file_get_contents($rootDir . '/composer.json');
+$version = is_string($composer)
+    ? (string) (json_decode($composer, true)['version'] ?? 'dev')
+    : 'dev';
+
+$application = new Application('AsterMD Storefront', $version);
+$application->addCommand(new MigrateCommand(
+    new ConnectionFactory((array) $config->get('app.database', []), $rootDir),
+    $rootDir . '/database/migrations',
+));
+$application->addCommand(new CacheClearCommand($rootDir . '/storage/cache'));
+$application->addCommand(new PingCommand(new ClientFactory($config, $rootDir)));
+
+// The two form commands always talk to the real EMR: unlike a page render,
+// an operator running them is explicitly asking to reach it, so neither is
+// gated on the analytics flag that decides whether visitor traffic does.
+$application->addCommand(new FormsCachePurgeCommand(new DefinitionCache(
+    $rootDir . '/storage/cache/teleforms',
+    (int) $config->get('intake.cache.ttl_seconds', 86400),
+)));
+$application->addCommand(new FormsRecordCommand(
+    new EmrTeleformGateway(new ClientFactory($config, $rootDir), new OperatorLog($rootDir . '/storage/logs/app.log')),
+    $rootDir . '/storage/cache/teleforms/recordings',
+));
+$application->addCommand(new MediaPruneCommand(
+    $rootDir . '/public/assets/media',
+    new CatalogProvider($config),
+));
+$validator = static fn (array $catalog): array => (new CatalogValidator())->validate($catalog);
+$application->addCommand(new SyncCommand(
+    new ClientFactory($config, $rootDir),
+    $rootDir . '/config',
+    $rootDir . '/public/assets/media',
+    validator: $validator,
+));
+// The same resolution the container performs, expressed once for the two
+// commands that need it: the provider is chosen from synced channel data and
+// never named by a code path ([14.3]), with the config key as an operator
+// override for a deployment that has to pin one. It is a closure because
+// building an adapter reads credentials and constructs an HTTP client, and a
+// `db:migrate` run must not pay for that.
+$resolveAdapter = static function () use ($config, $rootDir): PaymentAdapter {
+    $log = new OperatorLog($rootDir . '/storage/logs/app.log');
+    $registry = new AdapterRegistry($log);
+    $registry->register('vrio', static fn (): PaymentAdapter => new VrioAdapter(
+        VrioCredentials::fromChannelConfig((array) $config->get('channel.generated.payment_processor.config', [])),
+        new VrioApiFactory(),
+        $log,
+        (int) $config->get('payment.shipping_profile_id', 1),
+    ));
+
+    return $registry->for((string) ($config->get('payment.adapter')
+        ?? $config->get('channel.generated.payment_processor.provider_category', '')));
+};
+
+$application->addCommand(new ProviderPingCommand($resolveAdapter));
+$application->addCommand(new ValidateCommand(
+    new CatalogProvider($config),
+    new ClientFactory($config, $rootDir),
+    $rootDir . '/config',
+    null,
+    $config,
+    $resolveAdapter,
+));
+// The four scheduled jobs. Each is read-only by default and needs `--apply`
+// to act, for the reason `theme:sync` does: a job an operator runs from cron
+// should be safe to run by hand first.
+//
+// **There is no scheduler in this repository and these do not add one.** They
+// are written to be driven by cron, a systemd timer or whatever the
+// deployment already owns. Note the database connection is a closure shared by
+// all four: opening it here would make `db:migrate` pay for a connection it
+// builds for itself.
+$connections = new ConnectionFactory((array) $config->get('app.database', []), $rootDir);
+$pdo = null;
+$connect = static function () use ($connections, &$pdo): \PDO {
+    return $pdo ??= $connections->create();
+};
+$operatorLog = new OperatorLog($rootDir . '/storage/logs/app.log');
+
+// `[21.8]`'s forward sweep: local orders the EMR was never told about. It
+// reports through the same port the checkout does, so a reconciled order is
+// synced by exactly the code path that would have synced it at the time.
+$application->addCommand(new ReconcileCommand(new ForwardReconciliation(
+    new OrderRepository($connect),
+    new EmrCheckoutEventReporter(
+        new ClientFactory($config, $rootDir),
+        new EventRepository($connect),
+        new OrderRepository($connect),
+        $operatorLog,
+        static fn (): ?string => null,
+        (string) $config->get('payment.currency', 'USD'),
+        (bool) $config->get('app.session.analytics', true),
+    ),
+    $operatorLog,
+)));
+
+// `[21.9a]`'s reverse sweep: orders the provider holds that no local row does.
+// The adapter is resolved lazily inside the command for the same reason
+// `provider:ping` takes a closure -- building one reads credentials and
+// constructs an HTTP client.
+$application->addCommand(new ReconcileOrdersCommand(new ReverseReconciliation(
+    $resolveAdapter,
+    new OrderRepository($connect),
+    $operatorLog,
+)));
+
+// `[20.12]`'s five monitored counts in one place. Read-only, and the provider
+// half is opt-in because it is the only figure that needs an outbound call:
+// the sweep is built inside the closure so a run without `--provider` never
+// reads a credential.
+$application->addCommand(new StatusCommand(
+    orders: new OrderRepository($connect),
+    counts: new OperationalCounts($connect),
+    providerSweep: static fn (): ReverseReconciliationReport => (new ReverseReconciliation(
+        $resolveAdapter,
+        new OrderRepository($connect),
+        $operatorLog,
+    ))->run(),
+));
+
+// `[21.10]`'s abandonment signals, as a JSON document for an external system
+// to poll (`[21.11a]`). The resume link it emits is a credential for a health
+// record, so its output belongs in the marketing platform and nowhere else.
+$application->addCommand(new AbandonmentCommand(new AbandonmentSweep(
+    new SessionRepository($connect),
+    rtrim((string) $config->get('app.url', ''), '/'),
+    (string) $config->get('app.session.resume_param', 'amd_session'),
+    (int) $config->get('abandonment.idle_seconds', AbandonmentSweep::DEFAULT_IDLE_SECONDS),
+    (int) $config->get('abandonment.lookback_seconds', AbandonmentSweep::DEFAULT_LOOKBACK_SECONDS),
+    (int) $config->get('abandonment.limit', AbandonmentSweep::DEFAULT_LIMIT),
+    (string) $config->get('abandonment.marketing_consent_key', AbandonmentSweep::DEFAULT_MARKETING_CONSENT_KEY),
+    // Every emitted signal is an access to health information leaving the
+    // storefront, and `[30.7]` asks for those to be audited. The resume link
+    // this deployment issues never expires, so the trail is the only record
+    // that one was handed out.
+    new EventRepository($connect),
+)));
+
+// Operational data that outlives its period (`[30.6]`), and the two tables
+// nothing had ever deleted from. Note a `sent` attempt is never expired at any
+// age -- see the command for why age cannot settle whether money moved -- and
+// that the session sweep refuses to delete a journey an order still references
+// or one inside the reconciliation window, whatever the configured period says.
+$application->addCommand(new PruneCommand(
+    new CheckoutAttemptRepository($connect, $connections->driver()),
+    new RateLimitRepository($connect, $connections->driver()),
+    new RetentionSweep($connect),
+    new LogSweep($rootDir . '/storage/logs'),
+    RetentionPolicy::fromConfig($config),
+));
+
+$application->run();

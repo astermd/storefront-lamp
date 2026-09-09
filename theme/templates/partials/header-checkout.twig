@@ -1,0 +1,10 @@
+{# Transcribed from the static design mockup (checkout page), HEADER anchor (logo only,
+   no nav). Logo svg replaced with the shared partials/logo.twig include; home link
+   routed via url(). #}
+<header class="border-b border-border bg-background">
+  <div class="mx-auto flex h-20 max-w-[1260px] items-center px-6 lg:px-16">
+    <a href="{{ url('/') }}" class="shrink-0" aria-label="AsterMD home">
+      {% include 'partials/logo.twig' %}
+    </a>
+  </div>
+</header>

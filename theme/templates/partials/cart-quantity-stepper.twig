@@ -1,0 +1,28 @@
+<div class="flex items-center gap-3 rounded-sm border border-border px-2 py-1.5">
+  <form method="post" action="{{ url('/cart/quantity') }}" class="contents">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}" />
+    <input type="hidden" name="slug" value="{{ line.slug }}" />
+    <input type="hidden" name="return_to" value="{{ current_path }}" />
+    {# No clamp needed: CartLine::fromArray() never yields a quantity below 1,
+       so the lowest this can post is 0 — which CartRules reads as "remove this
+       line", which is what this button does at that quantity. The label has to
+       say so rather than promising a decrease that removes the line instead.
+       "last" keeps it distinguishable from the card's own remove button, whose
+       label is "Remove <name> from cart"; the two do the same thing here but a
+       screen reader should still be able to tell them apart. #}
+    <input type="hidden" name="quantity" value="{{ line.quantity - 1 }}" />
+    <button type="submit" class="cart-qty-decrement text-heading" aria-label="{{ line.quantity <= 1 ? 'Remove last ' ~ line.name ~ ' from cart' : 'Decrease ' ~ line.name ~ ' quantity' }}">
+      <i data-lucide="minus" class="size-[18px]"></i>
+    </button>
+  </form>
+  <span class="cart-qty-value w-3 text-center text-sm text-heading">{{ line.quantity }}</span>
+  <form method="post" action="{{ url('/cart/quantity') }}" class="contents">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}" />
+    <input type="hidden" name="slug" value="{{ line.slug }}" />
+    <input type="hidden" name="return_to" value="{{ current_path }}" />
+    <input type="hidden" name="quantity" value="{{ line.quantity + 1 }}" />
+    <button type="submit" class="cart-qty-increment text-heading" aria-label="Increase {{ line.name }} quantity">
+      <i data-lucide="plus" class="size-[18px]"></i>
+    </button>
+  </form>
+</div>

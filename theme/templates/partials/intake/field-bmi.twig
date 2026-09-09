@@ -1,0 +1,21 @@
+{# The BMI composite ([10.28]): a hidden unit-system subfield plus height and
+   weight, and a result written into a field of its own so the score is
+   submitted as an ordinary answer ([10.32]).
+
+   The result is rendered server-side from the stored value, so a prefilled
+   composite shows its score immediately rather than waiting for scripts
+   ([10.34]). #}
+<fieldset data-intake-bmi data-intake-bmi-target="{{ field.name }}">
+  <legend class="font-heading block w-full text-center text-[24px] font-bold leading-tight sm:text-[28px] text-heading">
+    {{ field.label }}{% if field.required %}<span class="text-danger" aria-hidden="true"> *</span>{% endif %}
+  </legend>
+  <div class="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2">
+    {% for subfield in field.subfields %}
+      {% include 'partials/intake/field.twig' with { field: subfield } only %}
+    {% endfor %}
+  </div>
+  <p data-intake-bmi-result class="mt-6 text-center text-base font-medium text-heading{% if field.value is null %} hidden{% endif %}">
+    {% if field.value is not null %}BMI {{ field.value }} &middot; {{ field.category }}{% endif %}
+  </p>
+  <input type="hidden" name="{{ field.name }}" value="{{ field.value }}" data-intake-bmi-score />
+</fieldset>

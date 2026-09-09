@@ -1,0 +1,19 @@
+{
+    "_note": "Constructed from the provider's published 101 shape, not recorded from the wire: no merchant configured on this channel produces a further-action response. If a real 101 is ever captured, replace this file with it.",
+    "success": true,
+    "message": "",
+    "data": {
+        "success": true,
+        "response_code": 101,
+        "post_data": "https://3ds.example-acquirer.test/challenge?ref=abc123",
+        "order_id": 34999,
+        "transaction_id": 225999,
+        "transaction_total": "120.00",
+        "order": {
+            "order_id": 34999,
+            "campaign_id": 147,
+            "status_type_id": null,
+            "date_ordered": null
+        }
+    }
+}

@@ -1,0 +1,19 @@
+{# The single render site for whatever a cart mutation left to say — a refused
+   add, a replaced prescription, a capped quantity. Included by each layout
+   directly beneath its header rather than by the cart drawer, for three
+   reasons that are really one: the notice has to be where the buyer lands.
+
+   The drawer ships with the `hidden` class and is opened by script, so a
+   notice rendered inside it says nothing at all to someone with JavaScript
+   off. An accepted add redirects to the funnel's next step, whose layout has
+   no drawer to open. And a page that rendered it both inline and in the
+   drawer showed it twice. One include per layout answers all three.
+
+   `notice_container` lets a layout match its own content width; the default
+   is the marketing/funnel one. role="status" so assistive technology
+   announces it without stealing focus. #}
+{% if cart.notice %}
+<div class="mx-auto {{ notice_container|default('max-w-[1440px] px-6 lg:px-[120px]') }} pt-4">
+  <p role="status" class="rounded-sm border border-border bg-surface px-4 py-3 text-sm text-body">{{ cart.notice }}</p>
+</div>
+{% endif %}

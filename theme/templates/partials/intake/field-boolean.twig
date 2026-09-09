@@ -1,0 +1,25 @@
+{# Consent-shaped fields: checkbox, toggle, terms, agreement. Never pre-checked
+   -- consent is an explicit affirmative action ([26.2]), so the only thing that
+   ticks this box is the visitor. #}
+<div class="mt-8">
+  <label class="flex cursor-pointer items-start gap-3 rounded-sm border border-border bg-background px-5 py-4 transition-colors hover:border-primary has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-primary has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-60">
+    <input
+      type="checkbox"
+      id="intake-{{ field.name }}"
+      name="{{ field.name }}"
+      value="1"
+      class="peer sr-only"
+      {% if field.value %}checked{% endif %}
+      {% if field.required %}required aria-required="true"{% endif %}
+      {% if field.disabled %}disabled{% endif %}
+      {% if field.error %}aria-invalid="true" aria-describedby="{{ field.error_id }}"{% endif %}
+    />
+    <span class="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-sm border border-border-darker bg-background transition-colors peer-checked:border-primary peer-checked:bg-primary">
+      <i data-lucide="check" class="size-3.5 text-background" stroke-width="3"></i>
+    </span>
+    <span class="text-base font-medium text-heading">
+      {{ field.label }}{% if field.required %}<span class="text-danger" aria-hidden="true"> *</span>{% endif %}
+    </span>
+  </label>
+  {% include 'partials/intake/field-error.twig' with { field: field } only %}
+</div>

@@ -1,0 +1,117 @@
+{# Mode C. Every page of the form is rendered here and all but one is
+   concealed, so navigation is a class toggle rather than a round trip
+   ([10.6]) and the whole questionnaire is present in the HTML even when
+   scripts never run ([10.6a]).
+
+   The form posts to the same save endpoint the stepper uses, so a visitor
+   with no JavaScript still submits real values to a server that validates
+   them -- what they lose is step navigation, not the ability to be heard. #}
+{% extends 'layouts/funnel.twig' %}
+{% set page_title = form_title %}
+{% block content %}
+
+  {% include 'partials/stepper.twig' with {
+    steps: stepper_steps,
+    active: stepper_active,
+    progress: { after: stepper_active, fill_id: 'intake-progress-fill', label_id: 'intake-progress-label', percent: 0 },
+  } %}
+
+  <section class="mx-auto max-w-[660px] px-6 py-16">
+
+    {% if unsupported_types is not empty %}
+      {# The form declares a question this renderer cannot draw. Saying so and
+         refusing the submit is the whole point of [10.13]: the alternative is
+         an intake that quietly omits it. #}
+      <div role="alert" class="mb-10 rounded-sm border-2 border-danger bg-danger-light px-5 py-4">
+        <p class="text-sm font-semibold text-danger">This form cannot be completed here.</p>
+        <p class="mt-2 text-sm leading-relaxed text-heading">
+          It contains {{ unsupported_types|length > 1 ? 'question types' : 'a question type' }}
+          this storefront cannot display ({{ unsupported_types|join(', ') }}). Please contact us and we will
+          complete it with you.
+        </p>
+      </div>
+    {% endif %}
+
+    {% if form_errors._form is defined %}
+      {# A refusal that belongs to the form as a whole rather than to one
+         field, so it has nowhere else to appear. #}
+      <div role="alert" class="mb-10 rounded-sm border-2 border-danger bg-danger-light px-5 py-4">
+        <p class="text-sm font-medium leading-relaxed text-danger">{{ form_errors._form }}</p>
+      </div>
+    {% endif %}
+
+    <noscript>
+      {# [10.6b]: the intake is the one step that genuinely depends on
+         scripting -- conditional questions, the eligibility check and step
+         navigation all need it. Say so plainly instead of presenting a form
+         that cannot behave correctly. #}
+      <div role="alert" class="mb-10 rounded-sm border-2 border-warning bg-warning-light px-5 py-4">
+        <p class="text-sm font-semibold text-heading">This questionnaire needs JavaScript.</p>
+        <p class="mt-2 text-sm leading-relaxed text-heading">
+          Every question is shown below, but follow-up questions and the eligibility check cannot run without it.
+          Please enable JavaScript, or contact us and we will complete this with you.
+        </p>
+      </div>
+    </noscript>
+
+    <form method="post"
+          action="{{ url('/intake/save/') }}"
+          data-intake-form
+          data-save-url="{{ url('/intake/save/') }}"
+          data-submit-url="{{ url('/intake/submit/') }}"
+          data-capture-url="{{ url('/intake/capture/') }}"
+          data-page-count="{{ definition.pageCount }}"
+          data-intake-rules="{{ rules_json }}"
+          {% if unsupported_types is not empty %}data-intake-blocked="1"{% endif %}>
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}" />
+      <input type="hidden" name="page" value="0" data-intake-page-input />
+      {# Which questionnaire this is. The POST endpoints are shared by both
+         steps, so without this the server cannot tell an eligibility
+         submission from a medical one. #}
+      <input type="hidden" name="step" value="{{ form_step }}" />
+
+      {% for page in definition.pages %}
+        <div data-intake-page="{{ loop.index0 }}"{% if not loop.first %} hidden{% endif %}>
+          {% if page.title %}
+            <p class="text-center text-xs font-medium tracking-wide text-muted">{{ page.title }}</p>
+          {% endif %}
+          {% if page.description %}
+            <p class="mx-auto mt-3 max-w-[480px] text-center text-sm leading-relaxed text-muted">{{ page.description }}</p>
+          {% endif %}
+
+          <div class="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-2">
+            {% for field in fields[loop.index0] %}
+              {% include 'partials/intake/field.twig' with { field: field } only %}
+            {% endfor %}
+          </div>
+        </div>
+      {% endfor %}
+
+      {# The eligibility interstitial. Populated by the stepper when a rule
+         matches client-side, and rendered on load when the server has already
+         judged the journey. #}
+      <div role="alert" data-intake-interstitial
+           class="mt-10 rounded-sm border-2 border-danger bg-danger-light px-5 py-4{% if not termination_message %} hidden{% endif %}">
+        <p class="text-sm font-medium leading-relaxed text-danger" data-intake-interstitial-text>{{ termination_message }}</p>
+      </div>
+
+      {# Navigation the definition did not author. A form whose pages carry
+         their own buttons hides these, so the author's choice wins ([10.10]). #}
+      <div class="mt-10 grid grid-cols-2 gap-4" data-intake-nav{% if definition_has_buttons %} hidden{% endif %}>
+        <button type="button" data-intake-action="previous_page"
+                class="inline-flex w-full items-center justify-center gap-2 rounded-sm border-2 border-border bg-background h-[41px] px-5 text-base font-medium sm:h-auto sm:py-4 text-heading transition-colors hover:border-primary hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
+          Back
+        </button>
+        <button type="submit" data-intake-action="next_page" name="intake_next" value="1"
+                class="inline-flex w-full items-center justify-center gap-2 rounded-sm bg-primary h-[41px] px-5 text-base font-medium sm:h-auto sm:py-4 text-primary-foreground transition-colors hover:bg-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-hover disabled:cursor-not-allowed disabled:opacity-60">
+          Continue
+        </button>
+      </div>
+    </form>
+  </section>
+{% endblock %}
+{% block scripts %}
+<script src="{{ asset('script.js') }}" defer></script>
+<script src="{{ asset('datepicker.js') }}" defer></script>
+<script src="{{ asset('intake.js') }}" defer></script>
+{% endblock %}

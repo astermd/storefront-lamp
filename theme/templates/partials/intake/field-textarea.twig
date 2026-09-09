@@ -1,0 +1,15 @@
+{% include 'partials/intake/field-label.twig' with { field: field } only %}
+<div class="mt-8">
+  <textarea
+    id="intake-{{ field.name }}"
+    name="{{ field.name }}"
+    rows="4"
+    {% if field.placeholder %}placeholder="{{ field.placeholder }}"{% endif %}
+    {% if field.required %}required aria-required="true"{% endif %}
+    {% if field.disabled %}disabled{% endif %}
+    {% if field.max_length %}maxlength="{{ field.max_length }}"{% endif %}
+    {% if field.error %}aria-invalid="true" aria-describedby="{{ field.error_id }}"{% endif %}
+    class="w-full rounded-sm border-2 border-border bg-background px-5 py-4 text-base text-heading placeholder:text-muted transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-60 aria-[invalid=true]:border-danger"
+  >{{ field.value }}</textarea>
+  {% include 'partials/intake/field-error.twig' with { field: field } only %}
+</div>

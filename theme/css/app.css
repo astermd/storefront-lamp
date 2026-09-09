@@ -1,0 +1,268 @@
+@import "tailwindcss";
+@source "../templates";
+@source "../js";
+
+/* ============================================================================
+   DESIGN TOKENS — THE single reskinning point
+   Ported verbatim (meaning-for-meaning) from the static design mockup's
+   shared stylesheet. Every colour, radius, shadow,
+   spacing alias, font stack and transition used across the storefront
+   resolves back to a variable defined here. To reskin the app: edit the hex
+   values below — no template markup or utility classes need to change.
+
+   The Tailwind build loaded via CDN in the mockup did not support opacity
+   modifiers (`bg-primary/50`) on custom `var()`-based colours — it silently
+   dropped the utility rather than falling back to `color-mix()`. Where a
+   translucent variant is actually needed, it's baked into its own 8-digit hex
+   token below (e.g. --border-soft) instead of relying on a `/NN` suffix.
+   ============================================================================ */
+
+:root {
+  /* ---- Brand: primary ---------------------------------------------------- */
+  --primary: #14b8a6;            /* teal — buttons, links, active states */
+  --primary-hover: #0d9488;      /* hover/active shade of primary */
+  --primary-light: #f3fbfa;      /* Figma "Color/Menu Active": #13B8A5 @ 5% over white */
+  --primary-soft: #8ae0d7;       /* mid-tone gradient stop */
+  --primary-deep: #06544b;       /* deep-contrast text over light photos */
+  --primary-foreground: #ffffff; /* text/icon colour placed on top of --primary */
+  --primary-ring: #14b8a626;     /* primary @ 15% — focus ring on floating-label fields */
+
+  /* ---- Brand: secondary --------------------------------------------------- */
+  --secondary: #162b56;            /* navy — dark brand surfaces (topbar) */
+  --secondary-hover: #0b1a38;      /* darker navy for hover/active */
+  --secondary-light: #e2e7f0;      /* light navy tint */
+  --secondary-foreground: #ffffff; /* text placed on top of --secondary */
+  --secondary-foreground-muted: #ffffffbf; /* secondary-foreground @ 75% — topbar copy */
+
+  /* ---- Status -------------------------------------------------------------- */
+  --success: #22c55e;
+  --warning: #f59e0b; /* also used for star-rating fill */
+  --warning-light: #fef3e2; /* light amber tint — pending/in-progress status pills */
+  --danger: #ef4444;
+  --danger-light: #fef2f2; /* light red tint — inline error and ineligibility notices */
+
+  /* ---- Surfaces ------------------------------------------------------------- */
+  --background: #ffffff;   /* page / card background */
+  --background-2: #fafbfc; /* filter/sidebar panel background */
+  --surface: #fafafa;      /* neutral section band (FAQ) */
+  --surface-2: #f5fcfc;    /* teal-tinted section band */
+
+  /* ---- Text ------------------------------------------------------------------- */
+  --text-primary: #162b56;   /* headings + primary body copy */
+  --text-secondary: #596680; /* secondary/paragraph copy */
+  --text-muted: #8fa3a1;     /* footnotes, disclaimers */
+  --text-faint: #dce0e6;     /* large decorative/light-weight page titles */
+  --icon-muted: #b6cbc9;     /* decorative low-emphasis icon/label marks */
+
+  /* ---- Structure --------------------------------------------------------------- */
+  --border: #e1e7ed;
+  --border-darker: #ced3d9; /* checkbox/input outlines */
+  --border-soft: #e1e7edb3; /* border @ 70% — testimonial card divider */
+  --divider: #edeff2;
+  --link: #0088ff;
+  --link-hover: #0066cc;
+  --overlay: #107569;         /* photo-overlay gradient tint (promo banner) */
+  --overlay-strong: #1075698c; /* overlay @ 55% — promo banner gradient stop */
+
+  /* ---- Third-party payment brand colors (checkout express-pay buttons only) ------- */
+  /* Fixed brand colors, not part of the AsterMD theme — never used outside the
+     PayPal/Apple Pay express-checkout buttons on checkout.html. */
+  --paypal-bg: #ffc439;
+  --paypal-text: #003087;
+  --applepay-bg: #000000;
+  --applepay-text: #ffffff;
+
+  /* ---- Radius ------------------------------------------------------------------- */
+  --radius-xs: 3px;    /* cart item-count badge */
+  --radius-sm: 5px;    /* buttons, form controls */
+  --radius-md: 12px;   /* small floating cards */
+  --radius-lg: 20px;   /* content cards */
+  --radius-xl: 30px;   /* hero imagery, banners */
+
+  /* ---- Shadow --------------------------------------------------------------------- */
+  --shadow-sm: 0 1px 4px 0 rgba(22, 43, 86, 0.15);   /* floating circular controls */
+  --shadow-md: 0 4px 20px 0 rgba(22, 43, 86, 0.12);  /* elevated floating cards */
+  --shadow-dropdown: 0 1px 8px 0 rgba(22, 43, 86, 0.12); /* cart dropdown panel */
+
+  /* ---- Typography ------------------------------------------------------------------ */
+  --font-heading: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-body: 'Inter', ui-sans-serif, system-ui, sans-serif;
+
+  /* ---- Spacing aliases (layered on top of Tailwind's numeric scale) ---------------- */
+  --spacing-xs: 0.5rem;
+  --spacing-sm: 0.75rem;
+  --spacing-md: 1.5rem;
+  --spacing-lg: 3rem;
+  --spacing-xl: 6rem;
+
+  /* ---- Motion ----------------------------------------------------------------------- */
+  --transition-fast: 150ms;
+  --transition-base: 200ms;
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Map tokens into Tailwind utility namespaces — mirrors the mockup's
+   inline tailwind.config. @theme inline resolves var() at build time
+   per token reference, keeping :root as the runtime source. */
+@theme inline {
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-light: var(--primary-light);
+  --color-primary-soft: var(--primary-soft);
+  --color-primary-deep: var(--primary-deep);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-hover: var(--secondary-hover);
+  --color-secondary-light: var(--secondary-light);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary-foreground-muted: var(--secondary-foreground-muted);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-warning-light: var(--warning-light);
+  --color-danger: var(--danger);
+  --color-danger-light: var(--danger-light);
+  --color-background: var(--background);
+  --color-background-2: var(--background-2);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-heading: var(--text-primary);
+  --color-body: var(--text-secondary);
+  --color-muted: var(--text-muted);
+  --color-faint: var(--text-faint);
+  --color-icon-muted: var(--icon-muted);
+  --color-border: var(--border);
+  --color-border-soft: var(--border-soft);
+  --color-border-darker: var(--border-darker);
+  --color-divider: var(--divider);
+  --color-link: var(--link);
+  --color-link-hover: var(--link-hover);
+  --color-overlay: var(--overlay);
+  --color-overlay-strong: var(--overlay-strong);
+  --font-heading: var(--font-heading);
+  --font-body: var(--font-body);
+  --radius-xs: var(--radius-xs);
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-dropdown: var(--shadow-dropdown, 0 12px 32px rgba(22, 43, 86, 0.14));
+  --spacing-xs: var(--spacing-xs);
+  --spacing-sm: var(--spacing-sm);
+  --spacing-md: var(--spacing-md);
+  --spacing-lg: var(--spacing-lg);
+  --spacing-xl: var(--spacing-xl);
+}
+
+/* Local Inter (self-hosted; replaces Google Fonts CDN) */
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 300; font-display: swap; src: url('/assets/fonts/inter-300.woff2') format('woff2'); }
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 400; font-display: swap; src: url('/assets/fonts/inter-400.woff2') format('woff2'); }
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 500; font-display: swap; src: url('/assets/fonts/inter-500.woff2') format('woff2'); }
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 600; font-display: swap; src: url('/assets/fonts/inter-600.woff2') format('woff2'); }
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 700; font-display: swap; src: url('/assets/fonts/inter-700.woff2') format('woff2'); }
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 800; font-display: swap; src: url('/assets/fonts/inter-800.woff2') format('woff2'); }
+@font-face { font-family: 'Inter'; font-style: italic; font-weight: 300; font-display: swap; src: url('/assets/fonts/inter-italic-300.woff2') format('woff2'); }
+@font-face { font-family: 'Inter'; font-style: italic; font-weight: 400; font-display: swap; src: url('/assets/fonts/inter-italic-400.woff2') format('woff2'); }
+@font-face { font-family: 'Inter'; font-style: italic; font-weight: 700; font-display: swap; src: url('/assets/fonts/inter-italic-700.woff2') format('woff2'); }
+
+/* ============================================================================
+   BASE
+   Ported verbatim from the static design mockup's shared stylesheet.
+   ============================================================================ */
+
+body {
+  font-family: var(--font-body);
+}
+
+/* Tailwind v4's preflight sets interactive controls to `cursor: default`,
+   where v3 (and the mockup, built against it) left the browser's own
+   `cursor: pointer`. Restored here rather than by adding `cursor-pointer` to
+   every control: the utility would have to be repeated on well over a hundred
+   elements and each new one would be a fresh chance to forget, while a
+   pointer over a clickable thing is a browser default nothing in this design
+   ever intended to change.
+
+   `:disabled` is excluded, because a control that cannot be used should not
+   invite the click — the disabled styles already say so visually. */
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]),
+label[for],
+summary,
+select:not(:disabled) {
+  cursor: pointer;
+}
+
+/* FAQ accordion panel: animated height driven by JS setting max-height inline. */
+.faq-panel {
+  max-height: 0;
+  transition: max-height var(--transition-base) var(--ease-standard);
+}
+
+.faq-item[data-open="true"] .faq-panel {
+  /* JS sets the exact max-height on open; this is just the initial/no-JS fallback. */
+  max-height: 500px;
+}
+
+/* Hide scrollbar on the testimonial track while keeping it scrollable. */
+#testimonial-track::-webkit-scrollbar {
+  display: none;
+}
+
+/* ============================================================================
+   FLOATING LABELS & FORM CONTROLS (checkout.html form fields)
+   The label sits inside the field like a placeholder; on focus, or once the
+   field has a value, it floats up above the text. Requires the input to carry
+   `placeholder=" "` (so :placeholder-shown reflects "empty") and the <label>
+   to appear after the input as a sibling (general-sibling selector below).
+   ============================================================================ */
+input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="file"]):not([type="range"]),
+select {
+  height: 48px;
+  border-radius: 10px;
+}
+
+.field-input {
+  height: 48px;
+  padding-top: 1.25rem;
+  padding-bottom: 0.25rem;
+}
+
+.field-label {
+  position: absolute;
+  left: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  transition: top var(--transition-fast) var(--ease-standard),
+    transform var(--transition-fast) var(--ease-standard),
+    font-size var(--transition-fast) var(--ease-standard),
+    color var(--transition-fast) var(--ease-standard);
+  pointer-events: none;
+}
+
+.field-input:focus ~ .field-label,
+.field-input:not(:placeholder-shown) ~ .field-label {
+  top: 0.375rem;
+  transform: translateY(0);
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+.field-input:focus {
+  outline: none;
+  border-color: var(--primary);
+  /* box-shadow: 0 0 0 3px var(--primary-ring); */
+}
+
+/* Same subtle focus ring as .field-input, for standalone inputs that don't use
+   the floating-label padding (e.g. the discount code field on checkout.html). */
+.focus-ring-primary:focus {
+  outline: none;
+  border-color: var(--primary);
+  /* box-shadow: 0 0 0 3px var(--primary-ring); */
+}
+.bg-background-2 {
+  background-color: #fafafa;
+}

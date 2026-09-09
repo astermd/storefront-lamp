@@ -1,0 +1,85 @@
+{% extends 'layouts/marketing.twig' %}
+{% set page_title = 'Treatments' %}
+{% set page_description = 'Explore clinician-guided treatments for weight loss, hair loss, and personal wellbeing. All plans include medical review, ongoing support, and fast discreet shipping.' %}
+{% block content %}
+
+  <!-- ==================== PAGE HEADER ==================== -->
+  <section class="mx-auto max-w-[1440px] px-6 pt-[38px] lg:px-[120px] lg:pt-[68px]">
+    <h1 class="font-heading text-[44px] font-semibold leading-[1.25] text-faint sm:text-[52px] lg:text-[56px] lg:leading-[70px]">Treatments</h1>
+    <p class="mt-8 max-w-[640px] text-base leading-6 text-body">
+      Explore clinician-guided treatments for weight loss, hair loss, and personal wellbeing<br class="hidden lg:block" />
+      All plans include medical review, ongoing support, and fast discreet shipping.
+    </p>
+  </section>
+
+  <!-- ==================== FILTERS + TREATMENTS GRID ==================== -->
+  <section class="mx-auto max-w-[1440px] px-6 pb-16 pt-[38px] lg:px-[120px] lg:pb-24 lg:pt-[60px]">
+    <div class="flex flex-col gap-10 lg:flex-row lg:items-start lg:gap-[60px]">
+
+      <!-- Sidebar filters -->
+      <aside class="w-full shrink-0 lg:w-[282px]">
+        <div class="rounded-lg border border-border bg-background-2 p-6">
+          <fieldset>
+            <legend class="text-base font-medium sm:text-lg text-heading">Filters</legend>
+            <div class="mt-5 flex flex-col gap-6">
+              {% for category in categories %}
+              <label class="flex cursor-pointer items-center gap-3">
+                <input type="checkbox" name="filter-condition" value="{{ category|lower|replace({' ': '-'}) }}" class="peer sr-only" />
+                <span class="flex size-5 shrink-0 items-center justify-center rounded-sm border border-border-darker bg-background transition-colors peer-checked:border-primary peer-checked:bg-primary peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-primary">
+                  <i data-lucide="check" class="size-3.5 text-background" stroke-width="3"></i>
+                </span>
+                <span class="text-base text-heading">{{ category }}</span>
+              </label>
+              {% endfor %}
+            </div>
+          </fieldset>
+
+          <fieldset class="mt-10">
+            <legend class="text-base font-medium sm:text-lg text-heading">Type</legend>
+            <div class="mt-5 flex flex-col gap-6">
+              <label class="flex cursor-pointer items-center gap-3">
+                <input type="checkbox" name="filter-type" value="prescription" class="peer sr-only" />
+                <span class="flex size-5 shrink-0 items-center justify-center rounded-sm border border-border-darker bg-background transition-colors peer-checked:border-primary peer-checked:bg-primary peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-primary">
+                  <i data-lucide="check" class="size-3.5 text-background" stroke-width="3"></i>
+                </span>
+                <span class="text-base text-heading">Prescription</span>
+              </label>
+              <label class="flex cursor-pointer items-center gap-3">
+                <input type="checkbox" name="filter-type" value="non-prescription" class="peer sr-only" />
+                <span class="flex size-5 shrink-0 items-center justify-center rounded-sm border border-border-darker bg-background transition-colors peer-checked:border-primary peer-checked:bg-primary peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-primary">
+                  <i data-lucide="check" class="size-3.5 text-background" stroke-width="3"></i>
+                </span>
+                <span class="text-base text-heading">Non-Prescription</span>
+              </label>
+            </div>
+          </fieldset>
+        </div>
+      </aside>
+
+      <!-- Treatments grid -->
+      <div class="grid flex-1 gap-8 sm:grid-cols-2" id="treatments-grid">
+
+        {% for product in products %}
+        <article class="rounded-lg border border-border bg-background p-8">
+          <img src="{{ product.image }}" alt="{{ product.name }} medication packaging" class="h-[211px] w-full rounded-lg object-cover" width="349" height="211" />
+          <h2 class="font-heading mt-6 text-lg font-medium sm:text-xl text-heading">{{ product.name }}</h2>
+          <p class="mt-3 text-base leading-6 text-body">{{ product.description }}</p>
+          <p class="mt-5 text-base font-medium text-primary">Starting from {{ product.variants is defined and product.variants is not empty ? product.variants[0].price_cents|money : product.price_cents|money }}/mo</p>
+          <div class="mt-8 flex flex-wrap gap-5">
+            <a href="{{ url('/products/' ~ product.slug) }}" class="inline-flex items-center justify-center gap-2 rounded-sm bg-primary h-[41px] px-5 text-base font-medium sm:h-auto sm:py-3 text-primary-foreground transition-colors hover:bg-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-hover">
+              Get Started
+              <i data-lucide="arrow-right" class="size-[17px]"></i>
+            </a>
+            <a href="{{ url('/products/' ~ product.slug) }}" class="inline-flex items-center justify-center gap-2 rounded-sm border border-border bg-background h-[41px] px-5 text-base font-medium sm:h-auto sm:py-3 text-heading transition-colors hover:border-primary hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
+              Learn More
+              <i data-lucide="arrow-right" class="size-[17px]"></i>
+            </a>
+          </div>
+        </article>
+        {% endfor %}
+
+      </div>
+    </div>
+  </section>
+
+{% endblock %}

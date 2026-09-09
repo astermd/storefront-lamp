@@ -1,0 +1,177 @@
+{
+    "_id": "6a8aec0dec745c70f5f3e69a",
+    "layout": "five-column",
+    "status": 1,
+    "status_changed_at": null,
+    "status_changed_by": null,
+    "archived_at": null,
+    "archived_by": null,
+    "name": "Tirzepatide Weight Loss Intake",
+    "type": "intake",
+    "form_json_identifier": "aaaaaaaaaaaaaaaaaaaaaaaa/bbbbbbbbbbbbbbbbbbbbbbbb/tirzepatide-weight-loss-intake_13_1787489475.json",
+    "shared_with_doctors_network": [
+        "first_name",
+        "last_name",
+        "email",
+        "phone",
+        "date_of_birth",
+        "age_confirmation",
+        "sex_at_birth",
+        "pregnancy_status",
+        "bmi_measurement",
+        "bmi_height",
+        "bmi_weight",
+        "comorbidities_conditions",
+        "mtc_men2_history",
+        "type1_diabetes_dka",
+        "pancreatitis_history",
+        "gi_conditions",
+        "gallbladder_kidney_liver_disease",
+        "gallbladder_kidney_liver_details",
+        "eating_disorder_mental_health",
+        "other_glp1_medications",
+        "other_glp1_details",
+        "insulin_sulfonylureas",
+        "insulin_sulfonylureas_details",
+        "oral_birth_control",
+        "oral_birth_control_acknowledgment",
+        "other_medications_supplements",
+        "other_medications_details",
+        "known_allergies",
+        "known_allergies_details",
+        "side_effect_acknowledgment",
+        "telehealth_consent"
+    ],
+    "db_fields": {
+        "first_name": "opportunity.first_name",
+        "last_name": "opportunity.last_name",
+        "email": "opportunity.email",
+        "phone": "opportunity.phone",
+        "date_of_birth": "opportunity.dob",
+        "sex_at_birth": "opportunity.gender",
+        "bmi_measurement": "opportunity.clinical.bmi",
+        "bmi_height": "opportunity.clinical.height.value",
+        "bmi_weight": "opportunity.clinical.weight.value",
+        "other_medications_details": "opportunity.clinical.medications",
+        "known_allergies_details": "opportunity.clinical.allergies"
+    },
+    "meta": {
+        "first_name": {
+            "type": "value"
+        },
+        "last_name": {
+            "type": "value"
+        },
+        "email": {
+            "type": "value"
+        },
+        "phone": {
+            "type": "value"
+        },
+        "date_of_birth": {
+            "type": "value"
+        },
+        "age_confirmation": {
+            "type": "value",
+            "options": []
+        },
+        "sex_at_birth": {
+            "type": "value",
+            "options": []
+        },
+        "pregnancy_status": {
+            "type": "value",
+            "options": []
+        },
+        "bmi_measurement": {
+            "type": "value"
+        },
+        "bmi_height": {
+            "type": "value"
+        },
+        "bmi_weight": {
+            "type": "value"
+        },
+        "comorbidities_conditions": {
+            "type": "value",
+            "options": []
+        },
+        "mtc_men2_history": {
+            "type": "value",
+            "options": []
+        },
+        "type1_diabetes_dka": {
+            "type": "value",
+            "options": []
+        },
+        "pancreatitis_history": {
+            "type": "value",
+            "options": []
+        },
+        "gi_conditions": {
+            "type": "value",
+            "options": []
+        },
+        "gallbladder_kidney_liver_disease": {
+            "type": "value",
+            "options": []
+        },
+        "gallbladder_kidney_liver_details": {
+            "type": "value"
+        },
+        "eating_disorder_mental_health": {
+            "type": "value",
+            "options": []
+        },
+        "other_glp1_medications": {
+            "type": "value",
+            "options": []
+        },
+        "other_glp1_details": {
+            "type": "value"
+        },
+        "insulin_sulfonylureas": {
+            "type": "value",
+            "options": []
+        },
+        "insulin_sulfonylureas_details": {
+            "type": "value"
+        },
+        "oral_birth_control": {
+            "type": "value",
+            "options": []
+        },
+        "oral_birth_control_acknowledgment": {
+            "type": "value"
+        },
+        "other_medications_supplements": {
+            "type": "value",
+            "options": []
+        },
+        "other_medications_details": {
+            "type": "value"
+        },
+        "known_allergies": {
+            "type": "value",
+            "options": []
+        },
+        "known_allergies_details": {
+            "type": "value"
+        },
+        "side_effect_acknowledgment": {
+            "type": "value"
+        },
+        "telehealth_consent": {
+            "type": "value"
+        }
+    },
+    "org_id": "bbbbbbbbbbbbbbbbbbbbbbbb",
+    "account_id": "aaaaaaaaaaaaaaaaaaaaaaaa",
+    "created_at": "2026-08-23T12:48:13.914Z",
+    "created_by": "6a7af22895342f67e4e71558",
+    "updated_at": "2026-08-23T12:51:17.147Z",
+    "updated_by": "6a7af22895342f67e4e71558",
+    "deleted_at": null,
+    "deleted_by": null,
+    "auto_inc_id": 13
+}

@@ -1,0 +1,14 @@
+{# Transcribed from the static design mockup (intake index page), HEADER anchor (logo + house
+   icon link back to home). Logo svg replaced with the shared partials/logo.twig include;
+   home links routed via url(). #}
+<header class="border-b border-border bg-background">
+  <div class="mx-auto flex h-20 max-w-[1440px] items-center justify-between px-6 lg:px-[120px]">
+    <a href="{{ url('/') }}" class="shrink-0" aria-label="AsterMD home">
+      {% include 'partials/logo.twig' %}
+    </a>
+
+    <a href="{{ url('/') }}" class="flex size-10 items-center justify-center text-heading transition-colors hover:text-primary" aria-label="Back to home">
+      <i data-lucide="house" class="size-6"></i>
+    </a>
+  </div>
+</header>

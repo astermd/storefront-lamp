@@ -1,0 +1,31 @@
+{# Restyled to the funnel layout's design language, following the visual pattern of
+   pages/not-eligible.twig (centered max-w-[660px] section, danger-bordered icon
+   circle, font-heading bold heading, primary CTA button). Icon/heading/button
+   classes copied verbatim from not-eligible.twig — no new styles invented. Heading
+   is the specialized HTTP exception's `message` (e.g. "Not allowed."); `status`
+   (e.g. 405) is shown small above it. #}
+{% extends 'layouts/funnel.twig' %}
+{# See error-404.twig: rendered by the error middleware at any URL, so it refuses
+   indexing itself rather than waiting for a rule that can never name it. #}
+{% set noindex = true %}
+{% set page_title = 'Error ' ~ status %}
+{% set page_description = message %}
+{% block content %}
+
+  <!-- ==================== HTTP ERROR ==================== -->
+  <section class="mx-auto max-w-[660px] px-6 py-16 lg:py-24">
+    <div class="text-center">
+      <span class="mx-auto flex size-14 items-center justify-center rounded-full border-2 border-danger">
+        <i data-lucide="triangle-alert" class="size-7 text-danger"></i>
+      </span>
+      <p class="mt-6 text-xs font-medium tracking-wide text-muted">ERROR {{ status }}</p>
+      <h1 class="font-heading mt-2 text-[24px] font-bold leading-tight sm:text-[28px] text-heading">{{ message }}</h1>
+    </div>
+
+    <a href="{{ url('/') }}" class="mx-auto mt-8 inline-flex w-full max-w-[300px] items-center justify-center gap-2 rounded-sm bg-primary h-[41px] px-5 text-base font-medium sm:h-auto sm:py-4 text-primary-foreground transition-colors hover:bg-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-hover">
+      Back to Home
+      <i data-lucide="house" class="size-4"></i>
+    </a>
+  </section>
+
+{% endblock %}

@@ -1,0 +1,13 @@
+{% extends 'layouts/base.twig' %}
+{% block page %}
+{% include 'partials/header.twig' %}
+{% include 'partials/cart-notice.twig' %}
+<main>
+{% block content %}{% endblock %}
+</main>
+{% include 'partials/footer.twig' %}
+{% endblock %}
+{% block scripts %}
+<script src="{{ asset('script.js') }}" defer></script>
+<script src="{{ asset('cart.js') }}" defer></script>
+{% endblock %}

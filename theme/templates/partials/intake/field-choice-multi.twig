@@ -1,0 +1,29 @@
+{# Transcribed from the mockup's condition checkboxes, which already used real
+   inputs with the peer-styled tick. The name carries [] so several selections
+   arrive as a list -- a multi-select answer round-trips as a list however many
+   options are chosen ([10.36]). #}
+{% include 'partials/intake/field-question.twig' with { field: field } only %}
+<div class="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2" data-multi-group
+     role="group" aria-labelledby="intake-{{ field.name }}-label"
+     {% if field.required %}aria-required="true"{% endif %}
+     {% if field.error %}aria-invalid="true" aria-describedby="{{ field.error_id }}"{% endif %}>
+  {% for option in field.options %}
+    <label class="flex cursor-pointer items-center gap-3 rounded-sm border border-border bg-background px-5 py-4 transition-colors hover:border-primary has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-primary has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-60">
+      <input
+        type="checkbox"
+        id="intake-{{ field.name }}-{{ loop.index }}"
+        name="{{ field.name }}[]"
+        value="{{ option.value }}"
+        class="peer sr-only"
+        {% if option.selected %}checked{% endif %}
+        {% if field.disabled %}disabled{% endif %}
+        {% if field.error %}aria-invalid="true" aria-describedby="{{ field.error_id }}"{% endif %}
+      />
+      <span class="flex size-5 shrink-0 items-center justify-center rounded-sm border border-border-darker bg-background transition-colors peer-checked:border-primary peer-checked:bg-primary">
+        <i data-lucide="check" class="size-3.5 text-background" stroke-width="3"></i>
+      </span>
+      <span class="text-base font-medium text-heading">{{ option.label }}</span>
+    </label>
+  {% endfor %}
+</div>
+{% include 'partials/intake/field-error.twig' with { field: field } only %}

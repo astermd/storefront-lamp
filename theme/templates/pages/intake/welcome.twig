@@ -1,0 +1,51 @@
+{# Transcribed from the static design mockup (intake index page), INTAKE WELCOME section. #}
+{% extends 'layouts/funnel.twig' %}
+{% set page_title = 'Intake: Welcome' %}
+{% set page_description = 'Start your AsterMD intake assessment: a short medical questionnaire reviewed by a board-certified physician.' %}
+{% block content %}
+
+  <!-- ==================== INTAKE WELCOME ==================== -->
+  <section class="mx-auto max-w-[660px] px-6 py-16 lg:py-24">
+    <div class="text-center">
+      <p class="text-lg font-medium text-primary">Welcome to AsterMD!</p>
+      <h1 class="font-heading mt-3 text-[28px] font-bold leading-tight text-heading sm:text-[34px] lg:text-[40px] lg:leading-[50px]">Let&rsquo;s get started on your health journey!</h1>
+      <p class="mx-auto mt-6 max-w-[520px] text-base leading-6 text-body">To ensure this treatment is safe and effective for you, we need to gather some medical information for our physicians to review.</p>
+    </div>
+
+    <div class="mt-10 rounded-lg border border-border bg-background p-6 sm:p-8">
+      <h2 class="font-heading text-base font-medium sm:text-lg text-heading">What to expect</h2>
+      <div class="mt-6 grid grid-cols-1 gap-x-8 gap-y-6 sm:grid-cols-2">
+        <div class="flex items-center gap-3">
+          <span class="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary-light">
+            <i data-lucide="clock" class="size-5 text-primary"></i>
+          </span>
+          <span class="text-base text-heading">A 5-minute medical questionnaire</span>
+        </div>
+        <div class="flex items-center gap-3">
+          <span class="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary-light">
+            <i data-lucide="waypoints" class="size-5 text-primary"></i>
+          </span>
+          <span class="text-base text-heading">Tailored treatment plan</span>
+        </div>
+        <div class="flex items-center gap-3">
+          <span class="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary-light">
+            <i data-lucide="user-check" class="size-5 text-primary"></i>
+          </span>
+          <span class="text-base text-heading">Secure identity verification</span>
+        </div>
+        <div class="flex items-center gap-3">
+          <span class="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary-light">
+            <i data-lucide="hospital" class="size-5 text-primary"></i>
+          </span>
+          <span class="text-base text-heading">Review by a board-certified physician.</span>
+        </div>
+      </div>
+    </div>
+
+    <a href="{{ url('/intake/eligibility') }}" class="mt-8 inline-flex w-full items-center justify-center gap-2 rounded-sm bg-primary h-[41px] px-5 text-base font-medium sm:h-auto sm:py-4 text-primary-foreground transition-colors hover:bg-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-hover">
+      Start My Assessment
+      <i data-lucide="arrow-right" class="size-[14px]"></i>
+    </a>
+  </section>
+
+{% endblock %}

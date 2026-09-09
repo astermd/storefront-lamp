@@ -1,0 +1,16 @@
+{# schema.org JSON-LD for the current page ([24.8]-[24.10]).
+
+   The document is built and encoded in PHP (Seo\StructuredData\StructuredData)
+   rather than assembled here: the offer inside it has to carry the resolved
+   variant's price rather than the product-level one ([24.9]), and a template
+   is the wrong place for a rule that a price disagreeing with the checkout is
+   a compliance problem.
+
+   Nothing is rendered when the deployment has every emitter switched off or
+   the page has nothing to publish -- an empty <script type="application/ld+json">
+   is a parse error to some consumers and noise to the rest. `|raw` is safe
+   because the encoder escapes `<` and `&`, so no catalog string can close
+   this element. #}
+{%- if structured_data is defined and structured_data -%}
+<script type="application/ld+json">{{ structured_data|raw }}</script>
+{% endif -%}

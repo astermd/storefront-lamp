@@ -1,0 +1,33 @@
+{# Placeholder legal copy. This page exists because the checkout consent controls
+   link to it, and a consent whose document cannot be opened is not consent at all
+   (`[26.9]`). The wording below is deliberately not legal text — jurisdiction and
+   counsel differ, and every deployment is responsible for its own. #}
+{% extends 'layouts/marketing.twig' %}
+{% set page_title = 'Privacy Policy' %}
+{% set page_description = 'Privacy Policy for ' ~ site.name ~ '.' %}
+{% block content %}
+
+<section class="mx-auto max-w-3xl px-6 py-16 sm:px-10 sm:py-24">
+  <h1 class="font-heading text-3xl font-bold text-heading sm:text-4xl">Privacy Policy</h1>
+
+  <p role="note" class="mt-8 rounded-sm border border-danger bg-background px-5 py-4 text-sm font-medium text-danger">
+    This page is placeholder text and is not legal advice. This deployment must
+    replace it with its own Privacy Policy before taking real orders.
+  </p>
+
+  <div class="mt-8 flex flex-col gap-4 text-base text-body">
+    <p>
+      This document would set out how patient information is collected, used and disclosed. It is linked from the consent
+      controls on the checkout page, so a buyer is asked to agree to it before
+      an order can be placed.
+    </p>
+    <p>
+      The consent wording itself lives in <code>config/consent.php</code>, and the
+      exact text shown to each buyer is stored with their order — so a record can
+      always reproduce what was agreed to, rather than pointing at whatever this
+      page happens to say later.
+    </p>
+  </div>
+</section>
+
+{% endblock %}

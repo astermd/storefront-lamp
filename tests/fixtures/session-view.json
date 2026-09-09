@@ -1,0 +1,57 @@
+{
+    "success": true,
+    "message": "Sessions retrieved.",
+    "data": {
+        "4f1b6f2a-8c3d-4e6a-9b7f-2d5e8a1c6f30": {
+            "data": {
+                "ip": "203.0.113.7",
+                "city": "REDACTED",
+                "country": "US",
+                "latitude": 0,
+                "longitude": 0,
+                "channel_id": "channel-123",
+                "channel_name": "Demo Store",
+                "ua": "Mozilla/5.0 (compatible; test-agent/1.0)",
+                "browser": null,
+                "device": null,
+                "utm": {
+                    "source": "partner",
+                    "medium": "referral",
+                    "campaign": "launch"
+                },
+                "product_id": null,
+                "opportunity_id": "0a9d7c3e-5b2f-4d81-8e64-1f3a6c9b2d7e",
+                "patient_id": null,
+                "master_order_id": null,
+                "intake_completion_mode": null,
+                "status": "active",
+                "last_step": "visit_page",
+                "created_at": "2026-08-01T12:00:00.000Z"
+            },
+            "events": [
+                {
+                    "event_id": "6a8af40fec745c70f5f3e6e8",
+                    "event": "visit_page",
+                    "meta": null,
+                    "created_at": "2026-08-01T12:00:00.000Z"
+                },
+                {
+                    "event_id": "6a8af40fec745c70f5f3e6e9",
+                    "event": "pre_qualifying_initiated",
+                    "meta": null,
+                    "created_at": "2026-08-01T12:03:00.000Z"
+                },
+                {
+                    "event_id": "6a8af40fec745c70f5f3e6ea",
+                    "event": "intake_initiated",
+                    "meta": {
+                        "page": 1,
+                        "total": 5
+                    },
+                    "created_at": "2026-08-01T12:06:00.000Z"
+                }
+            ]
+        }
+    },
+    "meta": {}
+}

@@ -1,0 +1,8 @@
+<form method="post" action="{{ url('/cart/remove') }}" class="contents">
+  <input type="hidden" name="_csrf" value="{{ csrf_token }}" />
+  <input type="hidden" name="slug" value="{{ line.slug }}" />
+  <input type="hidden" name="return_to" value="{{ current_path }}" />
+  <button type="submit" class="cart-remove-item shrink-0 text-danger transition-opacity hover:opacity-70" aria-label="Remove {{ line.name }} from cart">
+    <i data-lucide="trash-2" class="size-5"></i>
+  </button>
+</form>

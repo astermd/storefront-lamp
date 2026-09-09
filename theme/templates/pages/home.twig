@@ -1,0 +1,440 @@
+{% extends 'layouts/marketing.twig' %}
+{# No page_title and no page_description: the homepage is the site, so it is
+   the one page whose metadata IS the configured default. Setting either here
+   would mean the same sentence lived in two files. #}
+{% block content %}
+
+  <!-- ==================== HERO ==================== -->
+  <section class="mx-auto max-w-[1440px] px-6 pb-8 pt-12 sm:pt-16 lg:px-[120px] lg:pb-10 lg:pt-20">
+    <div class="grid items-center gap-12 lg:grid-cols-2 lg:gap-10">
+      <div>
+        <p class="text-lg font-medium text-primary sm:text-xl">Your Health, Reimagined</p>
+        <h1 class="font-heading mt-4 max-w-[640px] text-[36px] font-bold leading-[1.15] text-heading sm:text-[48px] sm:leading-[1.15] lg:text-[60px] lg:leading-[70px]">
+          A Smarter Path to Longevity &amp; Wellness
+        </h1>
+        <p class="mt-8 max-w-[640px] text-base leading-6 text-body">
+          Connect with licensed physicians in minutes. Personalized care plans, seamless prescriptions, and ongoing support for your well-being.
+        </p>
+
+        <div class="mt-8 flex flex-wrap items-center gap-4 sm:mt-10">
+          <a href="#treatments" class="inline-flex items-center justify-center gap-2 rounded-sm bg-primary h-[41px] px-5 text-base font-medium sm:h-auto sm:py-3 text-primary-foreground transition-colors hover:bg-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-hover">
+            Explore Treatments
+            <i data-lucide="arrow-right" class="size-[14px]"></i>
+          </a>
+          <a href="#how-it-works" class="inline-flex items-center justify-center gap-2 rounded-sm border border-border bg-background h-[41px] px-5 text-base font-medium sm:h-auto sm:py-3 text-heading transition-colors hover:border-primary hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
+            How It Works
+          </a>
+        </div>
+
+        <ul class="mt-10 flex flex-wrap gap-x-8 gap-y-3">
+          <li class="flex items-center gap-2">
+            <i data-lucide="shield-plus" class="size-5 shrink-0 text-primary"></i>
+            <span class="text-sm font-medium text-body">HIPAA Compliant</span>
+          </li>
+          <li class="flex items-center gap-2">
+            <i data-lucide="circle-check" class="size-5 shrink-0 text-primary"></i>
+            <span class="text-sm font-medium text-body">LegitScript Certified</span>
+          </li>
+          <li class="flex items-center gap-2">
+            <i data-lucide="briefcase-medical" class="size-5 shrink-0 text-primary"></i>
+            <span class="text-sm font-medium text-body">Licensed Physicians</span>
+          </li>
+        </ul>
+      </div>
+
+      <div class="mx-auto w-full max-w-[480px] lg:mx-0 lg:max-w-none">
+        <img src="/assets/img/hero-doctor.png" alt="Smiling physician ready to consult with patients" class="aspect-square w-full rounded-xl object-cover object-bottom" width="480" height="480" />
+      </div>
+    </div>
+
+    <div class="mt-12 flex justify-center">
+      <img src="/assets/img/rating-badge.png" alt="Excellent rating: 4.5 out of 5 stars, 1,812 reviews on Trustpilot" class="h-auto w-[280px] sm:w-[490px]" width="490" height="35" />
+    </div>
+  </section>
+
+  <!-- ==================== WEIGHT-LOSS PROMO BANNER ==================== -->
+  <section class="mx-auto max-w-[1440px] px-6 pb-16 pt-6 lg:px-[120px] lg:pb-24">
+    <div class="relative isolate overflow-hidden rounded-xl">
+      <img src="/assets/img/promo-banner-bg.png" alt="Woman jumping joyfully outdoors, celebrating her weight-loss progress" class="absolute inset-0 h-full w-full object-cover" />
+
+      <!-- Carousel track -->
+      <!-- Horizontal padding is sized to clear the prev/next circular buttons
+           (size-11 at left-3/right-3 on mobile, size-12 at left-6/right-6 from sm
+           up). The background photo already has the woman on the left fading to
+           plain background on the right, so the text sits left-aligned in that
+           clear right-hand area instead of centered over the whole banner. -->
+      <div id="promo-track" class="relative flex min-h-[320px] items-center justify-end px-14 py-16 transition-opacity duration-150 sm:min-h-[360px] sm:px-20 lg:min-h-[320px]">
+        <div class="max-w-[510px] text-left">
+          <p class="text-[32px] font-bold leading-[1.2] text-primary-deep sm:text-[40px] lg:text-[48px] lg:leading-[58px]">
+            Start your <span class="font-light italic">weight loss</span> journey today!
+          </p>
+          <p class="mt-4 text-lg font-medium leading-[1.3] text-white sm:text-xl">Lose up to 20lbs in 2 weeks!</p>
+        </div>
+      </div>
+
+      <!-- Prev / Next -->
+      <button type="button" data-promo-prev class="group absolute left-3 top-1/2 flex size-11 -translate-y-1/2 items-center justify-center rounded-full bg-background shadow-sm transition-all hover:scale-110 hover:bg-divider hover:shadow-md active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary sm:left-6 sm:size-12" aria-label="Previous slide">
+        <i data-lucide="arrow-left" class="size-[17px] text-heading transition-colors group-hover:text-primary"></i>
+      </button>
+      <button type="button" data-promo-next class="group absolute right-3 top-1/2 flex size-11 -translate-y-1/2 items-center justify-center rounded-full bg-background shadow-sm transition-all hover:scale-110 hover:bg-divider hover:shadow-md active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary sm:right-6 sm:size-12" aria-label="Next slide">
+        <i data-lucide="arrow-right" class="size-[17px] text-heading transition-colors group-hover:text-primary"></i>
+      </button>
+
+      <!-- Dots -->
+      <div id="promo-dots" class="absolute bottom-5 left-1/2 flex -translate-x-1/2 gap-2" role="tablist" aria-label="Promo slides">
+        <button type="button" data-promo-dot="0" class="size-3 rounded-full bg-white transition-colors hover:bg-white/80" role="tab" aria-selected="true" aria-label="Slide 1"></button>
+        <button type="button" data-promo-dot="1" class="size-3 rounded-full bg-black/10 transition-colors hover:bg-black/20" role="tab" aria-selected="false" aria-label="Slide 2"></button>
+        <button type="button" data-promo-dot="2" class="size-3 rounded-full bg-black/10 transition-colors hover:bg-black/20" role="tab" aria-selected="false" aria-label="Slide 3"></button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== OUR TREATMENTS ==================== -->
+  <section id="treatments" class="mx-auto max-w-[1440px] px-6 pb-16 lg:px-[120px] lg:pb-24">
+    <div class="mx-auto max-w-[616px] text-center">
+      <h2 class="font-heading text-[28px] font-bold leading-tight text-heading sm:text-[34px] lg:text-[40px] lg:leading-[50px]">Our Treatments</h2>
+      <p class="mt-8 text-base leading-6 text-body">Specialized care programs designed for your specific needs</p>
+    </div>
+
+    {# Rendered from the catalog. #}
+    <div class="mt-10 grid gap-8 md:grid-cols-2">
+
+      {% for product in featured_products %}
+      <!-- Card: {{ product.name }} -->
+      <article class="flex flex-col justify-between rounded-[20px] border border-border bg-background p-6">
+        <div class="flex flex-col gap-5 sm:flex-row">
+          <div class="h-[140px] w-full shrink-0 overflow-hidden rounded-[16px] sm:w-[140px]">
+            <img src="{{ product.image }}" alt="{{ product.name }} medication packaging" class="h-full w-full object-cover" width="139" height="134" />
+          </div>
+          <div class="flex flex-1 flex-col justify-between py-0.5">
+            <div>
+              <h3 class="font-heading text-[18px] font-medium sm:text-[20px] text-heading">{{ product.name }}</h3>
+              <p class="mt-2 text-[15px] leading-relaxed text-body">{{ product.description }}</p>
+            </div>
+            <p class="mt-3 text-base font-semibold text-primary">Starting from {{ product.variants is defined and product.variants is not empty ? product.variants[0].price_cents|money : product.price_cents|money }}/mo</p>
+          </div>
+        </div>
+        <div class="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <a href="{{ url('/treatments') }}" class="inline-flex items-center justify-center gap-2 rounded-sm bg-primary h-[41px] px-5 text-base font-medium sm:h-auto sm:py-3 text-primary-foreground transition-colors hover:bg-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-hover">
+            Get Started
+            <i data-lucide="arrow-right" class="size-4"></i>
+          </a>
+          <a href="{{ url('/products/' ~ product.slug) }}" class="inline-flex items-center justify-center gap-2 rounded-sm border border-border bg-background h-[41px] px-5 text-base font-medium sm:h-auto sm:py-3 text-heading transition-colors hover:border-primary hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
+            Learn More
+            <i data-lucide="arrow-right" class="size-4"></i>
+          </a>
+        </div>
+      </article>
+      {% endfor %}
+
+    </div>
+  </section>
+
+  <!-- ==================== HOW YOUR TREATMENT WORKS ==================== -->
+  <section id="how-it-works" class="bg-surface-2 py-16 lg:py-24">
+    <div class="mx-auto max-w-[1440px] px-6 lg:px-[120px]">
+      <div class="mx-auto max-w-[616px] text-center">
+        <h2 class="font-heading text-[28px] font-bold leading-tight text-heading sm:text-[34px] lg:text-[40px] lg:leading-[50px]">How Your Treatment Works</h2>
+        <p class="mt-8 text-base leading-6 text-heading">Three simple steps to start your personalized healthcare journey today</p>
+      </div>
+
+      <div class="mt-10 grid gap-8 md:grid-cols-3">
+        <article class="rounded-lg border border-border bg-background p-8 text-center">
+          <span class="mx-auto flex size-16 items-center justify-center rounded-full bg-gradient-to-b from-primary to-primary-soft">
+            <i data-lucide="list-ordered" class="size-8 text-primary-foreground"></i>
+          </span>
+          <h3 class="font-heading mt-5 text-lg font-medium sm:text-xl text-heading"><span class="mr-1">1.</span>Online Assessment</h3>
+          <p class="mx-auto mt-3 max-w-[314px] text-base leading-6 text-body">Complete a brief, secure medical questionnaire about your health goals and history.</p>
+        </article>
+
+        <article class="rounded-lg border border-border bg-background p-8 text-center">
+          <span class="mx-auto flex size-16 items-center justify-center rounded-full bg-gradient-to-b from-primary to-primary-soft">
+            <i data-lucide="hospital" class="size-8 text-primary-foreground"></i>
+          </span>
+          <h3 class="font-heading mt-5 text-lg font-medium sm:text-xl text-heading"><span class="mr-1">2.</span>Provider Review</h3>
+          <p class="mx-auto mt-3 max-w-[314px] text-base leading-6 text-body">A licensed physician reviews your profile to determine the safest, most effective care plan.</p>
+        </article>
+
+        <article class="rounded-lg border border-border bg-background p-8 text-center">
+          <span class="mx-auto flex size-16 items-center justify-center rounded-full bg-gradient-to-b from-primary to-primary-soft">
+            <i data-lucide="pill-bottle" class="size-8 text-primary-foreground"></i>
+          </span>
+          <h3 class="font-heading mt-5 text-lg font-medium sm:text-xl text-heading"><span class="mr-1">3.</span>Ongoing Care</h3>
+          <p class="mx-auto mt-3 max-w-[314px] text-base leading-6 text-body">Receive your treatment directly to your door, with unlimited follow-ups via secure messaging.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== WHY CHOOSE US ==================== -->
+  <section id="about" class="mx-auto max-w-[1440px] px-6 py-16 lg:px-[120px] lg:py-24">
+    <div class="grid items-center gap-12 lg:grid-cols-2 lg:gap-20">
+      <div>
+        <h2 class="font-heading max-w-[616px] text-[28px] font-bold leading-tight text-heading sm:text-[34px] lg:text-[40px] lg:leading-[50px]">Why Choose Us</h2>
+        <p class="mt-8 max-w-[616px] text-base leading-6 text-heading">Experience the future of personalized healthcare with a platform built on trust and expertise.</p>
+
+        <div class="mt-10 grid grid-cols-1 gap-x-8 gap-y-5 sm:grid-cols-2">
+          <div class="flex items-center gap-3">
+            <i data-lucide="circle-check" class="size-6 shrink-0 text-primary"></i>
+            <span class="text-base font-medium text-heading">No Insurance Required</span>
+          </div>
+          <div class="flex items-center gap-3">
+            <i data-lucide="circle-check" class="size-6 shrink-0 text-primary"></i>
+            <span class="text-base font-medium text-heading">US-Licensed Physicians</span>
+          </div>
+          <div class="flex items-center gap-3">
+            <i data-lucide="circle-check" class="size-6 shrink-0 text-primary"></i>
+            <span class="text-base font-medium text-heading">No Hidden Fees</span>
+          </div>
+          <div class="flex items-center gap-3">
+            <i data-lucide="circle-check" class="size-6 shrink-0 text-primary"></i>
+            <span class="text-base font-medium text-heading">503A Certified Pharmacies</span>
+          </div>
+          <div class="flex items-center gap-3">
+            <i data-lucide="circle-check" class="size-6 shrink-0 text-primary"></i>
+            <span class="text-base font-medium text-heading">Fast Delivery in 2-4 Days</span>
+          </div>
+          <div class="flex items-center gap-3">
+            <i data-lucide="circle-check" class="size-6 shrink-0 text-primary"></i>
+            <span class="text-base font-medium text-heading">Flexible Subscriptions</span>
+          </div>
+        </div>
+      </div>
+
+      <img src="/assets/img/why-choose-us.png" alt="Physician consulting with a patient" class="h-[280px] w-full rounded-xl object-cover sm:h-[320px] lg:h-[320px]" width="480" height="320" />
+    </div>
+  </section>
+
+  <!-- ==================== TESTIMONIALS ==================== -->
+  <section class="mx-auto max-w-[1440px] px-6 pb-16 lg:px-[120px] lg:pb-24">
+    <div class="flex flex-col items-center justify-center gap-4 text-center sm:flex-row sm:items-center sm:justify-between sm:text-left">
+      <h2 class="font-heading text-[28px] font-bold leading-tight text-heading sm:text-[34px] lg:text-[40px] lg:leading-[50px]">What Our Patients Say</h2>
+      <img src="/assets/img/rating-badge.png" alt="Excellent rating: 4.5 out of 5 stars, 1,812 reviews on Trustpilot" class="h-auto w-[220px] sm:w-[490px]" width="490" height="35" />
+    </div>
+
+    <div class="relative mt-10 rounded-2xl sm:rounded-3xl bg-surface-2 py-8 px-12 sm:py-10 sm:px-16 lg:py-12 lg:px-20">
+      <button type="button" data-testimonial-prev class="group absolute left-2 sm:left-4 top-1/2 z-10 flex size-10 sm:size-12 -translate-y-1/2 items-center justify-center rounded-full bg-white shadow-md transition-all hover:scale-105 hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:pointer-events-none disabled:opacity-40" aria-label="Previous testimonial">
+        <i data-lucide="arrow-left" class="size-4 sm:size-5 text-heading transition-colors group-hover:text-primary"></i>
+      </button>
+
+      <div id="testimonial-track" class="flex snap-x snap-mandatory overflow-x-auto scroll-smooth [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <figure class="w-full min-w-full shrink-0 basis-full snap-start sm:min-w-0 sm:w-1/2 sm:basis-1/2 sm:pr-6 lg:pr-10 sm:border-r-2 sm:border-white">
+          <span class="flex items-center gap-1" role="img" aria-label="5 out of 5 stars">
+            <i data-lucide="star" class="size-5 fill-warning text-warning" aria-hidden="true"></i>
+            <i data-lucide="star" class="size-5 fill-warning text-warning" aria-hidden="true"></i>
+            <i data-lucide="star" class="size-5 fill-warning text-warning" aria-hidden="true"></i>
+            <i data-lucide="star" class="size-5 fill-warning text-warning" aria-hidden="true"></i>
+            <i data-lucide="star" class="size-5 fill-warning text-warning" aria-hidden="true"></i>
+          </span>
+          <blockquote class="mt-4 text-base italic leading-6 text-heading">
+            &ldquo;The weight loss program changed my life. The doctors are supportive and the process is so simple.&rdquo;
+          </blockquote>
+          <figcaption class="mt-6 flex items-center gap-3">
+            <img src="/assets/img/avatar-sarah.png" alt="" class="size-12 rounded-full object-cover" width="48" height="48" />
+            <span class="text-base font-medium text-heading">— Sarah J., Weight Loss Patient</span>
+          </figcaption>
+        </figure>
+
+        <figure class="w-full min-w-full shrink-0 basis-full snap-start sm:snap-align-none sm:min-w-0 sm:w-1/2 sm:basis-1/2 sm:pl-6 lg:pl-10">
+          <span class="flex items-center gap-1" role="img" aria-label="5 out of 5 stars">
+            <i data-lucide="star" class="size-5 fill-warning text-warning" aria-hidden="true"></i>
+            <i data-lucide="star" class="size-5 fill-warning text-warning" aria-hidden="true"></i>
+            <i data-lucide="star" class="size-5 fill-warning text-warning" aria-hidden="true"></i>
+            <i data-lucide="star" class="size-5 fill-warning text-warning" aria-hidden="true"></i>
+            <i data-lucide="star" class="size-5 fill-warning text-warning" aria-hidden="true"></i>
+          </span>
+          <blockquote class="mt-4 text-base italic leading-6 text-heading">
+            &ldquo;I was skeptical about hair loss treatments, but the results speak for themselves. Highly recommend!&rdquo;
+          </blockquote>
+          <figcaption class="mt-6 flex items-center gap-3">
+            <img src="/assets/img/avatar-michael.png" alt="" class="size-12 rounded-full object-cover" width="48" height="48" />
+            <span class="text-base font-medium text-heading">— Michael R., Hair Loss Patient</span>
+          </figcaption>
+        </figure>
+
+        <!-- NOTE: these patients have no real photos yet (placeholder avatar icon
+             tiles below) — swap in real images once they're exported. -->
+        <figure class="w-full min-w-full shrink-0 basis-full snap-start sm:min-w-0 sm:w-1/2 sm:basis-1/2 sm:pr-6 lg:pr-10 sm:border-r-2 sm:border-white">
+          <span class="flex items-center gap-1" role="img" aria-label="5 out of 5 stars">
+            <i data-lucide="star" class="size-5 fill-warning text-warning" aria-hidden="true"></i>
+            <i data-lucide="star" class="size-5 fill-warning text-warning" aria-hidden="true"></i>
+            <i data-lucide="star" class="size-5 fill-warning text-warning" aria-hidden="true"></i>
+            <i data-lucide="star" class="size-5 fill-warning text-warning" aria-hidden="true"></i>
+            <i data-lucide="star" class="size-5 fill-warning text-warning" aria-hidden="true"></i>
+          </span>
+          <blockquote class="mt-4 text-base italic leading-6 text-heading">
+            &ldquo;My energy and focus completely turned around within a couple months. The doctors actually listen and adjust the plan with you.&rdquo;
+          </blockquote>
+          <figcaption class="mt-6 flex items-center gap-3">
+            <span class="flex size-12 shrink-0 items-center justify-center rounded-full bg-surface">
+              <i data-lucide="user-round" class="size-6 text-icon-muted"></i>
+            </span>
+            <span class="text-base font-medium text-heading">— David K., Hormone Balance Patient</span>
+          </figcaption>
+        </figure>
+
+        <figure class="w-full min-w-full shrink-0 basis-full snap-start sm:snap-align-none sm:min-w-0 sm:w-1/2 sm:basis-1/2 sm:pl-6 lg:pl-10">
+          <span class="flex items-center gap-1" role="img" aria-label="5 out of 5 stars">
+            <i data-lucide="star" class="size-5 fill-warning text-warning" aria-hidden="true"></i>
+            <i data-lucide="star" class="size-5 fill-warning text-warning" aria-hidden="true"></i>
+            <i data-lucide="star" class="size-5 fill-warning text-warning" aria-hidden="true"></i>
+            <i data-lucide="star" class="size-5 fill-warning text-warning" aria-hidden="true"></i>
+            <i data-lucide="star" class="size-5 fill-warning text-warning" aria-hidden="true"></i>
+          </span>
+          <blockquote class="mt-4 text-base italic leading-6 text-heading">
+            &ldquo;Discreet, fast, and the consultation felt like talking to a real doctor who cared. My confidence is back.&rdquo;
+          </blockquote>
+          <figcaption class="mt-6 flex items-center gap-3">
+            <span class="flex size-12 shrink-0 items-center justify-center rounded-full bg-surface">
+              <i data-lucide="user-round" class="size-6 text-icon-muted"></i>
+            </span>
+            <span class="text-base font-medium text-heading">— Priya N., Sexual Health Patient</span>
+          </figcaption>
+        </figure>
+
+        <figure class="w-full min-w-full shrink-0 basis-full snap-start sm:min-w-0 sm:w-1/2 sm:basis-1/2 sm:pr-6 lg:pr-10 sm:border-r-2 sm:border-white">
+          <span class="flex items-center gap-1" role="img" aria-label="5 out of 5 stars">
+            <i data-lucide="star" class="size-5 fill-warning text-warning" aria-hidden="true"></i>
+            <i data-lucide="star" class="size-5 fill-warning text-warning" aria-hidden="true"></i>
+            <i data-lucide="star" class="size-5 fill-warning text-warning" aria-hidden="true"></i>
+            <i data-lucide="star" class="size-5 fill-warning text-warning" aria-hidden="true"></i>
+            <i data-lucide="star" class="size-5 fill-warning text-warning" aria-hidden="true"></i>
+          </span>
+          <blockquote class="mt-4 text-base italic leading-6 text-heading">
+            &ldquo;Down 22 pounds and still going. Having the medication shipped straight to my door makes it so easy to stay consistent.&rdquo;
+          </blockquote>
+          <figcaption class="mt-6 flex items-center gap-3">
+            <span class="flex size-12 shrink-0 items-center justify-center rounded-full bg-surface">
+              <i data-lucide="user-round" class="size-6 text-icon-muted"></i>
+            </span>
+            <span class="text-base font-medium text-heading">— Jessica T., Weight Loss Patient</span>
+          </figcaption>
+        </figure>
+
+        <figure class="w-full min-w-full shrink-0 basis-full snap-start sm:snap-align-none sm:min-w-0 sm:w-1/2 sm:basis-1/2 sm:pl-6 lg:pl-10">
+          <span class="flex items-center gap-1" role="img" aria-label="5 out of 5 stars">
+            <i data-lucide="star" class="size-5 fill-warning text-warning" aria-hidden="true"></i>
+            <i data-lucide="star" class="size-5 fill-warning text-warning" aria-hidden="true"></i>
+            <i data-lucide="star" class="size-5 fill-warning text-warning" aria-hidden="true"></i>
+            <i data-lucide="star" class="size-5 fill-warning text-warning" aria-hidden="true"></i>
+            <i data-lucide="star" class="size-5 fill-warning text-warning" aria-hidden="true"></i>
+          </span>
+          <blockquote class="mt-4 text-base italic leading-6 text-heading">
+            &ldquo;Noticeable regrowth by month three. Wish I hadn't waited so long to finally try it.&rdquo;
+          </blockquote>
+          <figcaption class="mt-6 flex items-center gap-3">
+            <span class="flex size-12 shrink-0 items-center justify-center rounded-full bg-surface">
+              <i data-lucide="user-round" class="size-6 text-icon-muted"></i>
+            </span>
+            <span class="text-base font-medium text-heading">— Marcus L., Hair Loss Patient</span>
+          </figcaption>
+        </figure>
+      </div>
+
+      <button type="button" data-testimonial-next class="group absolute right-2 sm:right-4 top-1/2 z-10 flex size-10 sm:size-12 -translate-y-1/2 items-center justify-center rounded-full bg-white shadow-md transition-all hover:scale-105 hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:pointer-events-none disabled:opacity-40" aria-label="Next testimonial">
+        <i data-lucide="arrow-right" class="size-4 sm:size-5 text-heading transition-colors group-hover:text-primary"></i>
+      </button>
+    </div>
+  </section>
+
+  <!-- ==================== FAQ ==================== -->
+  <section class="bg-surface py-16 lg:py-24">
+    <div class="mx-auto max-w-[1440px] px-6 lg:px-[120px]">
+      <h2 class="font-heading text-center text-[28px] font-bold leading-tight text-heading sm:text-[34px] lg:text-[40px] lg:leading-[50px]">Frequently Asked Questions</h2>
+
+      <div class="mx-auto max-w-[768px]">
+        <div class="mt-10 divide-y divide-border rounded-lg border border-border bg-background" id="faq-accordion">
+
+        <div class="faq-item" data-open="true">
+          <button type="button" class="faq-trigger flex w-full items-center justify-between gap-4 px-6 py-5 text-left sm:px-8" aria-expanded="true">
+            <span class="flex items-start gap-3 sm:gap-4">
+              <span class="faq-qa shrink-0 text-base text-icon-muted">Q</span>
+              <span class="faq-question text-base font-medium text-primary">Are your treatment safe / FDA approved?</span>
+            </span>
+            <i data-lucide="chevron-down" class="faq-chevron size-5 shrink-0 rotate-180 text-primary transition-transform"></i>
+          </button>
+          <div class="faq-panel overflow-hidden px-6 sm:px-8">
+            <p class="flex gap-3 pb-5 sm:gap-4">
+              <span class="shrink-0 text-base text-icon-muted">A</span>
+              <span class="text-base leading-6 text-heading">Yes. All our physicians are board-certified and licensed in your state. We follow strict clinical guidelines to ensure your safety and privacy.</span>
+            </p>
+          </div>
+        </div>
+
+        <div class="faq-item" data-open="false">
+          <button type="button" class="faq-trigger flex w-full items-center justify-between gap-4 px-6 py-5 text-left sm:px-8" aria-expanded="false">
+            <span class="flex items-start gap-3 sm:gap-4">
+              <span class="faq-qa shrink-0 text-base text-icon-muted">Q</span>
+              <span class="faq-question text-base font-medium text-heading">How do I know if I qualify for a treatment?</span>
+            </span>
+            <i data-lucide="chevron-down" class="faq-chevron size-5 shrink-0 text-heading transition-transform"></i>
+          </button>
+          <div class="faq-panel grid-rows-[0fr] overflow-hidden px-6 sm:px-8" style="max-height:0">
+            <p class="flex gap-3 pb-5 sm:gap-4">
+              <span class="shrink-0 text-base text-icon-muted">A</span>
+              <span class="text-base leading-6 text-heading">Our licensed providers review your medical questionnaire and history to determine which treatments are safe and appropriate for you.</span>
+            </p>
+          </div>
+        </div>
+
+        <div class="faq-item" data-open="false">
+          <button type="button" class="faq-trigger flex w-full items-center justify-between gap-4 px-6 py-5 text-left sm:px-8" aria-expanded="false">
+            <span class="flex items-start gap-3 sm:gap-4">
+              <span class="faq-qa shrink-0 text-base text-icon-muted">Q</span>
+              <span class="faq-question text-base font-medium text-heading">Do I need insurance?</span>
+            </span>
+            <i data-lucide="chevron-down" class="faq-chevron size-5 shrink-0 text-heading transition-transform"></i>
+          </button>
+          <div class="faq-panel overflow-hidden px-6 sm:px-8" style="max-height:0">
+            <p class="flex gap-3 pb-5 sm:gap-4">
+              <span class="shrink-0 text-base text-icon-muted">A</span>
+              <span class="text-base leading-6 text-heading">No. Our treatments and consultations are available without insurance, with transparent, upfront pricing.</span>
+            </p>
+          </div>
+        </div>
+
+        <div class="faq-item" data-open="false">
+          <button type="button" class="faq-trigger flex w-full items-center justify-between gap-4 px-6 py-5 text-left sm:px-8" aria-expanded="false">
+            <span class="flex items-start gap-3 sm:gap-4">
+              <span class="faq-qa shrink-0 text-base text-icon-muted">Q</span>
+              <span class="faq-question text-base font-medium text-heading">Can I cancel my prescription / subscription anytime?</span>
+            </span>
+            <i data-lucide="chevron-down" class="faq-chevron size-5 shrink-0 text-heading transition-transform"></i>
+          </button>
+          <div class="faq-panel overflow-hidden px-6 sm:px-8" style="max-height:0">
+            <p class="flex gap-3 pb-5 sm:gap-4">
+              <span class="shrink-0 text-base text-icon-muted">A</span>
+              <span class="text-base leading-6 text-heading">Yes, you can pause or cancel your subscription at any time from your patient dashboard with no long-term commitment.</span>
+            </p>
+          </div>
+        </div>
+
+      </div>
+
+        <p class="mt-8 text-center text-base leading-6 text-body">Have unanswered questions about our treatments?</p>
+        <div class="mt-4 flex justify-center">
+          <a href="#contact" class="inline-flex items-center justify-center gap-2 rounded-sm bg-primary h-[41px] px-5 text-base font-medium sm:h-auto sm:py-3 text-primary-foreground transition-colors hover:bg-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-hover">
+            Contact Us
+            <i data-lucide="arrow-right" class="size-[14px]"></i>
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== CTA ==================== -->
+  <section class="relative isolate overflow-hidden bg-primary py-16 lg:py-24">
+    <div class="absolute inset-0 -z-10 overflow-hidden opacity-20">
+      <img src="/assets/img/cta-pattern.jpg" alt="" class="h-full w-full object-cover" />
+    </div>
+    <div class="mx-auto max-w-[655px] px-6 text-center">
+      <h2 class="font-heading text-[28px] font-bold leading-tight text-primary-foreground sm:text-[34px] lg:text-[40px] lg:leading-[50px]">Start Your Transformation Today!</h2>
+      <p class="mt-8 text-base leading-6 text-primary-foreground">Join thousands of patients who have taken control of their health with us. Expert care is just a few clicks away.</p>
+      <a href="#treatments" class="mt-8 inline-flex items-center justify-center gap-2 rounded-sm bg-primary-foreground h-[41px] px-5 text-base font-medium sm:mt-10 sm:h-auto sm:py-3 text-primary transition-colors hover:bg-primary-light focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-foreground">
+        Start Your Journey Today
+        <i data-lucide="arrow-right" class="size-[14px]"></i>
+      </a>
+    </div>
+  </section>
+
+{% endblock %}

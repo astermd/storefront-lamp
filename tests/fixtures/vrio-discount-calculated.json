@@ -1,0 +1,52 @@
+{
+    "success": true,
+    "message": "",
+    "data": {
+        "offers": [
+            {
+                "offer_id": 337,
+                "offer_price": "120.00",
+                "offer_quantity": 1,
+                "offer_price_total": "120.00",
+                "offer_total_discount": "12.00",
+                "offer_discounted_price_total": "108.00",
+                "discount_details": {
+                    "total_discount": "12.00",
+                    "label": "-$12.00 (10% off) (discount code)",
+                    "cart_label": "-$12.00 (NEW10)",
+                    "quantity_description": "",
+                    "order_discount_total": "0.00",
+                    "dunning_discount_total": "0.00",
+                    "quantity_discount_total": "0.00",
+                    "discount_code_discount_total": "12.00",
+                    "promotional_profile_discount_total": "0.00",
+                    "per_offer": "108.00",
+                    "discount_code_valid": true,
+                    "discount_code_message": "Discount code is valid"
+                }
+            },
+            {
+                "offer_id": 338,
+                "offer_price": "270.00",
+                "offer_quantity": 1,
+                "offer_price_total": "270.00",
+                "offer_total_discount": "27.00",
+                "offer_discounted_price_total": "243.00",
+                "discount_details": {
+                    "total_discount": "27.00",
+                    "label": "-$27.00 (10% off) (discount code)",
+                    "cart_label": "-$27.00 (NEW10)",
+                    "quantity_description": "",
+                    "order_discount_total": "0.00",
+                    "dunning_discount_total": "0.00",
+                    "quantity_discount_total": "0.00",
+                    "discount_code_discount_total": "27.00",
+                    "promotional_profile_discount_total": "0.00",
+                    "per_offer": "243.00",
+                    "discount_code_valid": true,
+                    "discount_code_message": "Discount code is valid"
+                }
+            }
+        ]
+    }
+}

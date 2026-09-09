@@ -1,0 +1,108 @@
+{# Transcribed from the static design mockup (verify page). STEP PROGRESS moved into
+   partials/stepper.twig (Verify & Review active, no progress fill — the three earlier
+   connectors render as completed/checkmark).
+
+   `[22.13]`–`[22.21]`: the mockup's controls are a real form here. The page
+   posts to /verify/ and works with scripting off; theme/js/verify.js only guards
+   against a doubled click.
+
+   DEVIATION from the design source — the ID upload. The mockup's dropzone and camera
+   button are kept as markup because the design is a deliverable, and rendered DISABLED
+   because nothing here receives a document: `[22.21]` puts identity documents under a
+   retention policy that is not built, and a control that accepts a file and discards it
+   is worse than one that says so. The form is not multipart, so no file can be sent
+   even if the attribute were removed by hand. The mockup's two paragraphs promising an
+   upload are replaced for the same reason — they described something the storefront
+   cannot do.
+
+   DEVIATION from the design source — the SSN box. Rendered only when identity checks
+   are live AND a configured check actually names `ssn` (see
+   VerificationStep::collectsSsn()). In the shipped configuration it is absent: asking
+   for the most sensitive datum in the funnel for a check that cannot run is what
+   `[22.21]` forbids. #}
+{% extends 'layouts/funnel.twig' %}
+{% set page_title = 'Intake: Verify & Review' %}
+{% set page_description = 'AsterMD intake: securely verify your identity to complete your physician review.' %}
+{% block content %}
+
+  <!-- ==================== STEP PROGRESS ==================== -->
+  {% include 'partials/stepper.twig' with {
+    steps: [
+      { label: 'Eligibility', icon: 'gauge' },
+      { label: 'Contact', icon: 'user' },
+      { label: 'Medical', icon: 'list-ordered' },
+      { label: 'Verify & Review', icon: 'user-check' },
+    ],
+    active: 4,
+  } %}
+
+  <!-- ==================== SECURE IDENTITY VERIFICATION ==================== -->
+  <section class="mx-auto max-w-[660px] px-6 py-16">
+    <h1 class="font-heading text-center text-[24px] font-bold leading-tight sm:text-[28px] text-heading">Secure Identity Verification</h1>
+
+    {% if verification_notice is defined and verification_notice %}
+      {# `[20.1]`: only a refused identity is styled and worded as a failed check. An
+         inconclusive outcome — the provider deciding nothing, our own request being
+         rejected, the integration being inactive — is not a statement about the buyer.
+
+         verification_held is a separate flag and carries no colour of its own: it says the
+         journey has stopped here, which is worth announcing to a screen reader whatever the
+         outcome behind it, and is not a claim that anything is wrong with the buyer. #}
+      <p role="{{ verification_failed|default(false) or verification_held|default(false) ? 'alert' : 'status' }}" class="mx-auto mt-6 max-w-[560px] rounded-sm border-2 px-5 py-4 text-center text-base leading-6 {{ verification_failed|default(false) ? 'border-danger text-danger' : 'border-border text-body' }}">
+        {{ verification_notice }}
+      </p>
+    {% endif %}
+
+    <p class="mx-auto mt-6 max-w-[560px] text-center text-base leading-6 text-body">
+      We confirm your identity from the details you have already given us, so there is nothing more to enter here.
+    </p>
+    <p class="mx-auto mt-4 max-w-[560px] text-center text-base leading-6 text-body">
+      A government-issued ID is still required by your doctor during the review, and by your pharmacy to ship your medication. <span class="font-medium text-heading">You will be asked for it there, not here.</span>
+    </p>
+
+    <form method="post" action="{{ url('/verify/') }}" novalidate>
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}" />
+
+      <div class="mt-8 flex flex-col items-center justify-center gap-3 rounded-sm border-2 border-dashed border-border-darker bg-background px-6 py-14 text-center opacity-60">
+        <input type="file" accept="image/*,.pdf" class="sr-only" disabled aria-hidden="true" tabindex="-1" />
+        <i data-lucide="upload" class="size-8 text-icon-muted"></i>
+        <p class="text-base text-body">Sending us a copy of your ID is not part of this step.</p>
+      </div>
+
+      <button type="button" disabled aria-disabled="true" class="mt-4 inline-flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-sm border-2 border-border bg-background h-[41px] px-5 text-base font-medium opacity-60 sm:h-auto sm:py-4 text-heading">
+        <i data-lucide="camera" class="size-5"></i>
+        Take a photo of your ID
+      </button>
+
+      {% if collect_ssn|default(false) %}
+        <div class="mt-6 flex items-center gap-4">
+          <span class="h-px flex-1 bg-border"></span>
+          <span class="text-sm font-medium text-muted">OR</span>
+          <span class="h-px flex-1 bg-border"></span>
+        </div>
+
+        <label for="verify-ssn" class="sr-only">Last 4 digits of your Social Security Number</label>
+        <input id="verify-ssn" name="ssn" type="text" inputmode="numeric" maxlength="4" autocomplete="off" spellcheck="false" placeholder="Enter the last 4 digits of your SSN" class="mt-6 w-full rounded-sm border-2 border-border bg-background px-5 py-4 text-center text-base text-heading placeholder:text-muted transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" />
+      {% endif %}
+
+      <div class="mt-8 grid grid-cols-2 gap-4">
+        <a href="{{ url(back_path|default('/intake/medical/')) }}" class="inline-flex w-full items-center justify-center gap-2 rounded-sm border-2 border-border bg-background h-[41px] px-5 text-base font-medium sm:h-auto sm:py-4 text-heading transition-colors hover:border-primary hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
+          <i data-lucide="arrow-left" class="size-[14px]"></i>
+          Back
+        </a>
+        <button type="submit" id="verify-submit" class="inline-flex w-full items-center justify-center gap-2 rounded-sm bg-primary h-[41px] px-5 text-base font-medium sm:h-auto sm:py-4 text-primary-foreground transition-colors hover:bg-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-hover disabled:cursor-not-allowed disabled:opacity-60">
+          {# The button is the only thing on this page that can move a held buyer, so it says
+             so. Held means the gate has just refused them and re-running the check is the
+             action the notice above points at. #}
+          <span id="verify-submit-label">{{ verification_held|default(false) ? 'Try again' : 'Submit' }}</span>
+          <i data-lucide="arrow-right" id="verify-submit-icon" class="size-[14px]"></i>
+        </button>
+      </div>
+    </form>
+  </section>
+
+{% endblock %}
+{% block scripts %}
+{{ parent() }}
+<script src="{{ asset('verify.js') }}" defer></script>
+{% endblock %}

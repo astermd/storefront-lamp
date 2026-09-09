@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+{# Every page's <head> metadata is written here and nowhere else.
+
+   A page contributes what it knows about itself by setting `page_title`,
+   `page_description` and `page_type` before this layout renders; everything it
+   leaves unset falls through to the configured default ([24.4]). Pages state
+   plain text — the escaping happens once, on the way out, here.
+
+   The single writer matters most for the indexing directive. Four funnel pages
+   used to hard-code a <meta name="robots"> of their own on top of the one this
+   layout rendered from a controller variable, so the same decision was written
+   twice with two different values. It now comes from the robots policy, which
+   is also what the response header and the sitemap are derived from ([24.2],
+   [24.6]). `noindex` stays available as a page-level escalation for a page that
+   knows it must not be indexed for a reason its path cannot express — the error
+   pages are exactly that — but it can only refuse indexing, never grant it. #}
+{% set page_meta = seo.page.with(page_title|default(null), page_description|default(null), page_type|default(null)) %}
+{% set page_robots = (noindex is defined and noindex) ? seo.refused : page_meta.robots %}
+<title>{{ page_meta.title }}</title>
+<meta name="description" content="{{ page_meta.description }}" />
+<link rel="canonical" href="{{ page_meta.canonical }}" />
+{% if page_robots %}
+<meta name="robots" content="{{ page_robots }}" />
+{% endif %}
+<meta property="og:type" content="{{ page_meta.social.type }}" />
+<meta property="og:site_name" content="{{ page_meta.social.site_name }}" />
+<meta property="og:title" content="{{ page_meta.social.title }}" />
+<meta property="og:description" content="{{ page_meta.social.description }}" />
+<meta property="og:url" content="{{ page_meta.social.url }}" />
+{# A deployment with no social image renders no image tag at all: a card
+   pointing at an image that does not exist is what a crawler caches. #}
+{% if page_meta.social.image %}
+<meta property="og:image" content="{{ page_meta.social.image }}" />
+{% endif %}
+<meta name="twitter:card" content="{{ page_meta.social.image ? 'summary_large_image' : 'summary' }}" />
+<meta name="twitter:title" content="{{ page_meta.social.title }}" />
+<meta name="twitter:description" content="{{ page_meta.social.description }}" />
+{% if page_meta.social.image %}
+<meta name="twitter:image" content="{{ page_meta.social.image }}" />
+{% endif %}
+{# For anything a single page needs on top of the above. Nothing that belongs
+   to every page goes in here — that is what the block above is for. #}
+{% block meta %}{% endblock %}
+{# The page's schema.org document, which renders nothing at all unless the page
+   published one and the deployment left its emitter switched on ([24.8]).
+
+   Not on a page that escalated to `noindex` on its own account. The document
+   is assembled from the path alone, so an error page — served at any URL at
+   all — was being handed the site-level Organization/WebSite graph: site
+   identity rather than a false claim about the missing page, so noise rather
+   than a lie, but noise a crawler may act on. The escalation is the right
+   condition and the resolved directive is not: with [24.7]'s master switch on,
+   every page carries `noindex` and gating on that would take structured data
+   off the whole site. `noindex` set by the template is narrower — it means
+   "this is not a document", which is exactly and only what the three error
+   pages say about themselves. Suppressed here rather than in the partial
+   because this layout is where the head's metadata decisions are made; the
+   partial stays a renderer of whatever it is given. #}
+{% if not (noindex is defined and noindex) %}
+{% include 'partials/structured-data.twig' ignore missing %}
+{% endif %}
+<link rel="stylesheet" href="{{ asset('app.css') }}" />
+<script src="{{ asset('lucide.min.js') }}" defer></script>
+</head>
+<body class="bg-background font-body text-heading antialiased{% block body_class %}{% endblock %}">
+{# `page` defaults to rendering `content` directly so templates extending base.twig
+   without a marketing/funnel/checkout layout (e.g. the error pages) keep working
+   unchanged; marketing/funnel/checkout layouts override `page` wholesale with
+   header + content + footer. #}
+{% block page %}{% block content %}{% endblock %}{% endblock %}
+{# Lucide's script is `defer`red (see <head>), so icons must be created after
+   DOMContentLoaded rather than inline at the end of <body> as the mockup does —
+   deviation for correctness, visual result identical. #}
+<script>window.addEventListener('DOMContentLoaded', function () { if (window.lucide) lucide.createIcons(); });</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

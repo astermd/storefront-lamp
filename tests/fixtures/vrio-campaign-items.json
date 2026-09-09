@@ -1,0 +1,169 @@
+{
+    "success": true,
+    "message": "",
+    "data": {
+        "total": 20,
+        "campaign_items": [
+            {
+                "item_id": 2847,
+                "item_name": "Anti-Nausea Kit (Ondansetron)",
+                "item_active": true,
+                "item_price": "29.00",
+                "item_shippable": true,
+                "item_sku": "NAUS-KIT"
+            },
+            {
+                "item_id": 2845,
+                "item_name": "At-home Hormone Lab Panel",
+                "item_active": true,
+                "item_price": "89.00",
+                "item_shippable": true,
+                "item_sku": "LAB-HORM"
+            },
+            {
+                "item_id": 2843,
+                "item_name": "Berberine 500 mg (60 ct)",
+                "item_active": true,
+                "item_price": "29.00",
+                "item_shippable": true,
+                "item_sku": "BERB-500"
+            },
+            {
+                "item_id": 2844,
+                "item_name": "Electrolyte Powder (30 servings)",
+                "item_active": true,
+                "item_price": "19.00",
+                "item_shippable": true,
+                "item_sku": "ELEC-PWD"
+            },
+            {
+                "item_id": 2841,
+                "item_name": "Enclomiphene 12.5 mg",
+                "item_active": true,
+                "item_price": "149.00",
+                "item_shippable": true,
+                "item_sku": "ENCL-125"
+            },
+            {
+                "item_id": 2842,
+                "item_name": "Enclomiphene 25 mg",
+                "item_active": true,
+                "item_price": "149.00",
+                "item_shippable": true,
+                "item_sku": "ENCL-25"
+            },
+            {
+                "item_id": 2849,
+                "item_name": "Men's Daily Multivitamin",
+                "item_active": true,
+                "item_price": "19.00",
+                "item_shippable": true,
+                "item_sku": "MENS-MV"
+            },
+            {
+                "item_id": 3412,
+                "item_name": "NAD+ (1000MG)",
+                "item_active": true,
+                "item_price": "200.00",
+                "item_shippable": true,
+                "item_sku": null
+            },
+            {
+                "item_id": 3411,
+                "item_name": "NAD+ (500MG)",
+                "item_active": true,
+                "item_price": "100.00",
+                "item_shippable": true,
+                "item_sku": null
+            },
+            {
+                "item_id": 2835,
+                "item_name": "Semaglutide 0.25 mg",
+                "item_active": true,
+                "item_price": "299.00",
+                "item_shippable": true,
+                "item_sku": "SEMA-025"
+            },
+            {
+                "item_id": 2836,
+                "item_name": "Semaglutide 0.5 mg",
+                "item_active": true,
+                "item_price": "299.00",
+                "item_shippable": true,
+                "item_sku": "SEMA-05"
+            },
+            {
+                "item_id": 2837,
+                "item_name": "Semaglutide 1.0 mg",
+                "item_active": true,
+                "item_price": "299.00",
+                "item_shippable": true,
+                "item_sku": "SEMA-1"
+            },
+            {
+                "item_id": 2848,
+                "item_name": "Sharps Disposal Container",
+                "item_active": true,
+                "item_price": "15.00",
+                "item_shippable": true,
+                "item_sku": "SHRP-CONT"
+            },
+            {
+                "item_id": 2846,
+                "item_name": "Syringe Kit (5-pack)",
+                "item_active": true,
+                "item_price": "0.00",
+                "item_shippable": true,
+                "item_sku": "SYR-KIT"
+            },
+            {
+                "item_id": 2839,
+                "item_name": "Tadalafil 10 mg PRN",
+                "item_active": true,
+                "item_price": "49.00",
+                "item_shippable": true,
+                "item_sku": "TADA-10P"
+            },
+            {
+                "item_id": 2840,
+                "item_name": "Tadalafil 20 mg PRN",
+                "item_active": true,
+                "item_price": "49.00",
+                "item_shippable": true,
+                "item_sku": "TADA-20P"
+            },
+            {
+                "item_id": 2838,
+                "item_name": "Tadalafil 5 mg Daily",
+                "item_active": true,
+                "item_price": "49.00",
+                "item_shippable": true,
+                "item_sku": "TADA-5D"
+            },
+            {
+                "item_id": 3413,
+                "item_name": "Testosterone Injectable",
+                "item_active": true,
+                "item_price": "299.00",
+                "item_shippable": true,
+                "item_sku": null
+            },
+            {
+                "item_id": 3415,
+                "item_name": "Tirzepatide (10mg)",
+                "item_active": true,
+                "item_price": "270.00",
+                "item_shippable": true,
+                "item_sku": null
+            },
+            {
+                "item_id": 3414,
+                "item_name": "Tirzepatide (5mg)",
+                "item_active": true,
+                "item_price": "120.00",
+                "item_shippable": true,
+                "item_sku": null
+            }
+        ]
+    }
+}

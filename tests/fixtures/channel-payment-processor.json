@@ -1,0 +1,14 @@
+{
+    "_id": "cccccccccccccccccccccccc",
+    "name": "CC Sandbox Account",
+    "provider_category": "vrio",
+    "status": 1,
+    "type": "payment_aggregation",
+    "config": {
+        "integration_name": "CC Sandbox Account",
+        "api_endpoint": "https://api.vrio.app",
+        "api_key": "test-api-key-placeholder",
+        "connection_id": "1",
+        "campaign_id": "147"
+    }
+}

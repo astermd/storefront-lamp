@@ -1,0 +1,17 @@
+{% include 'partials/intake/field-label.twig' with { field: field } only %}
+<div class="mt-8">
+  <input
+    id="intake-{{ field.name }}"
+    name="{{ field.name }}"
+    type="{{ field.input_type }}"
+    value="{{ field.value }}"
+    {% if field.placeholder %}placeholder="{{ field.placeholder }}"{% endif %}
+    {% if field.required %}required aria-required="true"{% endif %}
+    {% if field.disabled %}disabled{% endif %}
+    {% if field.readonly %}readonly{% endif %}
+    {% if field.max_length %}maxlength="{{ field.max_length }}"{% endif %}
+    {% if field.error %}aria-invalid="true" aria-describedby="{{ field.error_id }}"{% endif %}
+    class="w-full rounded-sm border-2 border-border bg-background py-4 pl-5 pr-5 text-center text-base text-heading placeholder:text-muted transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-60 aria-[invalid=true]:border-danger sm:text-lg"
+  />
+  {% include 'partials/intake/field-error.twig' with { field: field } only %}
+</div>

@@ -1,0 +1,84 @@
+{# Mode A. The hosted engine draws the fields from the same
+   definition mode C renders itself, so switching renderers changes who paints
+   the questionnaire and nothing about what it means ([28.3]).
+
+   The engine also shows its own eligibility notices, but it does not decide
+   anything: its alerts are display-only and its navigation consults no
+   eligibility state, so the submit round trip is the gate. A hard rule is
+   enforced by the server on every save and on submit ([10.45]). #}
+{% extends 'layouts/funnel.twig' %}
+{% set page_title = form_title %}
+{% block meta %}
+{# A declared exception to the local-asset rule, alongside provider-hosted
+   payment fields: the engine is versioned by the EMR vendor and served with
+   the definitions it is built to render, so pinning a local copy would
+   silently drift from them. #}
+<link rel="stylesheet" href="{{ intake_engine.css }}" />
+{% endblock %}
+{% block content %}
+
+  {% include 'partials/stepper.twig' with {
+    steps: stepper_steps,
+    active: stepper_active,
+    progress: { after: stepper_active, fill_id: 'intake-progress-fill', label_id: 'intake-progress-label', percent: 0 },
+  } %}
+
+  <section class="mx-auto max-w-[660px] px-6 py-16">
+
+    {% if termination_message %}
+      {# The server has already judged this journey. Shown on entry so a
+         returning visitor is not invited to answer a form they cannot pass
+         ([10.48]). #}
+      <div role="alert" class="mb-10 rounded-sm border-2 border-danger bg-danger-light px-5 py-4">
+        <p class="text-sm font-medium leading-relaxed text-danger">{{ termination_message }}</p>
+      </div>
+    {% endif %}
+
+    {% if form_errors._form is defined %}
+      {# The engine cannot know the server refused, so this is the only place
+         a whole-form refusal reaches the visitor in this renderer. #}
+      <div role="alert" class="mb-10 rounded-sm border-2 border-danger bg-danger-light px-5 py-4">
+        <p class="text-sm font-medium leading-relaxed text-danger">{{ form_errors._form }}</p>
+      </div>
+    {% endif %}
+
+    <div id="intake-form"
+         data-intake-engine
+         data-save-url="{{ url('/intake/save/') }}"
+         data-submit-url="{{ url('/intake/submit/') }}"
+         data-capture-url="{{ url('/intake/capture/') }}"
+         data-csrf="{{ csrf_token }}"
+         data-step="{{ form_step }}"></div>
+
+    {# Pre-encoded in the controller with the tag, ampersand and quote flags
+       set, so `raw` cannot emit a closing script tag. Nothing else on this
+       page is exempt from autoescaping. #}
+    <script type="application/json" data-intake-definition>{{ definition_json|raw }}</script>
+    <script type="application/json" data-intake-values>{{ initial_values_json|raw }}</script>
+
+    <noscript>
+      {# [10.6b]: this renderer builds the form in the browser, so without
+         scripting there is nothing to show. Say so, and offer a way through --
+         never leave a blank panel where a questionnaire should be. #}
+      <div role="alert" class="rounded-sm border-2 border-warning bg-warning-light px-5 py-4">
+        <p class="text-sm font-semibold text-heading">This questionnaire needs JavaScript.</p>
+        <p class="mt-2 text-sm leading-relaxed text-heading">
+          Please enable it and reload the page, or contact us and we will complete this with you.
+        </p>
+      </div>
+    </noscript>
+
+    <div role="alert" data-intake-engine-error
+         class="hidden rounded-sm border-2 border-warning bg-warning-light px-5 py-4">
+      <p class="text-sm font-semibold text-heading">We can&rsquo;t load your questionnaire right now.</p>
+      <p class="mt-2 text-sm leading-relaxed text-heading">
+        Please try again in a few minutes, or contact us and we&rsquo;ll complete it with you.
+      </p>
+    </div>
+  </section>
+{% endblock %}
+{% block scripts %}
+<script src="{{ asset('script.js') }}" defer></script>
+<script src="{{ intake_engine.js }}" defer></script>
+<script src="{{ asset('intake-engine.js') }}" defer></script>
+{% endblock %}

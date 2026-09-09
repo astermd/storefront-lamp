@@ -1,0 +1,70 @@
+{# Transcribed from the static design mockup (not-eligible page)'s <main> REQUIREMENTS
+   NOT MET section. Extends layouts/funnel.twig (shared header-funnel/footer-compliance
+   partials, same as verify.twig/checkout.twig). Class attributes copied verbatim from
+   the mockup — never edited.
+
+   The treatment name and the explanation come from the journey rather than
+   being hardcoded, and the mockup's single Start Over link is a pair here —
+   Back to correct a mistyped answer, Start Over to abandon the treatment
+   ([10.43]). Start Over is a POST because it destroys the answers. #}
+{% extends 'layouts/funnel.twig' %}
+{% set page_title = 'Intake: Requirements Not Met' %}
+{% block content %}
+
+  <!-- ==================== REQUIREMENTS NOT MET ==================== -->
+  <section class="mx-auto max-w-[660px] px-6 py-16 lg:py-24">
+    <div class="text-center">
+      <span class="mx-auto flex size-14 items-center justify-center rounded-full border-2 border-danger">
+        <i data-lucide="x" class="size-7 text-danger"></i>
+      </span>
+      <h1 class="font-heading mt-6 text-[24px] font-bold leading-tight sm:text-[28px] text-heading">Requirements not met</h1>
+      <p class="mx-auto mt-4 max-w-[520px] text-base leading-6 text-body">
+        We&rsquo;re sorry, but based on the information you provided, we&rsquo;ve determined that you are not currently a candidate for
+        <span id="not-eligible-treatment" class="font-medium text-primary">{{ treatment ?: 'this' }}</span> treatment.
+      </p>
+      {% if reason %}
+        {# The clinician's own wording for the rule that fired. It is the only
+           place the visitor learns why, so it is shown verbatim. #}
+        <p class="mx-auto mt-4 max-w-[520px] rounded-sm border-2 border-danger bg-danger-light px-5 py-4 text-left text-[15px] leading-relaxed text-heading">
+          {{ reason }}
+        </p>
+      {% endif %}
+    </div>
+
+    <div class="mt-8 border-t border-border pt-8">
+      <p class="text-center text-xs font-medium tracking-wide text-muted">NEXT STEPS &amp; ALTERNATIVES</p>
+
+      <div class="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div class="rounded-lg border border-border bg-background p-6">
+          <i data-lucide="dumbbell" class="size-6 text-primary"></i>
+          <h2 class="font-heading mt-4 text-base font-medium text-heading">Holistic Wellness</h2>
+          <p class="mt-2 text-[15px] leading-relaxed text-body">Explore lifestyle-based programs and nutrition coaching.</p>
+        </div>
+        <div class="rounded-lg border border-border bg-background p-6">
+          <i data-lucide="hospital" class="size-6 text-primary"></i>
+          <h2 class="font-heading mt-4 text-base font-medium text-heading">Primary Physician</h2>
+          <p class="mt-2 text-[15px] leading-relaxed text-body">We recommend discussing these results with your local doctor.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="mt-8 flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
+      {% if disqualified %}
+        {# A disqualifying answer is sometimes just a mistake, so going back
+           keeps every answer for correction ([10.43]). #}
+        <a href="{{ url(back_path) }}" class="inline-flex w-full max-w-[300px] items-center justify-center gap-2 rounded-sm border-2 border-border bg-background h-[41px] px-5 text-base font-medium sm:h-auto sm:py-4 text-heading transition-colors hover:border-primary hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
+          <i data-lucide="arrow-left" class="size-4"></i>
+          Review my answers
+        </a>
+      {% endif %}
+      <form method="post" action="{{ url('/intake/start-over/') }}" class="w-full max-w-[300px]">
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}" />
+        <button type="submit" class="inline-flex w-full items-center justify-center gap-2 rounded-sm bg-primary h-[41px] px-5 text-base font-medium sm:h-auto sm:py-4 text-primary-foreground transition-colors hover:bg-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-hover">
+          Start Over
+          <i data-lucide="refresh-cw" class="size-4"></i>
+        </button>
+      </form>
+    </div>
+  </section>
+
+{% endblock %}

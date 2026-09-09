@@ -1,0 +1,13 @@
+{% extends 'layouts/base.twig' %}
+{% block page %}
+{% include 'partials/header-funnel.twig' %}
+{# An accepted add redirects here, so this is where its notice has to appear. #}
+{% include 'partials/cart-notice.twig' %}
+<main>
+{% block content %}{% endblock %}
+</main>
+{% include 'partials/footer-compliance.twig' %}
+{% endblock %}
+{% block scripts %}
+<script src="{{ asset('script.js') }}" defer></script>
+{% endblock %}

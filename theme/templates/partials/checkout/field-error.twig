@@ -1,0 +1,7 @@
+{# The inline error for one checkout field, adjacent to its control and
+   programmatically associated with it through aria-describedby, matching the
+   intake form's own error partial. An error summary that does not say which
+   box is wrong is one a screen-reader user cannot act on. #}
+{% if checkout.errors[field]|default(null) %}
+<p id="checkout-error-{{ field }}" class="mt-2 text-sm font-medium text-danger">{{ checkout.errors[field] }}</p>
+{% endif %}

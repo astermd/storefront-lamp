@@ -1,0 +1,12 @@
+{# The question text for a group of controls -- a radio set or a checkbox set.
+
+   Deliberately NOT a <label>: a label points at exactly one control, and a
+   choice group has several. The group element names itself from this id
+   instead, which is what gives a screen reader the question before it starts
+   reading options ([25.7]). #}
+<p id="intake-{{ field.name }}-label" class="font-heading text-center text-[24px] font-bold leading-tight sm:text-[28px] text-heading">
+  {{ field.label }}{% if field.required %}<span class="text-danger" aria-hidden="true"> *</span>{% endif %}
+</p>
+{% if field.description %}
+  <p class="mx-auto mt-3 max-w-[480px] text-center text-sm leading-relaxed text-muted">{{ field.description }}</p>
+{% endif %}

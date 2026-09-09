@@ -1,0 +1,54 @@
+{
+    "success": false,
+    "message": "Failed test transaction",
+    "data": {
+        "error": {
+            "code": null,
+            "message": "Failed test transaction",
+            "transaction": {
+                "success": null,
+                "response_code": 200,
+                "response": null,
+                "gateway_response_id": "eeeeeeeeeeeee",
+                "gateway_response_gateway_id": "ggggggggggggg",
+                "gateway_response_code": "hhhhhhhhhhhhh",
+                "gateway_auth_code": "fffffffffffff",
+                "gateway_response_cvv": "",
+                "gateway_response_avs": "",
+                "gateway_response_text": "Test card response - Failed",
+                "gateway_request_text": "Test card request - transation type 1",
+                "processor_response_text": "",
+                "date_request": "2026-08-23 14:39:17",
+                "date_response": "2026-08-23 14:39:17",
+                "merchant_id": 60,
+                "merchant_descriptor": "Telehealth medicine merchant",
+                "reason": null,
+                "gateway_response_description": "",
+                "gateway_hard_decline": "",
+                "transaction_id": 225480,
+                "transaction_total": "120.00",
+                "post_data": null,
+                "shipment_id": null,
+                "reattempt_data": [],
+                "customer_id": 13958,
+                "order_id": 34661,
+                "order": {
+                    "order_id": 34661,
+                    "connection_order_id": "34661",
+                    "campaign_id": 147,
+                    "status_type_id": null,
+                    "customer_id": 13958,
+                    "shipping_profile_id": 1,
+                    "date_created": "2026-08-23 14:39:16",
+                    "date_authorized": null,
+                    "date_ordered": null,
+                    "date_capture": null,
+                    "is_test": true,
+                    "order_discount": "0.00"
+                },
+                "upsells": []
+            }
+        }
+    },
+    "validation_code": ""
+}

@@ -1,0 +1,143 @@
+{# Transcribed from the static design mockup (upsell page). upsell.png → /assets/img/upsell.png.
+
+   layouts/checkout.twig's <main> class is now an overridable `main_class` block
+   (checkout.html's `lg:grid lg:grid-cols-2` is only its default); this page overrides
+   it below with the mockup's own `flex flex-1 flex-col lg:flex-row`, and overrides
+   `body_class` with the mockup's extra `flex min-h-screen flex-col` body classes
+   (needed for footer pinning on this page, per upsell.html's <body> tag), so this page
+   now matches upsell.html's layout exactly.
+
+   Deliberate deviation from the static design: the shared partials/header-checkout.twig
+   renders the logo as a link to home (`<a href="{{ url('/') }}">`), whereas the mockup's
+   own upsell.html header uses a plain non-linking `<span>` (comment there: "one-time
+   post-order upsell interstitial ... the only intended exits are the page's own
+   actions"). Kept the logo linked here anyway, matching every other page — a harmless
+   improvement over the mockup, not a defect.
+
+   Every string and number here comes from the `upsell` view model. The
+   mockup's own copy survives as the worked example in `config/upsells.php`, so a
+   configured offer still renders the page that was drawn. Two departures from the
+   mockup's *copy* (its markup is untouched):
+
+   - the price is the model's decided figure and nothing else. The mockup printed
+     "$8.99 / mo", but an upsell is one separate order placed once against the
+     instrument the provider already holds — nothing in the model carries a
+     recurrence, so a "/ mo" on the page that charges the card would be a billing
+     promise the storefront cannot keep.
+   - the mockup's "Cancel anytime. Free shipping included." footnote is configured per
+     offer rather than written here, and renders only when a deployment sets it. Both the
+     mockup's wording and the obvious correction to "One-time charge" are billing promises,
+     and the second one is false against the offer this channel actually maps to.
+
+   Both actions are real form posts ([8.7]) rather than the mockup's script-driven
+   navigation. This is the one step in the funnel that charges a card, and with the
+   mockup's `<button type="button">` pair the page did nothing at all with
+   JavaScript off. theme/js/upsell.js is only a double-submit courtesy over the
+   top of two working forms. `contents` on each form keeps the buttons themselves as
+   the grid items of the mockup's `grid-cols-2` — a form cannot be a grid item here
+   without changing the layout that was drawn, and the hidden CSRF input generates no
+   box — the same trick checkout.twig uses to span its layout's columns.
+
+   Anything this step has to *say* — a refused flood, an acceptance still in flight —
+   is flashed and rendered by partials/cart-notice.twig, which the layout already
+   includes above <main>. There is no notice on this page's model and no second place
+   a message could appear. #}
+{% extends 'layouts/checkout.twig' %}
+{% set page_title = 'Exclusive Offer' %}
+{% set page_description = 'AsterMD one-time offer: add ' ~ upsell.productName ~ ' to your confirmed order.' %}
+{% block body_class %} flex min-h-screen flex-col{% endblock %}
+{% block main_class %}flex flex-1 flex-col lg:flex-row{% endblock %}
+{% block content %}
+
+  {# An offer with no image renders no image column, rather than the mockup's
+     coloured panel standing empty across 38% of a wide screen. The offer
+     column is `flex-1` and takes the freed width on its own. #}
+  {% if upsell.image %}
+  <!-- ==================== PRODUCT IMAGE ==================== -->
+  <div class="min-h-[240px] shrink-0 overflow-hidden bg-primary-soft lg:min-h-0 lg:w-[38%]">
+    <img src="{{ upsell.image }}" alt="{{ upsell.productName }}" class="h-full w-full object-cover" />
+  </div>
+  {% endif %}
+
+  <!-- ==================== EXCLUSIVE OFFER ==================== -->
+  <div class="flex flex-1 items-center justify-center px-6 py-16 lg:px-20">
+    <div class="w-full max-w-[500px]">
+      <p class="flex items-center gap-2 text-base font-medium text-warning">
+        <i data-lucide="circle-alert" class="size-6"></i>
+        {{ upsell.eyebrow }}
+      </p>
+
+      <h1 class="font-heading mt-4 text-[28px] font-bold leading-tight text-heading sm:text-[32px]">{{ upsell.headline }}</h1>
+
+      <p class="mt-4 text-base leading-6 text-body">
+        {{ upsell.body }}
+      </p>
+
+      <hr class="mt-6 border-border" />
+
+      <div class="mt-6 flex items-start justify-between gap-4">
+        <p class="text-base font-medium sm:text-lg text-heading">{{ upsell.productName }}</p>
+        <p class="shrink-0 text-base font-medium sm:text-lg text-heading">{{ upsell.priceCents|money }}</p>
+      </div>
+
+      {# No bullets means no list: an empty <ul> is markup that says nothing and
+         still takes the `mt-4` gap the mockup drew for three lines of it. #}
+      {% if upsell.bullets is not empty %}
+      <ul class="mt-4 flex flex-col gap-3">
+        {% for bullet in upsell.bullets %}
+        <li class="flex items-center gap-3">
+          <i data-lucide="circle-check" class="size-5 shrink-0 text-primary"></i>
+          <span class="text-base text-body">{{ bullet }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+
+      {# Two forms, two endpoints, and nothing in either body but the CSRF token:
+         which offer is being answered is the one at the journey's own cursor, so
+         a stale page cannot name an add-on this journey never reached ([16.16]).
+         Decline is first in tree order, as the mockup drew it — which also means
+         Enter cannot be the keystroke that charges a card. #}
+      <div class="mt-6 grid grid-cols-2 gap-4">
+        <form method="post" action="{{ url(upsell.declinePath) }}" class="contents">
+          <input type="hidden" name="_csrf" value="{{ csrf_token }}" />
+          {# Confirms which offer is being refused, exactly as the accept form does.
+             Declining costs no money but it does cost an offer, and a tab left open
+             on an earlier one would otherwise skip whichever offer the cursor has
+             since reached. #}
+          <input type="hidden" name="upsell_key" value="{{ upsell.key }}" />
+          <button type="submit" id="offer-decline" class="inline-flex w-full items-center justify-center gap-2 rounded-sm border-2 border-border bg-background h-[41px] px-5 text-base font-medium sm:h-auto sm:py-4 text-heading transition-colors hover:border-primary hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-60">
+            <i data-lucide="x" class="size-[14px]"></i>
+            <span>{{ upsell.declineLabel }}</span>
+          </button>
+        </form>
+        <form method="post" action="{{ url(upsell.acceptPath) }}" class="contents">
+          <input type="hidden" name="_csrf" value="{{ csrf_token }}" />
+          {# Which offer this page is showing. It confirms and can never choose:
+             the server charges whatever the queue points at, and refuses when
+             the two disagree — which is what stops a tab left open on an
+             earlier offer from buying a later one the buyer never saw. #}
+          <input type="hidden" name="upsell_key" value="{{ upsell.key }}" />
+          <button type="submit" id="offer-accept" class="inline-flex w-full items-center justify-center gap-2 rounded-sm bg-primary h-[41px] px-5 text-base font-medium sm:h-auto sm:py-4 text-primary-foreground transition-colors hover:bg-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-hover disabled:cursor-not-allowed disabled:opacity-60">
+            <span>{{ upsell.acceptLabel }}</span>
+            <i data-lucide="shopping-cart" class="size-[17px]"></i>
+          </button>
+        </form>
+      </div>
+
+      {# The mockup's "Cancel anytime" is a promise this storefront cannot keep, and the
+         obvious correction to "One-time charge" is false against the provider offer this
+         channel maps its products to — it comes back recurring. Whether an accepted offer
+         bills again is the operator's fact, so the line is theirs to write and renders only
+         when they have. #}
+      {% if upsell.footnote %}
+      <p class="mt-4 text-center text-sm text-muted">{{ upsell.footnote }}</p>
+      {% endif %}
+    </div>
+  </div>
+
+{% endblock %}
+{% block scripts %}
+{{ parent() }}
+<script src="{{ asset('upsell.js') }}" defer></script>
+{% endblock %}

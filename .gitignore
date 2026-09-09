@@ -1,0 +1,39 @@
+# Secrets and per-deployment credentials
+.env
+
+# Synced from the live EMR channel by `bin/console theme:sync --apply`.
+# Both carry channel-specific data — ids, prices, provider identifiers and, in
+# channel.generated.php, live payment-provider credentials. The committed
+# `*.example.php` files next to them document the shape instead.
+/config/channel.generated.php
+/config/products.generated.php
+
+# Runtime state: database, logs, sessions, caches, the dev-server pid.
+# Created on demand, so a fresh clone needs no placeholder here.
+storage/
+
+# Product imagery fetched by `theme:sync --apply`
+public/assets/media/
+
+# Dependencies (committed lock files pin them; vendor/ and node_modules/ do not ship)
+/vendor/
+node_modules/
+composer.phar
+
+# Test and tooling caches
+.phpunit.cache/
+
+# Working notes — never published
+CLAUDE.local.md
+scratchpad/
+scratchpad1/
+.superpowers/
+
+# Editor and OS noise
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db

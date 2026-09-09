@@ -1,0 +1,7 @@
+{# The inline error, adjacent to its control and programmatically associated
+   with it ([25.4]). Rendered even when empty so the stepper has a stable node
+   to write into, which is what keeps a client-side message in the same place
+   the server would have put it. #}
+<p id="{{ field.name ? 'intake-error-' ~ field.name : '' }}"
+   data-intake-error
+   class="mt-2 text-sm font-medium text-danger{% if not field.error %} hidden{% endif %}">{{ field.error }}</p>

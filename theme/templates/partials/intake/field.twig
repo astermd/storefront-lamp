@@ -1,0 +1,16 @@
+{# One wrapper, one dispatch.
+
+   Every field is rendered and then concealed rather than omitted, so the form
+   degrades to a long scrollable page when scripts fail instead of to a blank
+   one ([10.6a]). The wrapper carries the field's name and required state as
+   data attributes because the stepper toggles both as conditions change, and
+   it must not have to re-derive which control belongs to which field. #}
+<div class="{% if field.cols > 1 %}sm:col-span-{{ field.cols }}{% endif %}"
+     data-intake-field="{{ field.name }}"
+     data-intake-type="{{ field.type }}"
+     data-intake-required="{{ field.required ? '1' : '0' }}"
+     data-intake-hidden="{{ field.hidden ? '1' : '0' }}"
+     {% if field.conditions_json %}data-intake-conditions="{{ field.conditions_json }}"{% endif %}
+     {% if field.hidden %}hidden{% endif %}>
+  {% include 'partials/intake/' ~ field.template with { field: field } only %}
+</div>

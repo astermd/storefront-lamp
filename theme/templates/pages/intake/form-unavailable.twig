@@ -1,0 +1,30 @@
+{# The stated outage of [10.3]. A definition that can be neither
+   fetched nor served from cache produces this page rather than an empty form:
+   a questionnaire with no questions looks like it worked and collects
+   nothing, which is worse for everyone than an honest message. #}
+{% extends 'layouts/funnel.twig' %}
+{% set page_title = 'Questionnaire unavailable' %}
+{% block content %}
+  <section class="mx-auto max-w-[660px] px-6 py-24 text-center">
+    <span class="mx-auto flex size-14 items-center justify-center rounded-full border-2 border-border bg-background">
+      <i data-lucide="file-question" class="size-6 text-icon-muted"></i>
+    </span>
+    <h1 class="font-heading mt-6 text-[24px] font-bold leading-tight sm:text-[28px] text-heading">
+      We can&rsquo;t load your questionnaire right now
+    </h1>
+    <p class="mx-auto mt-4 max-w-[480px] text-base leading-relaxed text-body">
+      This is a problem on our side, not yours &mdash; nothing you entered has been lost. Please try again in a
+      few minutes, or contact us and we&rsquo;ll complete it with you.
+    </p>
+    <div class="mt-10 flex flex-col gap-4 sm:flex-row sm:justify-center">
+      <a href="{{ url(current_path) }}"
+         class="inline-flex items-center justify-center gap-2 rounded-sm bg-primary px-6 py-4 text-base font-medium text-primary-foreground transition-colors hover:bg-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-hover">
+        Try again
+      </a>
+      <a href="{{ url('/') }}"
+         class="inline-flex items-center justify-center gap-2 rounded-sm border-2 border-border bg-background px-6 py-4 text-base font-medium text-heading transition-colors hover:border-primary hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
+        Back to store
+      </a>
+    </div>
+  </section>
+{% endblock %}

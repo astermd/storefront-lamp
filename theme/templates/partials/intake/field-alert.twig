@@ -1,0 +1,14 @@
+{# The authored notice. `danger` is how a disqualification reaches the visitor,
+   so it is the one treatment that must be unmistakable -- and it never carries
+   information by colour alone ([25.14]): the icon and the wording say it too. #}
+{% set tone = {
+  'danger':  { box: 'border-danger bg-danger-light text-danger', icon: 'circle-alert', role: 'alert' },
+  'warning': { box: 'border-warning bg-warning-light text-heading', icon: 'triangle-alert', role: 'status' },
+  'success': { box: 'border-primary bg-primary-light text-heading', icon: 'circle-check', role: 'status' },
+  'info':    { box: 'border-border bg-background text-heading', icon: 'info', role: 'status' },
+}[field.alert_type] | default({ box: 'border-border bg-background text-heading', icon: 'info', role: 'status' }) %}
+<div role="{{ tone.role }}" data-intake-alert="{{ field.alert_type }}"
+     class="flex items-start gap-3 rounded-sm border-2 px-5 py-4 {{ tone.box }}">
+  <i data-lucide="{{ tone.icon }}" class="mt-0.5 size-5 shrink-0"></i>
+  <p class="text-sm font-medium leading-relaxed">{{ field.alert_text ?: field.label }}</p>
+</div>
