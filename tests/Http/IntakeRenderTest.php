@@ -7,6 +7,7 @@ namespace AsterMD\Storefront\Tests\Http;
 use AsterMD\Storefront\Forms\Definition;
 use AsterMD\Storefront\Forms\FieldViewModel;
 use AsterMD\Storefront\Forms\RuleEvaluator;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Slim\Views\Twig;
 
@@ -266,14 +267,62 @@ final class IntakeRenderTest extends TestCase
     }
 
     /**
-     * A display-only field gets them too. It has no control at all, so the
-     * wrapper is the only place they could go — and hiding a heading or an
-     * alert with authored CSS is exactly what these are for.
+     * The authored class also reaches the element the field actually draws,
+     * and this is the case that says why the wrapper alone was not enough.
+     *
+     * The theme puts its own utility classes on that inner element, so a rule
+     * written against the wrapper loses for exactly the properties an author
+     * reaches for: `.head-cls{color:red}` painted the wrapper red and left the
+     * heading its own `text-heading` colour, which reads as the class not
+     * having been applied at all.
+     *
+     * Asserted on the markup *after* the wrapper's own tag, so a class that
+     * only ever reached the wrapper cannot satisfy it.
+     *
+     * @param array<string, mixed> $extra
      */
-    public function testADisplayOnlyFieldAlsoCarriesTheAuthoredClass(): void
+    #[DataProvider('fieldsThatDrawSomething')]
+    public function testTheAuthoredClassAlsoReachesTheElementTheFieldDraws(string $type, array $extra): void
     {
         $html = self::render([
-            'fieldId' => 'h', 'name' => 'h', 'type' => 'heading', 'label' => 'Biometrics',
+            'fieldId' => 'f', 'name' => 'f', 'type' => $type, 'label' => 'A label',
+            'properties' => ['runtimeClassName' => 'mine'] + $extra,
+        ]);
+
+        $inner = substr($html, (int) strpos($html, '>') + 1);
+
+        self::assertMatchesRegularExpression(
+            '/class="[^"]*\bmine\b[^"]*"/',
+            $inner,
+            sprintf('%s draws an element the authored class never reached', $type),
+        );
+    }
+
+    /** @return iterable<string, array{string, array<string, mixed>}> */
+    public static function fieldsThatDrawSomething(): iterable
+    {
+        yield 'heading' => ['heading', []];
+        yield 'paragraph' => ['paragraph', []];
+        yield 'divider' => ['divider', []];
+        yield 'alert' => ['alert', ['alertType' => 'danger', 'alertText' => 'No.']];
+        yield 'image' => ['image', ['imageUrl' => '/assets/img/t1.png']];
+        yield 'form-progress' => ['form-progress', []];
+        yield 'text' => ['text', []];
+        yield 'number' => ['number', []];
+        yield 'textarea' => ['textarea', []];
+        yield 'picker-date' => ['picker-date', []];
+        yield 'dropdown' => ['dropdown', ['options' => [['value' => 'a', 'label' => 'A']]]];
+        yield 'terms' => ['terms', []];
+        yield 'button' => ['button', ['buttonAction' => 'next_page']];
+        yield 'radio group' => ['choice-multi', ['choiceInputType' => 'radio', 'multiSelect' => false, 'options' => [['value' => 'a', 'label' => 'A']]]];
+        yield 'checkbox group' => ['choice-multi', ['choiceInputType' => 'checkbox', 'multiSelect' => true, 'options' => [['value' => 'a', 'label' => 'A']]]];
+    }
+
+    /** And it is still on the wrapper, so hiding a field still takes its label with it. */
+    public function testTheAuthoredClassIsStillOnTheWrapperSoHidingTakesTheWholeField(): void
+    {
+        $html = self::render([
+            'fieldId' => 'a', 'name' => 'a', 'type' => 'text', 'label' => 'A',
             'properties' => ['runtimeClassName' => 'hide-this'],
         ]);
 

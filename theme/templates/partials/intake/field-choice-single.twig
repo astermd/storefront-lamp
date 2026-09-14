@@ -9,7 +9,7 @@
    a button rather than as a choice. A stacked list with the control on the
    left reads as one question with several answers, which is what it is. #}
 {% include 'partials/intake/field-question.twig' with { field: field } only %}
-<div class="mt-2 flex flex-col gap-1" role="radiogroup" aria-labelledby="intake-{{ field.name }}-label">
+<div class="mt-2 flex flex-col gap-1{% if field.runtime_class %} {{ field.runtime_class }}{% endif %}" role="radiogroup" aria-labelledby="intake-{{ field.name }}-label">
   {% for option in field.options %}
     <label class="group flex cursor-pointer items-center gap-3 rounded-sm px-1 py-2 transition-colors hover:bg-background-2 has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-primary has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-60">
       <input

@@ -19,12 +19,22 @@ bump them together with the tag when this is released.
 `properties.runtimeClassName` and `properties.runtimeId` were read by nothing,
 so a class set in the builder reached the page as neither markup nor an error.
 
-Both land on the **field wrapper**. It is the one element every field type has
-— a heading, an alert and a divider have no control to carry them — and it
-keeps an authored id away from wiring that cannot move: `intake-<name>` is what
-the label points at, what an error is described by, and what a choice group
-names itself from, so an authored id sits beside that and never displaces it.
-Target the control from your own CSS with `#my-id input`.
+**`runtimeId`** goes on the field wrapper, away from wiring that cannot move:
+`intake-<name>` is what the label points at, what an error is described by, and
+what a choice group names itself from, so an authored id sits beside that and
+never displaces it. Reach the control with `#my-id input`.
+
+**`runtimeClassName`** goes on the wrapper *and* on the element the field
+actually draws — the `<h2>`, the `<input>`, the alert, the choice group. The
+wrapper alone was not enough, and the failure looked exactly like the class
+never being applied: the theme puts its own utility classes on that inner
+element, so `.head-cls{color:red}` painted the wrapper and left the heading its
+own `text-heading` colour. Keeping it on the wrapper too is what makes
+`.hide-this{display:none}` still take a field's label with it.
+
+One consequence worth knowing: a box rule applies twice. `.mine{margin:20px}`
+margins the wrapper and the element inside it. Use a rule that does not
+compound, or target one of them — `.mine input{}` or `div.mine{}`.
 
 The authored class is appended to the layout class rather than replacing it, so
 naming a class does not cost a field its grid cell. A blank value counts as
@@ -32,6 +42,7 @@ absent: the builder writes an empty string for a value typed and then cleared,
 and `id=""` matches no selector ever written.
 
 - `core/Forms/FieldViewModel.php`, `theme/templates/partials/intake/field.twig`
+  and every `field-*.twig` that draws an element
 
 ### The form's own stylesheet is rendered
 
@@ -57,8 +68,9 @@ splices the surviving halves into a working one.
 
 ### Tests
 
-`vendor/bin/phpunit` is green at **2061 tests / 7196 assertions**, up from
-2044 / 7165.
+`vendor/bin/phpunit` is green at **2076 tests / 7211 assertions**, up from
+2044 / 7165. Every field type that draws an element is covered by name, so a
+partial added later without the hook fails rather than silently ignoring it.
 
 The EMR's hosted engine reads none of these three properties, so there was no
 reference renderer to match — the storefront defines the behaviour, and mode A

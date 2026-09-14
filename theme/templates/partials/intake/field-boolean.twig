@@ -5,7 +5,7 @@
    This one keeps its border. A consent is not a question among questions: it
    is a thing being agreed to, and the box around it is what separates the
    agreeing from the answering. #}
-<label class="flex cursor-pointer items-start gap-3 rounded-sm border border-border bg-background px-4 py-3 transition-colors hover:border-primary has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-primary has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-60">
+<label class="flex cursor-pointer items-start gap-3 rounded-sm border border-border bg-background px-4 py-3 transition-colors hover:border-primary has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-primary has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-60{% if field.runtime_class %} {{ field.runtime_class }}{% endif %}">
   <input
     type="checkbox"
     id="intake-{{ field.name }}"

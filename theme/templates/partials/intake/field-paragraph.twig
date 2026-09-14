@@ -1,1 +1,1 @@
-<p class="mx-auto max-w-[480px] text-center text-sm leading-relaxed text-muted">{{ field.alert_text ?: field.label }}</p>
+<p class="mx-auto max-w-[480px] text-center text-sm leading-relaxed text-muted{% if field.runtime_class %} {{ field.runtime_class }}{% endif %}">{{ field.alert_text ?: field.label }}</p>

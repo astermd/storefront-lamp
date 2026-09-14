@@ -14,7 +14,7 @@
     {% if field.required %}required aria-required="true"{% endif %}
     {% if field.disabled %}disabled{% endif %}
     {% if field.error %}aria-invalid="true" aria-describedby="{{ field.error_id }}"{% endif %}
-    class="w-full rounded-sm border border-border bg-background px-3.5 py-2.5 pr-11 text-sm text-heading placeholder:text-muted transition-colors hover:border-border-darker focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-60 aria-[invalid=true]:border-danger"
+    class="w-full rounded-sm border border-border bg-background px-3.5 py-2.5 pr-11 text-sm text-heading placeholder:text-muted transition-colors hover:border-border-darker focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-60 aria-[invalid=true]:border-danger{% if field.runtime_class %} {{ field.runtime_class }}{% endif %}"
   />
   <button type="button" data-datepicker-toggle aria-label="Open calendar" aria-expanded="false" class="absolute right-3.5 top-[38px] -translate-y-1/2 text-icon-muted transition-colors hover:text-heading">
     <i data-lucide="calendar" class="size-4"></i>
