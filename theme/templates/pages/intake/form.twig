@@ -10,10 +10,13 @@
 {% set page_title = form_title %}
 {% block content %}
 
+  {# One step per page of this form. No percent bar: the steps now *are* the
+     progress, and a "Question 1 of 5" counter beside five numbered steps
+     reports the same fact twice. theme/js/intake.js moves the active step as
+     the visitor advances. #}
   {% include 'partials/stepper.twig' with {
     steps: stepper_steps,
     active: stepper_active,
-    progress: { after: stepper_active, fill_id: 'intake-progress-fill', label_id: 'intake-progress-label', percent: 0 },
   } %}
 
   <section class="mx-auto max-w-[660px] px-6 py-16">

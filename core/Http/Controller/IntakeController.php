@@ -12,6 +12,7 @@ use AsterMD\Storefront\Domain\ProductCatalog;
 use AsterMD\Storefront\Forms\FieldViewModel;
 use AsterMD\Storefront\Forms\FormUnavailable;
 use AsterMD\Storefront\Forms\IntakeSession;
+use AsterMD\Storefront\Forms\ProgressSteps;
 use AsterMD\Storefront\Forms\IntakeView;
 use AsterMD\Storefront\Forms\RuleEvaluator;
 use AsterMD\Storefront\Funnel\FlowDefinition;
@@ -244,8 +245,13 @@ final class IntakeController
             'form_step' => $step,
             'unsupported_types' => $view->unsupportedTypes,
             'termination_message' => $view->terminationMessage,
-            'stepper_steps' => self::stepperSteps(),
-            'stepper_active' => $step === IntakeSession::STEP_PREQUALIFICATION ? 1 : 3,
+            // One step per page of the form actually being rendered
+            // ({@see ProgressSteps}), rather than four constants describing
+            // the funnel. The active step is the page on screen, and the
+            // stepper is re-pointed by theme/js/intake.js as pages change --
+            // the server only sets where it starts.
+            'stepper_steps' => ProgressSteps::from($view->definition),
+            'stepper_active' => 1,
             'intake_engine' => (array) $this->config->get('intake.engine', []),
             'definition_json' => self::embed($this->intake->rawDefinition($view->metadata->id)),
             // An object even when empty: the hosted engine spreads this into
@@ -528,16 +534,6 @@ final class IntakeController
         ]);
     }
 
-    /** @return list<array{label: string, icon: string}> */
-    private static function stepperSteps(): array
-    {
-        return [
-            ['label' => 'Eligibility', 'icon' => 'gauge'],
-            ['label' => 'Contact', 'icon' => 'user'],
-            ['label' => 'Medical', 'icon' => 'list-ordered'],
-            ['label' => 'Verify & Review', 'icon' => 'user-check'],
-        ];
-    }
 
     /**
      * JSON destined for a `<script type="application/json">` block. Encoded

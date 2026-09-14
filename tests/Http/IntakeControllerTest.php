@@ -136,6 +136,53 @@ final class IntakeControllerTest extends TestCase
         self::assertStringContainsString('content="noindex', $body, '[24.6]: a funnel step is never indexed');
     }
 
+    /**
+     * `[25.10]`. The stepper describes the form in front of the visitor. It
+     * used to be four constants — Eligibility, Contact, Medical, Verify &
+     * Review — above a five-page questionnaire, so three of the four could
+     * never move and none of them named a thing being asked.
+     *
+     * The labels are read out of the stepper rather than out of the page. The
+     * page renders every heading field as content too, so searching the whole
+     * body for "Biometrics & Demographics" finds it whether the stepper was
+     * derived from the form or left hardcoded — an assertion that passes
+     * either way proves nothing about the thing under test.
+     */
+    public function testTheStepperNamesOneStepPerPageOfTheFormBeingRendered(): void
+    {
+        $this->seedCart();
+        $body = (string) $this->app()->handle($this->get('/intake/medical/'))->getBody();
+
+        self::assertSame(
+            [
+                'Biometrics &amp; Demographics',
+                'Absolute Contraindications (Black Box Warnings)',
+                'Medical History &amp; Relative Contraindications',
+                'Current Medications &amp; Interactions',
+                'Consents &amp; Acknowledgments',
+            ],
+            self::stepperLabels($body),
+            'the recorded form titles its pages "Page 1".."Page 5", so each step is named by its own heading',
+        );
+    }
+
+    /**
+     * The labels the stepper is actually drawing, in order.
+     *
+     * @return list<string>
+     */
+    private static function stepperLabels(string $html): array
+    {
+        $stepper = strstr($html, 'data-funnel-stepper');
+        if ($stepper === false) {
+            return [];
+        }
+
+        preg_match_all('/data-stepper-label[^>]*>([^<]*)</', $stepper, $matches);
+
+        return array_map(trim(...), $matches[1]);
+    }
+
     public function testADefinitionThatCannotBeResolvedIsAStatedOutageRatherThanACrash(): void
     {
         // `[10.3]`: the null gateway resolves no metadata at all, which is the
