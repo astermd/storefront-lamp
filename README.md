@@ -72,6 +72,42 @@ curl -s localhost:8080/health/
 short `info` block (whether analytics sessions are on, whether the tracking keys are
 present — presence only, never values).
 
+### Working on the theme
+
+`npm run build` is a one-shot build, which means editing a stylesheet and then
+remembering to run it. For design work, run the watcher instead, in a second
+terminal alongside the PHP server:
+
+```bash
+npm run dev
+```
+
+It rebuilds on every save — typically under a second — and the page refreshes
+itself. Edit `theme/css/app.css`, a template, or a script, and the browser
+shows it; you never run a build by hand and never press reload.
+
+Two things about it are worth knowing:
+
+- **It watches `theme/templates` too, not just `theme/css` and `theme/js`.**
+  Tailwind compiles only the classes it can *see*, and it finds them by
+  scanning the templates (the `@source` lines in `theme/css/app.css`). A class
+  used for the first time in a `.twig` file therefore needs a CSS rebuild, or
+  the markup ships referring to a rule that was never generated. The same rule
+  is why a class name assembled at render time — `col-span-{{ n }}` — never
+  works: Tailwind reads the source text, not the output.
+- **It is a full page reload, not hot module replacement.** Anything typed into
+  a form is lost on rebuild. Preserving it would mean handing the asset
+  pipeline to a bundler, and the built output is committed here precisely so
+  servers never need Node.
+
+The refresh comes from `theme/js/livereload.js`, which polls the build
+manifest. `layouts/base.twig` loads it **only outside production**, so it
+cannot reach a real visitor; it is not something to remember to turn off.
+
+Before committing, run `npm run build` once so the committed hashes match the
+sources — the watcher and the build produce identical output, but the last
+thing the watcher wrote may be a half-finished edit.
+
 ---
 
 ## Configuration

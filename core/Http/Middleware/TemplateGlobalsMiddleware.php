@@ -117,6 +117,11 @@ final class TemplateGlobalsMiddleware implements MiddlewareInterface
             'name' => $this->config->get('app.name', 'AsterMD'),
             'url' => $this->config->get('app.url'),
         ]);
+        // Which deployment this is, for the one template decision that turns
+        // on it: layouts/base.twig withholds the live-reload script outside
+        // development. Not a debug flag -- that is about how much detail an
+        // error shows, and this is about who is looking at the page.
+        $environment->addGlobal('app_env', $this->config->get('app.env'));
         $environment->addGlobal('csrf_token', $request->getAttribute('csrf_token'));
         $environment->addGlobal('maps_api_key', $this->config->get('app.features.google_maps_api_key'));
         // Null is a supported value and means "render no portal link at all";

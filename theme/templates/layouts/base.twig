@@ -77,5 +77,13 @@
    deviation for correctness, visual result identical. #}
 <script>window.addEventListener('DOMContentLoaded', function () { if (window.lucide) lucide.createIcons(); });</script>
 {% block scripts %}{% endblock %}
+{# Development only. It polls the build manifest once a second for as long as
+   the tab is open, which is a reload loop for a designer and a permanent
+   background request for a real visitor. `app.env` rather than a debug flag,
+   because this is about who is looking at the page and not about how much
+   detail an error shows. #}
+{% if app_env != 'production' %}
+<script src="{{ asset('livereload.js') }}" defer></script>
+{% endif %}
 </body>
 </html>
