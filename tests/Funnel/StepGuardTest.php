@@ -146,11 +146,18 @@ final class StepGuardTest extends TestCase
     /**
      * `[8.6]`. The medical form can be completed without ever passing the
      * eligibility gate — `/intake/submit/` is not a funnel step and so is not
-     * guarded — so checkout has to demand pre-qualification in its own right.
-     * Demanding it only of the intake steps leaves the eligibility
-     * questionnaire skippable by anyone who deep-links past them.
+     * guarded — so the eligibility questionnaire must be demanded by the step
+     * a visitor would deep-link to in order to skip it.
+     *
+     * Asserted on `/intake/medical/` rather than on `/checkout/`, which used
+     * to carry the same requirement and no longer does: this deployment
+     * collects the questionnaire from the patient portal after the order, so
+     * an outstanding form is not a reason to refuse payment. That relaxation
+     * is exactly why this case matters more than it did — checkout having
+     * stopped being the backstop, the medical step is now the only thing
+     * standing between a deep link and a skipped eligibility form.
      */
-    public function testCheckoutIsUnreachableWhileTheEligibilityFormIsOutstanding(): void
+    public function testTheMedicalStepIsUnreachableWhileTheEligibilityFormIsOutstanding(): void
     {
         $pdo = $this->tempPdo();
         (new SessionRepository(fn (): \PDO => $pdo))->insert(
@@ -177,7 +184,7 @@ final class StepGuardTest extends TestCase
         $this->seedCart([self::rxLine('prequal-rx', 'prequal-rx-1m')]);
 
         $response = $app->handle(
-            (new ServerRequestFactory())->createServerRequest('GET', '/checkout/')
+            (new ServerRequestFactory())->createServerRequest('GET', '/intake/medical/')
                 ->withCookieParams(['amd_session' => self::SESSION]),
         );
 

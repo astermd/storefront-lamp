@@ -262,10 +262,16 @@ final class IntakeControllerTest extends TestCase
 
         // The consequence of getting this wrong, asserted rather than
         // inferred: the medical intake has not been rendered, let alone
-        // answered, so checkout stays shut (`[8.4]`).
-        $checkout = $app->handle($this->get('/checkout/'));
-        self::assertSame(302, $checkout->getStatusCode());
-        self::assertNotSame('/checkout/', $checkout->getHeaderLine('Location'));
+        // answered, so every step that still waits on it stays shut (`[8.4]`).
+        //
+        // Asserted on `/verify/` rather than on `/checkout/`, which used to
+        // carry `intake_satisfied` and no longer does — checkout is not a
+        // witness to an outstanding questionnaire any more, and reading it as
+        // one would leave this case passing whether the answer was filed
+        // correctly or not.
+        $verify = $app->handle($this->get('/verify/'));
+        self::assertSame(302, $verify->getStatusCode());
+        self::assertSame('/intake/medical/', $verify->getHeaderLine('Location'));
 
         // The URI-based fallback is still there for a body that names no step
         // at all, and it still answers "intake" — which is what makes the
@@ -279,13 +285,20 @@ final class IntakeControllerTest extends TestCase
         self::assertSame('completed', $this->journeyState()['form_status']['tf-medical'] ?? null);
     }
 
-    public function testCheckoutIsStillGuardedUntilTheFormIsActuallyCompleted(): void
+    /**
+     * The other half of the claim above. Without it, the assertion that the
+     * submit marks the form completed could not tell "the submit did it" from
+     * "it was never outstanding".
+     *
+     * `/verify/` is the witness because checkout stopped being one: this
+     * deployment lets a buyer pay with the questionnaire still outstanding
+     * and collects it from the patient portal afterwards, so `/checkout/`
+     * answers 200 either way and proves nothing here.
+     */
+    public function testTheStepsThatWaitOnTheFormStayShutUntilItIsActuallyCompleted(): void
     {
-        // The other half of the claim above. Without it, the assertion that
-        // checkout opens could not tell "the submit unlocked it" from "it was
-        // never locked".
         $this->seedCart();
-        $response = $this->app()->handle($this->get('/checkout/'));
+        $response = $this->app()->handle($this->get('/verify/'));
 
         self::assertSame(302, $response->getStatusCode());
         self::assertSame('/intake/medical/', $response->getHeaderLine('Location'));

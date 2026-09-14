@@ -34,6 +34,75 @@ final class StepPreconditionsTest extends TestCase
         return $cart;
     }
 
+    // ---- not_disqualified ---------------------------------------------------
+
+    /**
+     * `[10.45]`, `[10.46]`. Checkout no longer waits on the questionnaire —
+     * this deployment collects it from the patient portal after the order —
+     * so the hard stop needs a gate of its own. It used to ride along inside
+     * `intake_satisfied`, and dropping that requirement from `/checkout/`
+     * would otherwise have let a journey the server had already stopped go
+     * on and pay.
+     */
+    public function testADisqualifiedJourneyFailsTheDisqualificationGate(): void
+    {
+        $preconditions = self::preconditions(['med' => ['slug' => 'med', 'kind' => 'rx', 'teleform_id' => self::INTAKE_FORM]]);
+        $state = new JourneyState();
+        $state->disqualifiedRule = 'rule-pregnancy';
+
+        self::assertFalse(
+            $preconditions->satisfied('not_disqualified', self::cartOf('med'), $state),
+            'a journey the server stopped was allowed through',
+        );
+    }
+
+    /**
+     * The other half, and the reason this is a separate precondition rather
+     * than a rename of `intake_satisfied`: an unanswered questionnaire is not
+     * a disqualification. A buyer who chose "Proceed to Checkout" has never
+     * been judged, so nothing here may stop them.
+     */
+    public function testAnUnansweredQuestionnaireIsNotADisqualification(): void
+    {
+        $preconditions = self::preconditions(['med' => ['slug' => 'med', 'kind' => 'rx', 'teleform_id' => self::INTAKE_FORM]]);
+
+        self::assertTrue(
+            $preconditions->satisfied('not_disqualified', self::cartOf('med'), new JourneyState()),
+            'an outstanding form was mistaken for a hard stop',
+        );
+    }
+
+    /**
+     * A journey that cannot be loaded fails closed, exactly as the
+     * questionnaire gates it replaces at checkout already did
+     * ({@see \AsterMD\Storefront\Http\Middleware\StepGuardMiddleware}). A
+     * null state during an outage means the verdict is *unknowable*, not
+     * absent, and an outage does not make a hard stop safe (`[8.6]`) -- so
+     * the only branch that must never be taken is the one that assumes no
+     * news is good news and takes the payment.
+     */
+    public function testAnUnloadableJourneyFailsClosedOnTheDisqualificationGate(): void
+    {
+        $preconditions = self::preconditions(['med' => ['slug' => 'med', 'kind' => 'rx', 'teleform_id' => self::INTAKE_FORM]]);
+
+        self::assertFalse($preconditions->satisfied('not_disqualified', self::cartOf('med'), null));
+    }
+
+    /**
+     * The limit of that fail-closed branch. A cart that asks for no
+     * questionnaire cannot have been stopped by one, so an unloadable journey
+     * tells us nothing we need: refusing here would shut an accessory buyer
+     * out of checkout for an outage that has no bearing on them (`[20.1]`).
+     */
+    public function testAnUnloadableJourneyDoesNotBlockACartThatAsksForNoForm(): void
+    {
+        $preconditions = self::preconditions(['organizer' => ['slug' => 'organizer', 'kind' => 'otc']]);
+        $cart = new Cart();
+        $cart->put(new CartLine('organizer', 'Pill Organizer', 'otc', 'emr-org', null, 1, 1200));
+
+        self::assertTrue($preconditions->satisfied('not_disqualified', $cart, null));
+    }
+
     // ---- intake_satisfied ---------------------------------------------------
 
     public function testIntakeIsSatisfiedWhenNoCartProductAsksForAForm(): void

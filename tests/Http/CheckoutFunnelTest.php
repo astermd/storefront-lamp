@@ -153,7 +153,12 @@ final class CheckoutFunnelTest extends TestCase
             '_csrf' => $token, 'slug' => 'tirzepatide', 'variant_id' => 't-3m', 'quantity' => '1',
         ]);
         self::assertSame('/intake/medical/', $added->getHeaderLine('Location'));
-        self::assertSame(302, $this->get($app, '/checkout/')->getStatusCode(), 'checkout is shut until the form is done');
+        // The form is genuinely outstanding at this point, witnessed on a step
+        // that still waits for it. Checkout no longer does — it is reachable
+        // throughout, because this deployment collects the questionnaire from
+        // the patient portal after the order — so asserting it here would
+        // assert nothing about the form at all.
+        self::assertSame(302, $this->get($app, '/verify/')->getStatusCode(), 'the form is not actually outstanding yet');
 
         // Answer it, and be let through.
         self::assertSame(200, $this->get($app, '/intake/medical/')->getStatusCode());

@@ -111,10 +111,20 @@ final class IntakeOutageOnwardTest extends TestCase
         $recovered = $this->walk($this->appWithASessionService(), rounds: 2);
         self::assertContains('REACHED CHECKOUT', $recovered, 'the recovery this case turns on really happened');
 
-        $trail = $this->walk($this->appWithNoSessionService(), rounds: 1);
+        // The ruling is asserted on the submit itself rather than on another
+        // walk. The walk probes `/checkout/`, and by this point the journey
+        // loads again — checkout no longer waits on the questionnaire, so the
+        // probe answers 200 and never reaches a submit at all. What the
+        // allowance governs was always the submit, so ask it directly.
+        $submitted = $this->submit($this->appWithNoSessionService());
 
-        self::assertContains('303 POST /intake/submit/ -> /checkout/', $trail, 'the ruling is granted again');
-        self::assertNotContains('QUESTIONNAIRE UNAVAILABLE', $trail, 'and not spent on the first try');
+        self::assertSame(303, $submitted->getStatusCode(), 'the ruling is granted again');
+        self::assertSame('/checkout/', $submitted->getHeaderLine('Location'), 'and it still fails forward');
+        self::assertStringNotContainsString(
+            'load your questionnaire right now',
+            (string) $submitted->getBody(),
+            'the exit was armed by an outage this visitor had already come through',
+        );
     }
 
     public function testTheTallyIsForgottenByAJourneyThatLoadsOnAPageAndNotOnlyByOneThatLoadsOnASubmit(): void
