@@ -6,6 +6,64 @@ must say the same thing. `bin/console --version` reads `composer.json`, so it is
 not a fourth copy to keep in step. An update is applied by copying files, so every entry
 names exactly which ones changed.
 
+## [Unreleased — 0.0.3]
+
+Renders the three authoring hooks the form builder writes and the storefront
+read none of: a field's own class and id, and the form's own stylesheet.
+
+No configuration change. `composer.json` and `package.json` still say 0.0.2 —
+bump them together with the tag when this is released.
+
+### A field's authored class and id are rendered
+
+`properties.runtimeClassName` and `properties.runtimeId` were read by nothing,
+so a class set in the builder reached the page as neither markup nor an error.
+
+Both land on the **field wrapper**. It is the one element every field type has
+— a heading, an alert and a divider have no control to carry them — and it
+keeps an authored id away from wiring that cannot move: `intake-<name>` is what
+the label points at, what an error is described by, and what a choice group
+names itself from, so an authored id sits beside that and never displaces it.
+Target the control from your own CSS with `#my-id input`.
+
+The authored class is appended to the layout class rather than replacing it, so
+naming a class does not cost a field its grid cell. A blank value counts as
+absent: the builder writes an empty string for a value typed and then cleared,
+and `id=""` matches no selector ever written.
+
+- `core/Forms/FieldViewModel.php`, `theme/templates/partials/intake/field.twig`
+
+### The form's own stylesheet is rendered
+
+`settings.injectCss` was dropped, which is why the hooks above had nothing to
+name. It is rendered into a `<style>` block on the intake page, last, so an
+author's rule wins over the theme's without needing `!important`. Both
+renderers get it, so mode A and mode C do not diverge.
+
+It is emitted raw, because escaping would break it — `>` is the child
+combinator and a quote appears in every attribute selector. What makes that
+safe is narrow: inside `<style>` the HTML parser interprets no tags, and the
+only thing that ends the element is a closing tag, so that one sequence is
+removed and nothing else is. The guard tolerates the whitespace the parser
+tolerates, since `</ style>` closes the element just as well.
+
+Removal repeats until the text stops changing. Doing it once is not enough:
+`</sty</stylele>` holds exactly one closing tag, in the middle, and deleting it
+splices the surviving halves into a working one.
+
+- `core/Forms/InjectedCss.php` (new), `core/Http/Controller/IntakeController.php`,
+  `theme/templates/pages/intake/form.twig`,
+  `theme/templates/pages/intake/form-js-engine.twig`
+
+### Tests
+
+`vendor/bin/phpunit` is green at **2061 tests / 7196 assertions**, up from
+2044 / 7165.
+
+The EMR's hosted engine reads none of these three properties, so there was no
+reference renderer to match — the storefront defines the behaviour, and mode A
+is handed the same stylesheet so the two cannot drift.
+
 ## [0.0.2]
 
 Lets a buyer pay with the questionnaire still outstanding — this deployment
