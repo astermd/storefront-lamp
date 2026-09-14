@@ -11,6 +11,8 @@ use AsterMD\Storefront\Domain\FunnelRouter;
 use AsterMD\Storefront\Domain\ProductCatalog;
 use AsterMD\Storefront\Forms\FieldViewModel;
 use AsterMD\Storefront\Forms\FormUnavailable;
+use AsterMD\Storefront\Forms\Definition;
+use AsterMD\Storefront\Forms\InjectedCss;
 use AsterMD\Storefront\Forms\IntakeSession;
 use AsterMD\Storefront\Forms\ProgressSteps;
 use AsterMD\Storefront\Forms\IntakeView;
@@ -250,6 +252,12 @@ final class IntakeController
             // the funnel. The active step is the page on screen, and the
             // stepper is re-pointed by theme/js/intake.js as pages change --
             // the server only sets where it starts.
+            // The form author's own stylesheet, and the counterpart to the
+            // per-field runtimeClassName/runtimeId hooks -- without it those
+            // hooks name selectors nothing defines. Made safe to sit inside a
+            // <style> element here rather than in the template, so both
+            // renderers get the same treatment and neither can forget it.
+            'injected_css' => InjectedCss::safe(self::optionalSetting($view->definition, 'injectCss')),
             'stepper_steps' => ProgressSteps::from($view->definition),
             'stepper_active' => 1,
             'intake_engine' => (array) $this->config->get('intake.engine', []),
@@ -534,6 +542,14 @@ final class IntakeController
         ]);
     }
 
+
+    /** A definition setting as a string, or null when it is absent or is not one. */
+    private static function optionalSetting(Definition $definition, string $key): ?string
+    {
+        $value = $definition->setting($key);
+
+        return is_string($value) ? $value : null;
+    }
 
     /**
      * JSON destined for a `<script type="application/json">` block. Encoded

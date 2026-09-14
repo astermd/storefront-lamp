@@ -226,6 +226,79 @@ final class IntakeRenderTest extends TestCase
         self::assertStringNotContainsString('col-span-{', $half, 'a class name built by interpolation is never compiled');
     }
 
+    /**
+     * The author's own class and id land on the field wrapper, which is the
+     * one element every field type has — a heading and an alert have no
+     * control to put them on, and the wrapper is also what a layout rule
+     * wants to target.
+     *
+     * Putting the id here rather than on the input is what keeps the
+     * label -> input -> error wiring intact: those ids are derived from the
+     * field name and are load-bearing for a screen reader, so an authored id
+     * must not be able to displace one.
+     */
+    public function testAnAuthoredClassAndIdLandOnTheFieldWrapper(): void
+    {
+        $html = self::render([
+            'fieldId' => 'first_name', 'name' => 'first_name', 'type' => 'text', 'label' => 'First Name',
+            'properties' => ['cols' => 2, 'runtimeClassName' => 'my-class', 'runtimeId' => 'my-id'],
+        ]);
+
+        self::assertMatchesRegularExpression('/<div class="[^"]*\bmy-class\b[^"]*"/', $html);
+        self::assertStringContainsString('id="my-id"', $html);
+
+        // The authored class is added to the layout class, not substituted for
+        // it: a field that names a class must still take its grid cell.
+        self::assertMatchesRegularExpression('/<div class="[^"]*sm:col-span-1[^"]*"/', $html);
+
+        // And the control keeps the id the label points at.
+        self::assertStringContainsString('id="intake-first_name"', $html);
+        self::assertStringContainsString('for="intake-first_name"', $html);
+    }
+
+    /** A field naming neither emits neither attribute, rather than an empty one. */
+    public function testAFieldNamingNoClassOrIdEmitsNeitherAttribute(): void
+    {
+        $html = self::render(['fieldId' => 'a', 'name' => 'a', 'type' => 'text', 'label' => 'A']);
+
+        self::assertStringNotContainsString('id=""', $html);
+        self::assertDoesNotMatchRegularExpression('/<div class="[^"]*\s"/', $html, 'no trailing space where a class would have gone');
+    }
+
+    /**
+     * A display-only field gets them too. It has no control at all, so the
+     * wrapper is the only place they could go — and hiding a heading or an
+     * alert with authored CSS is exactly what these are for.
+     */
+    public function testADisplayOnlyFieldAlsoCarriesTheAuthoredClass(): void
+    {
+        $html = self::render([
+            'fieldId' => 'h', 'name' => 'h', 'type' => 'heading', 'label' => 'Biometrics',
+            'properties' => ['runtimeClassName' => 'hide-this'],
+        ]);
+
+        self::assertMatchesRegularExpression('/<div class="[^"]*\bhide-this\b[^"]*"/', $html);
+    }
+
+    /**
+     * The value is an attribute, and an author who types a quote into the
+     * builder must not be able to close it and add attributes of their own.
+     */
+    public function testAnAuthoredValueCannotBreakOutOfItsAttribute(): void
+    {
+        $html = self::render([
+            'fieldId' => 'a', 'name' => 'a', 'type' => 'text', 'label' => 'A',
+            'properties' => ['runtimeId' => '" onfocus="alert(1)'],
+        ]);
+
+        // The quote is escaped, so the value stays inside the attribute it was
+        // given. Asserted as "no attribute was created" rather than "the text
+        // does not appear": the escaped value still reads `onfocus=&quot;`,
+        // which is inert text inside id="…" and not a handler.
+        self::assertStringNotContainsString('onfocus="', $html);
+        self::assertStringContainsString('id="&quot; onfocus=&quot;alert(1)"', $html);
+    }
+
     /** A field that declares no `cols` at all gets the row, which is the safe way to be wrong. */
     public function testAFieldWithNoDeclaredWidthTakesTheWholeRow(): void
     {

@@ -105,6 +105,13 @@ final class FieldViewModel
             'disabled' => $state->disabled,
             'readonly' => $field->readOnly,
             'cols' => $field->cols(),
+            // The form author's own CSS hooks, set in the builder alongside
+            // `settings.injectCss` and meaningful only to the CSS they write.
+            // Blank is absent: the builder writes an empty string for a value
+            // that was typed and then cleared, and rendering that gives every
+            // such field an `id=""` no selector can ever match.
+            'runtime_class' => self::optionalText($field->properties['runtimeClassName'] ?? null),
+            'runtime_id' => self::optionalText($field->properties['runtimeId'] ?? null),
             'options' => self::options($field, $own),
             'value' => self::value($field, $own),
             'error' => $error,
