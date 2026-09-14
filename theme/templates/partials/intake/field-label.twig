@@ -1,8 +1,16 @@
 {# A real label, always. Never a placeholder standing in for one ([25.7]):
-   a placeholder disappears on focus, which is exactly when it is needed. #}
-<label for="intake-{{ field.name }}" id="intake-{{ field.name }}-label" class="font-heading block text-center text-[24px] font-bold leading-tight sm:text-[28px] text-heading">
+   a placeholder disappears on focus, which is exactly when it is needed.
+
+   Left-aligned and small. These partials were transcribed from a mockup that
+   put one question on a screen of its own, where a centered 28px label is the
+   page; rendered two-up in a grid, as the form actually renders, every label
+   competed with every other and with the page heading, and a five-field page
+   read as five headlines. A label in a form names its box and gets out of the
+   way -- the eye should land on the question text, then the input directly
+   under it, which is what the shared left edge buys. #}
+<label for="intake-{{ field.name }}" id="intake-{{ field.name }}-label" class="block text-sm font-semibold leading-snug text-heading">
   {{ field.label }}{% if field.required %}<span class="text-danger" aria-hidden="true"> *</span>{% endif %}
 </label>
 {% if field.description %}
-  <p class="mx-auto mt-3 max-w-[480px] text-center text-sm leading-relaxed text-muted">{{ field.description }}</p>
+  <p class="mt-1 text-sm leading-relaxed text-muted">{{ field.description }}</p>
 {% endif %}

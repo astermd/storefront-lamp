@@ -102,6 +102,26 @@ final class FieldViewModelTest extends TestCase
         self::assertSame('field-choice-multi.twig', $model['template']);
     }
 
+    /**
+     * A composite owns the row it is given, so its parts are laid out against
+     * *its* grid and not the page's. Height and weight both declare `cols: 1`
+     * — full width, correct for a field sitting on the page — and honouring
+     * that inside the composite stacks two short numeric boxes down the page
+     * where they belong side by side.
+     */
+    public function testACompositesPartsAreLaidOutAgainstTheCompositeRatherThanThePage(): void
+    {
+        $model = self::viewModel([
+            'fieldId' => 'bmi_measurement', 'name' => 'bmi_measurement', 'type' => 'bmi', 'label' => 'Height & Weight',
+            'subfields' => [
+                ['subfieldId' => 'bmi_height', 'name' => 'bmi_height', 'type' => 'number', 'label' => 'Height', 'properties' => ['cols' => 1]],
+                ['subfieldId' => 'bmi_weight', 'name' => 'bmi_weight', 'type' => 'number', 'label' => 'Weight', 'properties' => ['cols' => 1]],
+            ],
+        ]);
+
+        self::assertSame([2, 2], array_column($model['subfields'], 'cols'), 'both parts share the composite row');
+    }
+
     public function testAnUnsupportedTypeGetsTheUnsupportedPartialRatherThanBeingOmitted(): void
     {
         $model = self::viewModel(['fieldId' => 'a', 'name' => 'a', 'type' => 'signature', 'label' => 'Sign']);

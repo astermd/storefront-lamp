@@ -4,8 +4,20 @@
    degrades to a long scrollable page when scripts fail instead of to a blank
    one ([10.6a]). The wrapper carries the field's name and required state as
    data attributes because the stepper toggles both as conditions change, and
-   it must not have to re-derive which control belongs to which field. #}
-<div class="{% if field.cols > 1 %}sm:col-span-{{ field.cols }}{% endif %}"
+   it must not have to re-derive which control belongs to which field.
+
+   `cols` is how many fields the author put on a row, not how many columns one
+   field spans: `cols: 2` is the half-width treatment that puts First Name
+   beside Last Name, and `cols: 1` is a field with the row to itself. The page
+   grid is two columns wide, so the two map to one cell and to both.
+
+   Both class names are written out in full. The span used to be interpolated
+   as `sm:col-span-{{ field.cols }}`, which Tailwind's scanner cannot see --
+   it reads source text, not rendered output -- so the rule was never compiled
+   and every field collapsed into a single cell whatever the markup claimed. A
+   class name that is built at render time is a class name that does not
+   exist. #}
+<div class="{{ field.cols > 1 ? 'sm:col-span-1' : 'sm:col-span-2' }}"
      data-intake-field="{{ field.name }}"
      data-intake-type="{{ field.type }}"
      data-intake-required="{{ field.required ? '1' : '0' }}"

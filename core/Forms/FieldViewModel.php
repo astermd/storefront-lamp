@@ -241,6 +241,17 @@ final class FieldViewModel
             );
         }
 
+        // A composite owns the row the page gave it and lays its own parts out
+        // against its own two-column grid, so their authored `cols` does not
+        // apply here: height and weight both declare full width, which is
+        // right for a field on the page and stacks two short numeric boxes
+        // down it when read inside the composite. Overridden after the fact
+        // rather than inside for(), which has no way to know it is building a
+        // part rather than a field.
+        foreach ($models as $index => $model) {
+            $models[$index]['cols'] = 2;
+        }
+
         return $models;
     }
 

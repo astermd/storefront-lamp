@@ -353,6 +353,62 @@
     Array.prototype.forEach.call(form.querySelectorAll('[data-intake-progress-label]'), function (node) {
       node.textContent = 'Question ' + (current + 1) + ' of ' + pages.length;
     });
+    updateStepper();
+  }
+
+  // The three visual states a step can be in, kept in step with
+  // partials/stepper.twig -- which renders the same class strings server-side,
+  // so the first paint and every later one agree.
+  var STEP_CIRCLE = {
+    done: 'bg-secondary text-secondary-foreground',
+    active: 'bg-primary text-primary-foreground',
+    todo: 'bg-divider text-muted'
+  };
+  var STEP_LABEL = {
+    done: 'font-medium text-heading',
+    active: 'font-medium text-primary',
+    todo: 'text-muted'
+  };
+
+  function restyle(node, states, state) {
+    if (!node) return;
+    Object.keys(states).forEach(function (key) {
+      states[key].split(' ').forEach(function (cls) { node.classList.remove(cls); });
+    });
+    states[state].split(' ').forEach(function (cls) { node.classList.add(cls); });
+  }
+
+  /**
+   * Re-points the stepper at the page on screen.
+   *
+   * The stepper draws one step per page of the form, so leaving it where the
+   * server rendered it would show five steps with the first one lit for the
+   * whole questionnaire -- which is the fixed four-step row it replaced,
+   * wearing different labels. Nothing happens when the page count and the
+   * step count disagree: the steps were authored on a `form-progress` field
+   * and describe something other than the pages, and moving them by page
+   * index would light the wrong one.
+   */
+  function updateStepper() {
+    var stepper = document.querySelector('[data-funnel-stepper]');
+    if (!stepper) return;
+
+    var steps = stepper.querySelectorAll('[data-stepper-step]');
+    if (steps.length !== pages.length) return;
+
+    Array.prototype.forEach.call(steps, function (step, i) {
+      var state = i < current ? 'done' : (i === current ? 'active' : 'todo');
+      restyle(step.querySelector('[data-stepper-circle]'), STEP_CIRCLE, state);
+      restyle(step.querySelector('[data-stepper-label]'), STEP_LABEL, state);
+    });
+
+    Array.prototype.forEach.call(stepper.querySelectorAll('[data-stepper-connector]'), function (connector, i) {
+      var done = i < current;
+      connector.classList.toggle('bg-secondary', done);
+      connector.classList.toggle('bg-border', !done);
+      var tick = connector.querySelector('[data-stepper-tick]');
+      if (tick) tick.classList.toggle('hidden', !done);
+    });
   }
 
   function post(url, extra) {

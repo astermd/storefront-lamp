@@ -3,10 +3,14 @@
    Deliberately NOT a <label>: a label points at exactly one control, and a
    choice group has several. The group element names itself from this id
    instead, which is what gives a screen reader the question before it starts
-   reading options ([25.7]). #}
-<p id="intake-{{ field.name }}-label" class="font-heading text-center text-[24px] font-bold leading-tight sm:text-[28px] text-heading">
+   reading options ([25.7]).
+
+   Styled identically to field-label.twig on purpose. A visitor has no idea
+   whether a question is backed by one control or several, so the two must not
+   look like different kinds of question. #}
+<p id="intake-{{ field.name }}-label" class="text-sm font-semibold leading-snug text-heading">
   {{ field.label }}{% if field.required %}<span class="text-danger" aria-hidden="true"> *</span>{% endif %}
 </p>
 {% if field.description %}
-  <p class="mx-auto mt-3 max-w-[480px] text-center text-sm leading-relaxed text-muted">{{ field.description }}</p>
+  <p class="mt-1 text-sm leading-relaxed text-muted">{{ field.description }}</p>
 {% endif %}

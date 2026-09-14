@@ -204,6 +204,37 @@ final class IntakeRenderTest extends TestCase
         self::assertStringNotContainsString('name="sex_at_birth[]"', $html);
     }
 
+    /**
+     * `cols` is how many fields the author put on a row, not how many columns
+     * one field spans — `cols: 2` is the half-width treatment that puts First
+     * Name beside Last Name, and `cols: 1` is a field with the row to itself.
+     * The wrapper read it as a span and inverted the whole layout.
+     *
+     * It also interpolated the number into the class name, so the only value
+     * that could ever have worked was emitted as `sm:col-span-2` — a string
+     * Tailwind's scanner never sees in the source and therefore never
+     * compiles. The rule was absent from the stylesheet whatever the markup
+     * said, which is why every field collapsed into one cell.
+     */
+    public function testAHalfWidthFieldTakesOneGridCellAndAFullWidthFieldTakesTheRow(): void
+    {
+        $half = self::render(['fieldId' => 'a', 'name' => 'a', 'type' => 'text', 'label' => 'A', 'properties' => ['cols' => 2]]);
+        $full = self::render(['fieldId' => 'b', 'name' => 'b', 'type' => 'text', 'label' => 'B', 'properties' => ['cols' => 1]]);
+
+        self::assertStringContainsString('sm:col-span-1', $half, 'cols: 2 means two per row, so one cell each');
+        self::assertStringContainsString('sm:col-span-2', $full, 'cols: 1 means the field has the row to itself');
+        self::assertStringNotContainsString('col-span-{', $half, 'a class name built by interpolation is never compiled');
+    }
+
+    /** A field that declares no `cols` at all gets the row, which is the safe way to be wrong. */
+    public function testAFieldWithNoDeclaredWidthTakesTheWholeRow(): void
+    {
+        self::assertStringContainsString(
+            'sm:col-span-2',
+            self::render(['fieldId' => 'a', 'name' => 'a', 'type' => 'text', 'label' => 'A']),
+        );
+    }
+
     /** The companion: a real select-all-that-apply keeps its checkboxes and its list-shaped name. */
     public function testAMultiSelectChoiceStillRendersCheckboxesWithAListShapedName(): void
     {
