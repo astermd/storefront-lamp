@@ -25,7 +25,7 @@ const WATCHED = ['theme/css', 'theme/js', 'theme/templates'];
 // this window collapse into one run.
 const DEBOUNCE_MS = 80;
 
-let pending = null;
+let queued = null;
 let building = false;
 
 function build(reason) {
@@ -46,8 +46,8 @@ function build(reason) {
 }
 
 function schedule(reason) {
-  clearTimeout(pending);
-  pending = setTimeout(() => build(reason), DEBOUNCE_MS);
+  clearTimeout(queued);
+  queued = setTimeout(() => build(reason), DEBOUNCE_MS);
 }
 
 for (const dir of WATCHED) {

@@ -233,8 +233,8 @@ final class TemplateGlobalsMiddleware implements MiddlewareInterface
      *
      * A line carries no action of its own. The drawer's actions are a
      * property of the cart, not of any one line in it: they were computed
-     * once for the cart and then drawn on every eligible card, so a cart
-     * holding two prescriptions offered the same "Start Assessment" twice,
+     * once for the cart and then drawn on every eligible card, so a cart with
+     * two prescriptions in it offered the same "Start Assessment" twice,
      * pointing at the same URL. {@see self::cartActions()} now publishes them
      * once, and the drawer renders them once, in its footer.
      *
