@@ -9,7 +9,9 @@ names exactly which ones changed.
 ## [Unreleased — 0.0.3]
 
 Renders the three authoring hooks the form builder writes and the storefront
-read none of: a field's own class and id, and the form's own stylesheet.
+read none of — a field's own class and id, and the form's own stylesheet — and
+stops `cache:clear` claiming to have cleared a cache it could not touch, which
+is what made the first of those look unfixed after it was fixed.
 
 No configuration change. `composer.json` and `package.json` still say 0.0.2 —
 bump them together with the tag when this is released.
@@ -66,11 +68,44 @@ splices the surviving halves into a working one.
   `theme/templates/pages/intake/form.twig`,
   `theme/templates/pages/intake/form-js-engine.twig`
 
+### `cache:clear` reports what it actually removed
+
+It reported a success it did not have. The count rose once per entry *walked*
+while both removals were `@`-suppressed, so a cache directory owned by the
+web-server user and cleared by a shell user printed
+`Cache cleared (12 entries removed).` and removed nothing — after which the
+operator had the one piece of evidence they most needed to be true, and ruled
+the cache out.
+
+That is how a stale questionnaire definition went on being served through a
+clear that reported success: `storage/cache/teleforms` still held the old copy,
+so the storefront skipped the `teleforms/view-url` fetch entirely and the form
+rendered from a definition nobody could see.
+
+The answer from `rmdir`/`unlink` is now read. The count is of entries removed,
+surviving files are listed with their owner — deleting a file needs write
+permission on the directory holding it, not on the file, so ownership is almost
+always the cause — and the command exits **1**.
+
+```
+Cache cleared (1 entry removed).
+
+ERROR: 2 cache entries could not be removed:
+  storage/cache/teleforms/abc123.json (owned by www-data)
+  ...
+
+The cache was NOT fully cleared. Whatever it was holding is still being served.
+```
+
+- `core/Console/CacheClearCommand.php`
+
 ### Tests
 
-`vendor/bin/phpunit` is green at **2076 tests / 7211 assertions**, up from
-2044 / 7165. Every field type that draws an element is covered by name, so a
-partial added later without the hook fails rather than silently ignoring it.
+`vendor/bin/phpunit` is green at **2079 tests / 7155 assertions** on a clone
+with no synced catalog, up from 2044 / 7102. Every field type that draws an
+element is covered by name, so a partial added later without the hook fails
+rather than silently ignoring it. The two `cache:clear` permission cases skip
+as root, where the refusal they arrange cannot happen.
 
 The EMR's hosted engine reads none of these three properties, so there was no
 reference renderer to match — the storefront defines the behaviour, and mode A
