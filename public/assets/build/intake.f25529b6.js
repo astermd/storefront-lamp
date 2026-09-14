@@ -362,12 +362,12 @@
   var STEP_CIRCLE = {
     done: 'bg-secondary text-secondary-foreground',
     active: 'bg-primary text-primary-foreground',
-    todo: 'bg-divider text-muted'
+    upcoming: 'bg-divider text-muted'
   };
   var STEP_LABEL = {
     done: 'font-medium text-heading',
     active: 'font-medium text-primary',
-    todo: 'text-muted'
+    upcoming: 'text-muted'
   };
 
   function restyle(node, states, state) {
@@ -397,7 +397,7 @@
     if (steps.length !== pages.length) return;
 
     Array.prototype.forEach.call(steps, function (step, i) {
-      var state = i < current ? 'done' : (i === current ? 'active' : 'todo');
+      var state = i < current ? 'done' : (i === current ? 'active' : 'upcoming');
       restyle(step.querySelector('[data-stepper-circle]'), STEP_CIRCLE, state);
       restyle(step.querySelector('[data-stepper-label]'), STEP_LABEL, state);
     });

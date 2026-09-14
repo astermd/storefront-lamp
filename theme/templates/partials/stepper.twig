@@ -26,18 +26,18 @@
 {% set circle_classes = {
   'done':   'bg-secondary text-secondary-foreground',
   'active': 'bg-primary text-primary-foreground',
-  'todo':   'bg-divider text-muted',
+  'upcoming': 'bg-divider text-muted',
 } %}
 {% set label_classes = {
   'done':   'font-medium text-heading',
   'active': 'font-medium text-primary',
-  'todo':   'text-muted',
+  'upcoming': 'text-muted',
 } %}
 <div class="mx-auto max-w-[660px] px-6 pb-10 pt-10" data-funnel-stepper>
   <div class="flex items-center">
     {% for step in steps %}
       {% set i = loop.index %}
-      {% set state = i < active ? 'done' : (i == active ? 'active' : 'todo') %}
+      {% set state = i < active ? 'done' : (i == active ? 'active' : 'upcoming') %}
       <div class="relative shrink-0" data-stepper-step="{{ i }}">
         <span data-stepper-circle class="flex size-12 items-center justify-center rounded-full {{ circle_classes[state] }}">
           {% if step.icon %}
