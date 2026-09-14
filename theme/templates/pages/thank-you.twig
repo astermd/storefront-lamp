@@ -65,11 +65,16 @@
         <p class="mt-3 text-sm leading-6 text-body">
           We've received your submission and placed your order on hold. Our licensed physician is currently reviewing your health information to see if this treatment is right for you.
         </p>
-        {# No patient-portal URL is configured, so this link is a placeholder. #}
-        <a href="#" class="mt-6 inline-flex h-[41px] w-full items-center justify-center gap-2 rounded-sm bg-primary px-5 text-base font-medium text-primary-foreground transition-colors hover:bg-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-hover">
+        {# Only when a portal is configured ({@see config/app.php}). This was an
+           `href="#"` with a comment saying so, which on the one page a buyer
+           keeps is the worst place for a button that does not move: it is the
+           only thing they are told to do next. #}
+        {% if portal_url %}
+        <a href="{{ portal_url }}" class="mt-6 inline-flex h-[41px] w-full items-center justify-center gap-2 rounded-sm bg-primary px-5 text-base font-medium text-primary-foreground transition-colors hover:bg-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-hover">
           Go to Patient Portal
           <i data-lucide="arrow-right" class="size-[14px]"></i>
         </a>
+        {% endif %}
       </div>
 
       <!-- ==================== WHAT HAPPENS NEXT ==================== -->

@@ -210,6 +210,7 @@ final class ValidateCommand extends Command
         $this->validateAbandonment($errors);
         $this->validateStructuredData($errors);
         $this->validateSeoUrls($errors);
+        $this->validatePortal($warnings);
 
         if ((bool) $input->getOption('live')) {
             $errors = array_merge($errors, $this->runLiveChecks($catalog));
@@ -294,6 +295,33 @@ final class ValidateCommand extends Command
             $errors[] = 'seo: ' . $problem;
         }
     }
+    /**
+     * A warning rather than an error, because a storefront with no patient
+     * portal still sells: the links that would point there simply do not
+     * render ({@see config/app.php}). Silence would be wrong though -- the
+     * receipt's "what now?" button is the thing a buyer is told to do next,
+     * and a deployment that has not set this has quietly removed it.
+     *
+     * @param list<string> $warnings
+     */
+    private function validatePortal(array &$warnings): void
+    {
+        if ($this->config === null) {
+            return;
+        }
+
+        $url = $this->config->get('app.portal.url');
+        if (!is_string($url) || trim($url) === '') {
+            $warnings[] = 'portal: no PATIENT_PORTAL_URL is set — the header Sign In and the receipt\'s Go to Patient Portal button are not rendered at all';
+
+            return;
+        }
+
+        if (!str_starts_with($url, 'https://') && !str_starts_with($url, 'http://')) {
+            $warnings[] = 'portal: PATIENT_PORTAL_URL is not an absolute http(s) URL — a relative value resolves against this storefront, which does not serve the portal';
+        }
+    }
+
     private function validateStructuredData(array &$errors): void
     {
         if ($this->config === null) {

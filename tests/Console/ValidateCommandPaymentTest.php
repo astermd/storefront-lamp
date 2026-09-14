@@ -56,7 +56,11 @@ final class ValidateCommandPaymentTest extends TestCase
             // `url` is not decoration: `config:validate` refuses a deployment whose
             // canonical links, sitemap and robots.txt would name no host, so a
             // fixture without it is not a deployment these cases could pass.
-            "<?php return ['url' => 'https://storefront.example', 'emr' => ['base_host' => 'sales.example.test', 'channel_id' => 'channel-123']];",
+            "<?php return ['url' => 'https://storefront.example', 'emr' => ['base_host' => 'sales.example.test', 'channel_id' => 'channel-123'],"
+            // Named for the same reason `url` is: a deployment with no
+            // patient portal is warned about, and these cases assert a
+            // deployment with nothing to report.
+            . " 'portal' => ['url' => 'https://portal.example.test/']];",
         );
         $this->writeCatalog();
         $this->writeChannel();
