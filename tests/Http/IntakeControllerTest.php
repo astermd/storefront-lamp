@@ -54,9 +54,9 @@ final class IntakeControllerTest extends TestCase
         'email' => 'ada@example.com',
         'phone' => '5551234567',
         'date_of_birth' => '1990-04-01',
-        'age_confirmation' => ['yes'],
-        'sex_at_birth' => ['female'],
-        'pregnancy_status' => ['no'],
+        'age_confirmation' => 'yes',
+        'sex_at_birth' => 'female',
+        'pregnancy_status' => 'no',
         'comorbidities_conditions' => ['high-blood-pressure'],
         'bmi_height' => '66',
         'bmi_weight' => '200',
@@ -64,17 +64,17 @@ final class IntakeControllerTest extends TestCase
 
     /** Pages two to five of the recorded form, answered so that no rule fires. */
     private const array REMAINING_PAGES = [
-        'mtc_men2_history' => ['no'],
-        'type1_diabetes_dka' => ['no'],
-        'pancreatitis_history' => ['no'],
-        'gi_conditions' => ['no'],
-        'gallbladder_kidney_liver_disease' => ['no'],
-        'eating_disorder_mental_health' => ['no'],
-        'other_glp1_medications' => ['no'],
-        'insulin_sulfonylureas' => ['no'],
-        'oral_birth_control' => ['no'],
-        'other_medications_supplements' => ['no'],
-        'known_allergies' => ['no'],
+        'mtc_men2_history' => 'no',
+        'type1_diabetes_dka' => 'no',
+        'pancreatitis_history' => 'no',
+        'gi_conditions' => 'no',
+        'gallbladder_kidney_liver_disease' => 'no',
+        'eating_disorder_mental_health' => 'no',
+        'other_glp1_medications' => 'no',
+        'insulin_sulfonylureas' => 'no',
+        'oral_birth_control' => 'no',
+        'other_medications_supplements' => 'no',
+        'known_allergies' => 'no',
         'side_effect_acknowledgment' => 'on',
         'telehealth_consent' => 'on',
     ];
@@ -134,6 +134,53 @@ final class IntakeControllerTest extends TestCase
         self::assertStringContainsString('id="intake-first_name"', $body, 'the first page');
         self::assertStringContainsString('data-intake-field="telehealth_consent"', $body, 'the last page');
         self::assertStringContainsString('content="noindex', $body, '[24.6]: a funnel step is never indexed');
+    }
+
+    /**
+     * `[25.10]`. The stepper describes the form in front of the visitor. It
+     * used to be four constants — Eligibility, Contact, Medical, Verify &
+     * Review — above a five-page questionnaire, so three of the four could
+     * never move and none of them named a thing being asked.
+     *
+     * The labels are read out of the stepper rather than out of the page. The
+     * page renders every heading field as content too, so searching the whole
+     * body for "Biometrics & Demographics" finds it whether the stepper was
+     * derived from the form or left hardcoded — an assertion that passes
+     * either way proves nothing about the thing under test.
+     */
+    public function testTheStepperNamesOneStepPerPageOfTheFormBeingRendered(): void
+    {
+        $this->seedCart();
+        $body = (string) $this->app()->handle($this->get('/intake/medical/'))->getBody();
+
+        self::assertSame(
+            [
+                'Biometrics &amp; Demographics',
+                'Absolute Contraindications (Black Box Warnings)',
+                'Medical History &amp; Relative Contraindications',
+                'Current Medications &amp; Interactions',
+                'Consents &amp; Acknowledgments',
+            ],
+            self::stepperLabels($body),
+            'the recorded form titles its pages "Page 1".."Page 5", so each step is named by its own heading',
+        );
+    }
+
+    /**
+     * The labels the stepper is actually drawing, in order.
+     *
+     * @return list<string>
+     */
+    private static function stepperLabels(string $html): array
+    {
+        $stepper = strstr($html, 'data-funnel-stepper');
+        if ($stepper === false) {
+            return [];
+        }
+
+        preg_match_all('/data-stepper-label[^>]*>([^<]*)</', $stepper, $matches);
+
+        return array_map(trim(...), $matches[1]);
     }
 
     public function testADefinitionThatCannotBeResolvedIsAStatedOutageRatherThanACrash(): void
@@ -262,10 +309,16 @@ final class IntakeControllerTest extends TestCase
 
         // The consequence of getting this wrong, asserted rather than
         // inferred: the medical intake has not been rendered, let alone
-        // answered, so checkout stays shut (`[8.4]`).
-        $checkout = $app->handle($this->get('/checkout/'));
-        self::assertSame(302, $checkout->getStatusCode());
-        self::assertNotSame('/checkout/', $checkout->getHeaderLine('Location'));
+        // answered, so every step that still waits on it stays shut (`[8.4]`).
+        //
+        // Asserted on `/verify/` rather than on `/checkout/`, which used to
+        // carry `intake_satisfied` and no longer does — checkout is not a
+        // witness to an outstanding questionnaire any more, and reading it as
+        // one would leave this case passing whether the answer was filed
+        // correctly or not.
+        $verify = $app->handle($this->get('/verify/'));
+        self::assertSame(302, $verify->getStatusCode());
+        self::assertSame('/intake/medical/', $verify->getHeaderLine('Location'));
 
         // The URI-based fallback is still there for a body that names no step
         // at all, and it still answers "intake" — which is what makes the
@@ -279,13 +332,20 @@ final class IntakeControllerTest extends TestCase
         self::assertSame('completed', $this->journeyState()['form_status']['tf-medical'] ?? null);
     }
 
-    public function testCheckoutIsStillGuardedUntilTheFormIsActuallyCompleted(): void
+    /**
+     * The other half of the claim above. Without it, the assertion that the
+     * submit marks the form completed could not tell "the submit did it" from
+     * "it was never outstanding".
+     *
+     * `/verify/` is the witness because checkout stopped being one: this
+     * deployment lets a buyer pay with the questionnaire still outstanding
+     * and collects it from the patient portal afterwards, so `/checkout/`
+     * answers 200 either way and proves nothing here.
+     */
+    public function testTheStepsThatWaitOnTheFormStayShutUntilItIsActuallyCompleted(): void
     {
-        // The other half of the claim above. Without it, the assertion that
-        // checkout opens could not tell "the submit unlocked it" from "it was
-        // never locked".
         $this->seedCart();
-        $response = $this->app()->handle($this->get('/checkout/'));
+        $response = $this->app()->handle($this->get('/verify/'));
 
         self::assertSame(302, $response->getStatusCode());
         self::assertSame('/intake/medical/', $response->getHeaderLine('Location'));

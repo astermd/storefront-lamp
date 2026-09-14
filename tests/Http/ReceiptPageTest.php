@@ -8,6 +8,10 @@ use AsterMD\Storefront\Bootstrap\AppFactory;
 use AsterMD\Storefront\Emr\SessionGateway;
 use AsterMD\Storefront\Repository\OrderRepository;
 use AsterMD\Storefront\Repository\SessionRepository;
+use AsterMD\Storefront\Domain\ProductCatalog;
+use AsterMD\Storefront\Support\Config;
+use AsterMD\Storefront\Tests\Domain\FakeCatalog;
+use AsterMD\Storefront\Tests\Support\ConfigVariant;
 use AsterMD\Storefront\Tests\Support\FakeSessionGateway;
 use AsterMD\Storefront\Tests\Support\TempDatabase;
 use PHPUnit\Framework\TestCase;
@@ -31,6 +35,7 @@ use Slim\Psr7\Factory\ServerRequestFactory;
 final class ReceiptPageTest extends TestCase
 {
     use TempDatabase;
+    use ConfigVariant;
 
     /** The journey that has bought something, as {@see FunnelPagesTest} spells it. */
     private const string BUYER_SESSION = '7c2e5d41-9a3b-4f18-8e6d-1b4a7c9e2f55';
@@ -91,7 +96,8 @@ final class ReceiptPageTest extends TestCase
      * @param int     $discountCents the checkout order's discount
      * @param ?string $promotionCode the code that earned it, if any
      */
-    private function appWithReceipt(int $discountCents = 2450, ?string $promotionCode = 'WELCOME10'): \Slim\App
+    /** @param array<string, mixed> $overrides merged into the container, for the cases that vary configuration */
+    private function appWithReceipt(int $discountCents = 2450, ?string $promotionCode = 'WELCOME10', array $overrides = []): \Slim\App
     {
         $pdo = $this->tempPdo();
 
@@ -161,6 +167,7 @@ final class ReceiptPageTest extends TestCase
             SessionGateway::class => new FakeSessionGateway(
                 sessions: [self::BUYER_SESSION => ['opportunity_id' => null, 'events' => []]],
             ),
+            ...$overrides,
         ]);
     }
 
@@ -181,6 +188,113 @@ final class ReceiptPageTest extends TestCase
         self::assertSame(200, $response->getStatusCode());
 
         return (string) $response->getBody();
+    }
+
+    /**
+     * The receipt shows each line's product photo, read live from the catalog
+     * by the slug the order stored.
+     *
+     * The photo is deliberately *not* part of the receipt snapshot. What is
+     * frozen is what was charged — name, quantity, price — because a later
+     * catalog edit must never rewrite a kept receipt. A photo is illustration
+     * rather than a charged fact, so it is resolved at render time and the
+     * snapshot keeps no copy of it.
+     *
+     * The catalog is injected rather than inherited: the shipped one is
+     * whatever `theme:sync` last wrote, and a case that asserts a particular
+     * image has to state the catalog it expects.
+     */
+    public function testEachReceiptLineShowsItsProductPhotoFromTheCatalog(): void
+    {
+        $body = $this->receiptBody($this->appWithReceipt(overrides: [
+            ProductCatalog::class => new FakeCatalog([
+                'tirzepatide' => ['slug' => 'tirzepatide', 'name' => 'Tirzepatide (5mg/mL)', 'kind' => 'rx', 'image' => '/assets/media/tirz.jpg'],
+                'travel-case' => ['slug' => 'travel-case', 'name' => 'Travel Case', 'kind' => 'otc', 'image' => '/assets/media/case.jpg'],
+            ]),
+        ]));
+
+        // Each line resolves its own photo, not the first one found: a receipt
+        // that showed one product's picture beside every name would be worse
+        // than showing none.
+        self::assertStringContainsString('src="/assets/media/tirz.jpg"', $body);
+        self::assertStringContainsString('src="/assets/media/case.jpg"', $body);
+
+        // The name the order stored, not the catalog's current one. The photo
+        // is read live; everything that was charged stays frozen.
+        self::assertStringContainsString('alt="Tirzepatide (5mg/mL)"', $body);
+    }
+
+    /**
+     * A line the catalog knows but which carries no photo falls back too --
+     * `image` is optional on a product, and a missing one must not render
+     * `src=""`, which browsers resolve against the page and re-request.
+     */
+    public function testAProductWithNoPhotoKeepsThePlaceholderTile(): void
+    {
+        $body = $this->receiptBody($this->appWithReceipt(overrides: [
+            ProductCatalog::class => new FakeCatalog([
+                'tirzepatide' => ['slug' => 'tirzepatide', 'name' => 'Tirzepatide (5mg/mL)', 'kind' => 'rx'],
+            ]),
+        ]));
+
+        self::assertStringNotContainsString('src=""', $body);
+        self::assertStringContainsString('data-lucide="pill"', $body);
+    }
+
+    /**
+     * A line whose slug the catalog no longer knows keeps the placeholder tile
+     * rather than rendering a broken image. A receipt outlives the catalog it
+     * was bought from — a delisted product is the ordinary case, not an edge
+     * one — and the buyer keeps this page.
+     */
+    public function testALineTheCatalogNoLongerKnowsKeepsThePlaceholderTile(): void
+    {
+        $body = $this->receiptBody($this->appWithReceipt(overrides: [
+            ProductCatalog::class => new FakeCatalog([]),
+        ]));
+
+        self::assertStringNotContainsString('src="/assets/media/', $body, 'no product photo is rendered for a slug the catalog has lost');
+        self::assertStringContainsString('data-lucide="pill"', $body, 'the tile the mockup drew is still the fallback');
+    }
+
+    /** A container override carrying just a portal URL, leaving every other config file shipped. */
+    private function withPortal(?string $url): array
+    {
+        $app = require dirname(__DIR__, 2) . '/config/app.php';
+        $app['portal'] = ['url' => $url];
+
+        return [Config::class => $this->configWith(['app' => $app])];
+    }
+
+    /**
+     * The receipt is where the portal matters most: it is the only thing the
+     * buyer is told to do next, and its button was an `href="#"` carrying a
+     * comment that admitted as much.
+     */
+    public function testTheReceiptLinksToTheConfiguredPatientPortal(): void
+    {
+        $body = $this->receiptBody($this->appWithReceipt(overrides: $this->withPortal('https://portal.example.test/')));
+
+        self::assertStringContainsString('Go to Patient Portal', $body);
+        self::assertStringContainsString('href="https://portal.example.test/"', $body);
+    }
+
+    /**
+     * With nowhere to send them, the receipt says nothing rather than offering
+     * a button that does not move. The rest of the page -- what was ordered,
+     * what happens next -- is unaffected, so the buyer is not left with less
+     * than they had.
+     */
+    public function testTheReceiptOffersNoPortalButtonWhenNoneIsConfigured(): void
+    {
+        $body = $this->receiptBody($this->appWithReceipt(overrides: $this->withPortal(null)));
+
+        // The anchor existed only to carry this text, so its absence is the
+        // placeholder's absence. Not asserted as "no href=# on the page": the
+        // footer has its own placeholder links, unrelated to the portal and
+        // older than it, and a body-wide search would fail on those instead.
+        self::assertStringNotContainsString('Go to Patient Portal', $body);
+        self::assertStringContainsString('What happens next?', $body, 'the rest of the receipt still stands');
     }
 
     public function testReceiptRendersTheOrderThatWasPlaced(): void

@@ -147,6 +147,15 @@ final class FieldViewModel
             return 'field-unsupported.twig';
         }
 
+        // A `choice-multi` that accepts one answer is drawn with radios, and
+        // the alias table cannot express that: it is keyed on the type, and
+        // the two controls share one. {@see Field::isMultiValue()} is the
+        // single place that reads the authored properties deciding it, so the
+        // control and the answer shape can never disagree.
+        if ($field->type === 'choice-multi' && !$field->isMultiValue()) {
+            return 'field-choice-single.twig';
+        }
+
         return 'field-' . (self::TEMPLATE_ALIASES[$field->type] ?? $field->type) . '.twig';
     }
 
@@ -230,6 +239,17 @@ final class FieldViewModel
                 $answers[$subfield->name] ?? null,
                 null,
             );
+        }
+
+        // A composite owns the row the page gave it and lays its own parts out
+        // against its own two-column grid, so their authored `cols` does not
+        // apply here: height and weight both declare full width, which is
+        // right for a field on the page and stacks two short numeric boxes
+        // down it when read inside the composite. Overridden after the fact
+        // rather than inside for(), which has no way to know it is building a
+        // part rather than a field.
+        foreach ($models as $index => $model) {
+            $models[$index]['cols'] = 2;
         }
 
         return $models;

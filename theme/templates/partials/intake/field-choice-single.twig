@@ -1,12 +1,17 @@
-{# Transcribed from the mockup's single-choice rows, with the button swapped
-   for a real radio input. The visual treatment is unchanged -- the radio dot,
-   the border, the focus ring -- but a real input carries a value without
-   scripts, which a button never does ([10.6a]). The whole row is the click
-   target ([25.11]). #}
+{# A single-answer choice: one real radio per option ([10.6a]), so the control
+   carries its value without scripts and the browser enforces "one of these"
+   on its own. The whole row is the click target ([25.11]).
+
+   Options stack rather than sitting in bordered boxes side by side. The boxed
+   treatment came from a mockup where the question was the entire screen; at
+   the width a field actually gets in a two-column grid, two boxes per row put
+   "Male" and "Female" in the space of a word each, and the visible box read as
+   a button rather than as a choice. A stacked list with the control on the
+   left reads as one question with several answers, which is what it is. #}
 {% include 'partials/intake/field-question.twig' with { field: field } only %}
-<div class="mt-8 flex flex-col gap-4" role="radiogroup" aria-labelledby="intake-{{ field.name }}-label">
+<div class="mt-2 flex flex-col gap-1" role="radiogroup" aria-labelledby="intake-{{ field.name }}-label">
   {% for option in field.options %}
-    <label class="group relative flex w-full cursor-pointer items-center justify-center rounded-sm border-2 border-border bg-background px-6 py-4 text-base font-medium text-heading transition-colors hover:border-primary has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-primary has-[:checked]:border-primary has-[:checked]:text-primary has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-60">
+    <label class="group flex cursor-pointer items-center gap-3 rounded-sm px-1 py-2 transition-colors hover:bg-background-2 has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-primary has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-60">
       <input
         type="radio"
         id="intake-{{ field.name }}-{{ loop.index }}"
@@ -18,10 +23,10 @@
         {% if field.disabled %}disabled{% endif %}
         {% if field.error %}aria-invalid="true" aria-describedby="{{ field.error_id }}"{% endif %}
       />
-      <span class="absolute left-6 flex size-5 items-center justify-center rounded-full border-2 border-border-darker peer-checked:border-primary">
-        <span class="size-2.5 rounded-full group-has-[:checked]:bg-primary"></span>
+      <span class="flex size-5 shrink-0 items-center justify-center rounded-full border border-border-darker bg-background transition-colors peer-checked:border-primary">
+        <span class="size-2.5 rounded-full transition-colors group-has-[:checked]:bg-primary"></span>
       </span>
-      {{ option.label }}
+      <span class="text-sm text-heading">{{ option.label }}</span>
     </label>
   {% endfor %}
   {% include 'partials/intake/field-error.twig' with { field: field } only %}

@@ -797,6 +797,7 @@ final class AppFactory
         ));
         $container->set(ReceiptController::class, static fn (Container $c): ReceiptController => new ReceiptController(
             $c->get(Completion::class),
+            $c->get(ProductCatalog::class),
         ));
 
         foreach ($containerOverrides as $id => $value) {

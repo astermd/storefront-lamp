@@ -211,12 +211,17 @@ final class CartControllerTest extends TestCase
     }
 
     /**
-     * `intent=checkout` only names a redirect target — it does not bypass
-     * `[8.1]`'s guard. A visitor sent to `/checkout/` with an outstanding
-     * questionnaire still gets bounced to it on arrival, exactly as a bare
-     * deep link to `/checkout/` would be.
+     * The questionnaire is not a precondition of paying. A buyer who chose
+     * "Proceed to Checkout" reaches `/checkout/` and stays there with the
+     * medical form still outstanding — they complete it from the patient
+     * portal after the order, so bouncing them back to it here would refuse a
+     * sale the deployment means to accept.
+     *
+     * Asserted on arrival rather than on the redirect, because the redirect
+     * target was already correct while `StepGuardMiddleware` sent them
+     * straight back off it: the bug was entirely in the guard.
      */
-    public function testCheckoutIntentStillBouncesOffAnUnsatisfiedQuestionnaireOnArrival(): void
+    public function testCheckoutIsReachableWithAnOutstandingQuestionnaire(): void
     {
         $app = $this->journeyApp([]);
         $token = $this->csrfToken($app);
@@ -233,8 +238,26 @@ final class CartControllerTest extends TestCase
                 ->withCookieParams(['amd_session' => self::SESSION]),
         );
 
-        self::assertSame(302, $response->getStatusCode());
-        self::assertSame('/intake/medical/', $response->getHeaderLine('Location'));
+        self::assertSame(200, $response->getStatusCode(), 'the guard bounced a buyer off checkout over an unfinished questionnaire');
+    }
+
+    /**
+     * The add still happens on the checkout intent — skipping the intake must
+     * not skip the cart, or checkout is reached with nothing to pay for.
+     */
+    public function testTheCheckoutIntentStillAddsTheLineToTheCart(): void
+    {
+        $app = $this->journeyApp([]);
+        $token = $this->csrfToken($app);
+
+        $this->post($app, '/cart/add/', [
+            '_csrf' => $token,
+            'slug' => 'med-1',
+            'variant_id' => 'med-1-1m',
+            'intent' => 'checkout',
+        ], self::SESSION);
+
+        self::assertSame(1, $this->cartAfterGet($app)['count']);
     }
 
     public function testAddingAnAccessoryRoutesToCheckout(): void
@@ -584,7 +607,7 @@ final class CartControllerTest extends TestCase
      * A `FlowDefinition` missing `checkout` is substituted through the
      * container to force that gap.
      */
-    public function testAMissingFlowStepLeavesTheLineWithNoContinueLinkRatherThanFatalling(): void
+    public function testAMissingFlowStepLeavesTheDrawerWithNoActionRatherThanFatalling(): void
     {
         $_SESSION['cart'] = ['session' => null, 'territory' => null, 'lines' => [[
             'slug' => 'seeded', 'name' => 'Seeded Product', 'kind' => 'otc',
@@ -602,9 +625,12 @@ final class CartControllerTest extends TestCase
 
         self::assertSame(200, $response->getStatusCode());
 
+        // The routing decision answers `checkout` for this cart and this flow
+        // does not define that step, so there is no path to offer. The drawer
+        // renders without the action rather than taking the page down with it.
         $cart = $this->cartAfterGet($app);
-        self::assertNull($cart['lines'][0]['continue_url']);
-        self::assertNull($cart['lines'][0]['continue_label']);
+        self::assertNull($cart['actions']['checkout']);
+        self::assertNull($cart['actions']['assessment']);
     }
 
     public function testANonNumericQuantityIsRejectedWithoutChangingTheCart(): void

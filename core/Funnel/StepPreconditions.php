@@ -95,10 +95,39 @@ final class StepPreconditions
             'plan_chosen_for_every_rx_line' => FunnelRules::everyRxLineHasAPlan($cart),
             'prequalification_satisfied' => $this->prequalificationSatisfied($cart, $state),
             'intake_satisfied' => $this->intakeSatisfied($cart, $state),
+            'not_disqualified' => $this->notDisqualified($cart, $state),
             'order_placed' => self::orderPlaced($state),
             'verification_satisfied' => $this->verificationSatisfied($state),
             default => throw new \InvalidArgumentException(sprintf('Unknown funnel precondition "%s".', $requirement)),
         };
+    }
+
+    /**
+     * Whether the server has already stopped this journey (`[10.45]`,
+     * `[10.46]`).
+     *
+     * Published separately from {@see self::intakeSatisfied()}, which also
+     * answers it, because `/checkout/` requires this one and not that one:
+     * the questionnaire is collected from the patient portal after the order,
+     * so an *outstanding* form must not block a sale while an *answered* one
+     * that ended in a hard stop still must.
+     *
+     * The null branch is the same judgement call the questionnaire gates make
+     * during an outage, and it is made the same way — on the cart, not on the
+     * missing journey. A null state means the verdict is unknowable rather
+     * than absent, so a cart that owes a questionnaire fails closed: no news
+     * is not good news about a clinical refusal (`[8.6]`). A cart that owes
+     * none cannot have been disqualified by one, and refusing it would lock
+     * an accessory buyer out of checkout over an outage that says nothing
+     * about them (`[20.1]`).
+     */
+    private function notDisqualified(Cart $cart, ?JourneyState $state): bool
+    {
+        if ($state !== null) {
+            return !$state->isDisqualified();
+        }
+
+        return $this->rules->intakeForms($cart) === [] && $this->rules->prequalificationForms($cart) === [];
     }
 
     /**
@@ -124,6 +153,14 @@ final class StepPreconditions
      * hard stop is the server's verdict (`[10.44a]`), and a visitor who
      * finished the form before the rule fired must not be let through on the
      * strength of having finished it.
+     *
+     * That verdict is *also* published on its own as `not_disqualified`, and
+     * the duplication is deliberate. `/checkout/` does not require this
+     * precondition -- the questionnaire is collected from the patient portal
+     * after the order -- so without a gate of its own the hard stop would
+     * have left the funnel along with it, and a journey the server stopped
+     * could pay (`[10.45]`, `[10.46]`). The steps that still wait on the
+     * questionnaire keep reading it here.
      */
     private function intakeSatisfied(Cart $cart, ?JourneyState $state): bool
     {

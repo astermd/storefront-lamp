@@ -1,4 +1,13 @@
-<h2 class="font-heading text-center text-[24px] font-bold leading-tight sm:text-[28px] text-heading">{{ field.label }}</h2>
+{# A section heading inside a page. Sized well below the page's own title so
+   the two are not competing: this names a group of questions, it is not the
+   thing the visitor is being asked. #}
+{# `focus:outline-none` because theme/js/intake.js focuses the new page's
+   first heading on every step change, to announce it ([25.14]). That focus is
+   programmatic and the heading is not interactive, so the ring the browser
+   draws for it points at nothing the visitor can act on -- it read as a text
+   box drawn around the section title. Keyboard focus rings elsewhere are
+   untouched; nothing can tab to this. #}
+<h2 tabindex="-1" class="font-heading text-lg font-bold leading-tight text-heading focus:outline-none">{{ field.label }}</h2>
 {% if field.description %}
-  <p class="mx-auto mt-3 max-w-[480px] text-center text-sm leading-relaxed text-muted">{{ field.description }}</p>
+  <p class="mt-1 text-sm leading-relaxed text-muted">{{ field.description }}</p>
 {% endif %}

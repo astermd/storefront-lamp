@@ -172,6 +172,10 @@ final class StructuredDataValidationTest extends TestCase
             'url' => 'https://storefront.example',
             'name' => 'Demo Store',
             'emr' => ['base_host' => 'sales.example.test', 'channel_id' => 'channel-123'],
+            // Named for the same reason `url` is: a deployment with no patient
+            // portal is warned about, and the cases here assert a deployment
+            // with nothing at all to report.
+            'portal' => ['url' => 'https://portal.example.test/'],
             'seo' => $this->seo(),
         ]);
     }

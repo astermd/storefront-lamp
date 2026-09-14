@@ -24,6 +24,26 @@ return [
         'channel_id' => $env['ASTERMD_CHANNEL_ID'] ?? null,
     ],
 
+    /**
+     * Where a patient signs in to see their own records.
+     *
+     * It is not this application: the storefront sells and collects, and
+     * everything afterwards -- the intake questionnaire, the identity check,
+     * the order's clinical status -- happens in the portal. So every "what
+     * now?" link points here, and there is no default. A guessed portal
+     * address would send a buyer somewhere real and wrong.
+     *
+     * Absent is a supported state, and it means *render no link*: the header's
+     * Sign In and the receipt's Go to Patient Portal simply do not appear.
+     * They previously pointed at `#sign-in` and `#`, which is a button that
+     * looks broken rather than one that is honestly absent.
+     * `bin/console config:validate` warns so a deployment is told, rather than
+     * erroring so a fresh clone cannot boot.
+     */
+    'portal' => [
+        'url' => $env['PATIENT_PORTAL_URL'] ?? null,
+    ],
+
     'session' => [
         // The analytics-session cookie and the single canonical resume
         // parameter. Both carry the same value; the cookie is HttpOnly, so a

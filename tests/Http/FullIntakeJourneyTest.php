@@ -121,19 +121,23 @@ final class FullIntakeJourneyTest extends TestCase
         self::assertStringContainsString(self::ALERT_TEXT, (string) $terminal->getBody());
     }
 
-    public function testCheckoutBouncesToTheIntakeStepForACartThatHasCollectedNoForm(): void
+    /**
+     * An uncollected questionnaire does not shut checkout: this deployment
+     * collects it from the patient portal once the order is placed, so a
+     * buyer who never opened the form can still pay.
+     *
+     * The questionnaire stays reachable alongside it rather than being
+     * replaced by the sale — both routes out of this cart have to work, and
+     * a relaxation that quietly closed the form would be as wrong as the
+     * guard that closed checkout.
+     */
+    public function testACartThatHasCollectedNoFormReachesCheckoutAndTheQuestionnaireAlike(): void
     {
         $app = $this->app();
         $this->addToCart($app, 'semaglutide', 'semaglutide-1m');
 
-        $checkout = $this->get($app, '/checkout/');
-
-        // [8.6]: no deep link reaches checkout with an uncollected
-        // questionnaire, and the guard is the one place that enforces it.
-        self::assertSame(302, $checkout->getStatusCode());
-        self::assertSame('/intake/medical/', $checkout->getHeaderLine('Location'));
-
-        self::assertSame(200, $this->get($app, '/intake/medical/')->getStatusCode(), 'the step it sends the visitor to is reachable');
+        self::assertSame(200, $this->get($app, '/checkout/')->getStatusCode(), 'the guard shut checkout over a form collected after the order');
+        self::assertSame(200, $this->get($app, '/intake/medical/')->getStatusCode(), 'the questionnaire is still reachable for a buyer who wants it first');
     }
 
     public function testACartWithNothingToAskReachesCheckoutWithNoIntakeAtAll(): void
@@ -179,8 +183,12 @@ final class FullIntakeJourneyTest extends TestCase
             'the notice a resumed terminal state would show (`[10.48]`) is gone with the verdict',
         );
 
+        // The verdict is what Start Over cleared, so checkout opens again.
+        // Asserting it is not `/not-eligible/` is the part that matters: a
+        // stale hard stop surviving the reset would strand the visitor on the
+        // terminal page forever (`[10.47]`).
         $checkout = $this->get($app, '/checkout/');
-        self::assertSame('/intake/medical/', $checkout->getHeaderLine('Location'), 'checkout is guarded again, not terminated');
+        self::assertSame(200, $checkout->getStatusCode(), 'a stale verdict still held checkout shut after Start Over');
     }
 
     private function app(): App

@@ -69,17 +69,21 @@ final class IntakeFormChoiceTest extends TestCase
      *
      * Serving the finished form instead is not a cosmetic error — its submit
      * completes a form that is already complete, the routing decision sends the
-     * visitor straight back to this step, and checkout becomes permanently
-     * unreachable for that cart.
+     * visitor straight back to this step, and the visitor loops on it forever.
+     *
+     * The outstanding form is witnessed on `/verify/` rather than `/checkout/`:
+     * checkout stopped requiring `intake_satisfied` when this deployment moved
+     * the questionnaire to the patient portal, so it answers 200 whichever
+     * form the step serves and cannot tell the two apart.
      */
-    public function testTheMedicalStepServesTheFormCheckoutIsStillWaitingOn(): void
+    public function testTheMedicalStepServesTheFormTheFunnelIsStillWaitingOn(): void
     {
         $app = $this->app($this->twoIntakeForms(), ['tf-a' => 'completed']);
         $this->seedCart('rx-a', 'otc-b');
 
-        $checkout = $app->handle($this->get('/checkout/'));
-        self::assertSame(302, $checkout->getStatusCode(), 'tf-b is outstanding, so checkout is shut');
-        self::assertSame('/intake/medical/', $checkout->getHeaderLine('Location'));
+        $verify = $app->handle($this->get('/verify/'));
+        self::assertSame(302, $verify->getStatusCode(), 'tf-b is outstanding, so the steps that wait on it are shut');
+        self::assertSame('/intake/medical/', $verify->getHeaderLine('Location'));
 
         $medical = $app->handle($this->get('/intake/medical/'));
         self::assertSame(200, $medical->getStatusCode());

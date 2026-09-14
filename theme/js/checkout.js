@@ -42,6 +42,44 @@
     sync();
   }
 
+  // The card box used to accept an unbounded string, so a buyer could type
+  // their number twice and only find out at the provider. This caps what can
+  // be typed and groups the digits the way a card is printed; the enforced
+  // rule is the server's ({@see AsterMD\Storefront\Checkout\CardNumber}),
+  // because a script that never runs must not be what stands between a
+  // malformed number and a charge attempt.
+  //
+  // No Luhn check here either, for the reason the server does not do one:
+  // providers issue sandbox numbers that fail it on purpose.
+  var cardNumber = document.getElementById('checkout-card-number');
+  if (cardNumber) {
+    // American Express prints 15 digits as 4-6-5 and everything else groups in
+    // fours. 34 and 37 are Amex's issuer identifiers -- the only two.
+    var AMEX = /^3[47]/;
+
+    cardNumber.addEventListener('input', function () {
+      var digits = cardNumber.value.replace(/\D/g, '').slice(0, 19);
+      var groups = AMEX.test(digits)
+        ? [digits.slice(0, 4), digits.slice(4, 10), digits.slice(10, 15)]
+        : digits.match(/.{1,4}/g) || [];
+      var formatted = groups.filter(Boolean).join(' ');
+
+      if (formatted === cardNumber.value) return;
+
+      // Typing in the middle of a number would otherwise throw the caret to
+      // the end on every keystroke. Counting the digits before the caret and
+      // putting it back after the same digit survives the regrouping.
+      var before = cardNumber.value.slice(0, cardNumber.selectionStart || 0).replace(/\D/g, '').length;
+      cardNumber.value = formatted;
+
+      var caret = 0;
+      for (var seen = 0; caret < formatted.length && seen < before; caret++) {
+        if (/\d/.test(formatted[caret])) seen++;
+      }
+      cardNumber.setSelectionRange(caret, caret);
+    });
+  }
+
   var form = document.querySelector('form[data-checkout-form]');
   if (!form) return;
 

@@ -200,7 +200,7 @@ final class RecordMapperTest extends TestCase
 
         $payload = $this->mapper()->build(
             self::metadata(['sex_at_birth' => 'opportunity.gender']),
-            AnswerSet::fromArray(['sex_at_birth' => ['female']]),
+            AnswerSet::fromArray(['sex_at_birth' => 'female']),
             $definition,
         );
 

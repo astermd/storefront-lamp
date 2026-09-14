@@ -1,14 +1,18 @@
-{# Transcribed from the mockup's condition checkboxes, which already used real
-   inputs with the peer-styled tick. The name carries [] so several selections
-   arrive as a list -- a multi-select answer round-trips as a list however many
-   options are chosen ([10.36]). #}
+{# A select-all-that-apply: real checkboxes with a peer-styled tick. The name
+   carries [] so several selections arrive as a list -- a multi-select answer
+   round-trips as a list however many options are chosen ([10.36]).
+
+   Stacked one per row, matching field-choice-single.twig. A two-up grid of
+   boxed options was unreadable at the width a field gets inside the page
+   grid, and the two kinds of choice question must not look like different
+   kinds of question. #}
 {% include 'partials/intake/field-question.twig' with { field: field } only %}
-<div class="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2" data-multi-group
+<div class="mt-2 flex flex-col gap-1" data-multi-group
      role="group" aria-labelledby="intake-{{ field.name }}-label"
      {% if field.required %}aria-required="true"{% endif %}
      {% if field.error %}aria-invalid="true" aria-describedby="{{ field.error_id }}"{% endif %}>
   {% for option in field.options %}
-    <label class="flex cursor-pointer items-center gap-3 rounded-sm border border-border bg-background px-5 py-4 transition-colors hover:border-primary has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-primary has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-60">
+    <label class="flex cursor-pointer items-center gap-3 rounded-sm px-1 py-2 transition-colors hover:bg-background-2 has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-primary has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-60">
       <input
         type="checkbox"
         id="intake-{{ field.name }}-{{ loop.index }}"
@@ -22,7 +26,7 @@
       <span class="flex size-5 shrink-0 items-center justify-center rounded-sm border border-border-darker bg-background transition-colors peer-checked:border-primary peer-checked:bg-primary">
         <i data-lucide="check" class="size-3.5 text-background" stroke-width="3"></i>
       </span>
-      <span class="text-base font-medium text-heading">{{ option.label }}</span>
+      <span class="text-sm text-heading">{{ option.label }}</span>
     </label>
   {% endfor %}
 </div>

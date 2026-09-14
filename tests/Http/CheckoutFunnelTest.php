@@ -153,7 +153,12 @@ final class CheckoutFunnelTest extends TestCase
             '_csrf' => $token, 'slug' => 'tirzepatide', 'variant_id' => 't-3m', 'quantity' => '1',
         ]);
         self::assertSame('/intake/medical/', $added->getHeaderLine('Location'));
-        self::assertSame(302, $this->get($app, '/checkout/')->getStatusCode(), 'checkout is shut until the form is done');
+        // The form is genuinely outstanding at this point, witnessed on a step
+        // that still waits for it. Checkout no longer does — it is reachable
+        // throughout, because this deployment collects the questionnaire from
+        // the patient portal after the order — so asserting it here would
+        // assert nothing about the form at all.
+        self::assertSame(302, $this->get($app, '/verify/')->getStatusCode(), 'the form is not actually outstanding yet');
 
         // Answer it, and be let through.
         self::assertSame(200, $this->get($app, '/intake/medical/')->getStatusCode());
@@ -398,6 +403,47 @@ final class CheckoutFunnelTest extends TestCase
         self::assertSame([], $this->rows('SELECT * FROM orders'), 'nothing was recorded as bought');
         self::assertSame([], $this->state($app)->placedOrders);
         self::assertNotSame([], $_SESSION['cart']['lines']);
+    }
+
+    /**
+     * `[13.28]` leaves the verdict on a card to the provider, and it still
+     * does — but the card box accepted an unbounded string, so a buyer who
+     * pasted a whole statement line paid a round trip to the provider to be
+     * shown a decline written for a developer.
+     *
+     * A length is not a verdict. Refusing it here means nothing reaches the
+     * provider, which is the assertion that distinguishes this from any other
+     * failed submission.
+     */
+    public function testACardNumberOfNoIssuedLengthIsRefusedWithoutCallingTheProvider(): void
+    {
+        $app = $this->app([]);
+        $token = $this->walkToCheckout($app);
+
+        $response = $this->post($app, '/checkout/', $this->submission($token, card: '41111111111111111111111111'));
+        $body = (string) $response->getBody();
+
+        self::assertSame(200, $response->getStatusCode());
+        self::assertStringContainsString('Enter a card number between 13 and 19 digits.', $body);
+        self::assertSame([], $this->transport->requests, 'nothing reached the provider');
+        self::assertSame([], $this->rows('SELECT * FROM orders'));
+        self::assertNotSame([], $_SESSION['cart']['lines'], 'the cart survives a correction');
+    }
+
+    /**
+     * The companion, and the reason the rule is length alone: providers issue
+     * sandbox numbers that fail a Luhn checksum on purpose. A storefront that
+     * checked Luhn would refuse the provider's own test cards locally, and
+     * tell whoever typed one that their card number was wrong.
+     */
+    public function testASandboxCardThatFailsLuhnStillReachesTheProvider(): void
+    {
+        $app = $this->app(['vrio-order-declined.json']);
+        $token = $this->walkToCheckout($app);
+
+        $this->post($app, '/checkout/', $this->submission($token, card: '1444444444444440'));
+
+        self::assertNotSame([], $this->transport->requests, 'a sandbox card was refused before the provider saw it');
     }
 
     public function testADeclineIsNotErasedFromTheEmrFunnelByTheReRenderThatFollowsIt(): void
