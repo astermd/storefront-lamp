@@ -202,18 +202,32 @@
 
       <!-- ==================== LINE ITEMS ==================== -->
       {# The receipt's stored lines are the durable order snapshot — slug, name,
-         kind, quantity and price — so there is no product image and no plan name
-         to render: neither is part of what was charged, and re-reading the catalog
-         here would let a later price or a renamed variant rewrite a kept receipt.
-         Every line therefore gets the mockup's placeholder tile, with the same
-         `pill` icon checkout.twig already uses for a line with no image. #}
+         kind, quantity and price — and no plan name, because a renamed variant
+         must not rewrite a kept receipt.
+
+         The photo is the exception, and it is read live from the catalog by the
+         stored slug rather than snapshotted ({@see
+         AsterMD\Storefront\Http\Controller\ReceiptController::lineImages()}).
+         Freezing the money and freezing the picture are separate questions: a
+         price or a name is what was charged and must never change under the
+         buyer, while a photo is illustration and there is nothing to protect by
+         keeping a copy. A slug the catalog has lost, or a product with no photo,
+         falls back to the mockup's placeholder tile — the same `pill` icon
+         checkout.twig uses for a line with no image. #}
       <div class="flex flex-col gap-4">
         {% for line in receipt.lines %}
+        {% set line_image = line_images[line.slug]|default(null) %}
         <div class="flex items-center gap-3">
           <div class="relative shrink-0">
+            {% if line_image %}
+            <span class="flex size-14 overflow-hidden rounded-sm bg-surface">
+              <img src="{{ line_image }}" alt="{{ line.name }}" class="h-full w-full object-cover" />
+            </span>
+            {% else %}
             <span class="flex size-14 items-center justify-center rounded-sm bg-surface">
               <i data-lucide="pill" class="size-6 text-icon-muted"></i>
             </span>
+            {% endif %}
             <span class="absolute -right-1.5 -top-1.5 flex size-5 items-center justify-center rounded-full bg-heading text-xs font-medium text-background">{{ line.quantity }}</span>
           </div>
           <div class="flex-1">

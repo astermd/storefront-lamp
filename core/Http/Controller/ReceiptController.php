@@ -7,6 +7,8 @@ declare(strict_types=1);
 namespace AsterMD\Storefront\Http\Controller;
 
 use AsterMD\Storefront\Completion\Completion;
+use AsterMD\Storefront\Completion\ReceiptViewModel;
+use AsterMD\Storefront\Domain\ProductCatalog;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Slim\Views\Twig;
@@ -26,15 +28,55 @@ use Slim\Views\Twig;
  */
 final class ReceiptController
 {
-    public function __construct(private readonly Completion $completion)
-    {
+    public function __construct(
+        private readonly Completion $completion,
+        private readonly ProductCatalog $catalog,
+    ) {
     }
 
     public function __invoke(ServerRequestInterface $request, ResponseInterface $response): ResponseInterface
     {
+        $receipt = $this->completion->complete();
+
         return Twig::fromRequest($request)->render($response, 'pages/thank-you.twig', [
             'noindex' => true,
-            'receipt' => $this->completion->complete(),
+            'receipt' => $receipt,
+            'line_images' => $this->lineImages($receipt),
         ]);
+    }
+
+    /**
+     * Each line's product photo, by slug, read from the catalog at render time.
+     *
+     * It is deliberately *not* part of {@see ReceiptViewModel}, which is a snapshot of
+     * what was charged and carries no catalog dependency at all. Freezing the
+     * money and freezing the picture are separate questions: a later price or
+     * a renamed variant must never rewrite a kept receipt, but a photo is
+     * illustration rather than a charged fact, so there is nothing to protect
+     * by storing a copy of it.
+     *
+     * A slug the catalog no longer knows, or a product with no photo, is
+     * absent from this map and renders the placeholder tile. That is the
+     * ordinary case rather than an edge one: a receipt outlives the catalog it
+     * was bought from, and the buyer keeps this page.
+     *
+     * @return array<string, string>
+     */
+    private function lineImages(ReceiptViewModel $receipt): array
+    {
+        $images = [];
+        foreach ($receipt->lines as $line) {
+            $slug = $line['slug'];
+            if (isset($images[$slug])) {
+                continue;
+            }
+
+            $image = $this->catalog->product($slug)['image'] ?? null;
+            if (is_string($image) && $image !== '') {
+                $images[$slug] = $image;
+            }
+        }
+
+        return $images;
     }
 }
