@@ -123,6 +123,32 @@ final class MiniCartTest extends TestCase
         return (string) $response->getBody();
     }
 
+    /** A journey the server has stopped, so the drawer's refusal branch can be exercised. */
+    private function getAsDisqualifiedJourney(string $path): string
+    {
+        $pdo = $this->tempPdo();
+        (new SessionRepository(fn (): \PDO => $pdo))->insert(
+            self::JOURNEY_SESSION,
+            ['reconciled' => true, 'disqualified_rule' => 'rule-pregnancy', 'disqualified_teleform' => self::SEMAGLUTIDE_FORM],
+            null,
+        );
+
+        $app = AppFactory::create(dirname(__DIR__, 2), [
+            \PDO::class => $pdo,
+            CatalogProvider::class => SampleCatalog::provider(),
+            SessionGateway::class => new FakeSessionGateway(
+                sessions: [self::JOURNEY_SESSION => ['opportunity_id' => null, 'events' => []]],
+            ),
+        ]);
+
+        $response = $app->handle(
+            (new ServerRequestFactory())->createServerRequest('GET', $path)
+                ->withCookieParams(['amd_session' => self::JOURNEY_SESSION]),
+        );
+
+        return (string) $response->getBody();
+    }
+
     /**
      * The cart-panel's own markup, isolated from the rest of the page —
      * the footer's "Treatments" column links every catalog product
@@ -130,11 +156,18 @@ final class MiniCartTest extends TestCase
      * of what is in the cart, so an absence assertion about the mockup's
      * hardcoded sample names has to be scoped to the drawer itself rather
      * than the whole body.
+     *
+     * The end of the panel is an explicit `<!-- /cart-panel -->` marker. It
+     * used to be "wherever the Sign In button starts", which tied this helper
+     * to a button that has since become conditional — with no portal
+     * configured there is no Sign In at all, and every scoped assertion in
+     * this file failed on a missing needle rather than on anything about the
+     * cart.
      */
     private function cartPanelHtml(string $body): string
     {
         $start = strpos($body, 'id="cart-panel"');
-        $end = strpos($body, '<a href="#sign-in"', $start);
+        $end = strpos($body, '<!-- /cart-panel -->', $start);
 
         self::assertNotFalse($start);
         self::assertNotFalse($end);
@@ -191,39 +224,6 @@ final class MiniCartTest extends TestCase
         self::assertStringContainsString('href="/intake/"', $body);
     }
 
-    public function testAnRxLineWithNoQuestionnaireOffersCheckoutRatherThanAnAssessmentThatDoesNotExist(): void
-    {
-        // Tadalafil declares no teleform, so there is nothing to assess. The
-        // drawer used to offer "Continue Assessment" for every Rx line and
-        // send this buyer to a questionnaire the funnel never asks them for.
-        $this->seedCart([$this->rxLine()]);
-        $body = $this->get('/');
-
-        self::assertStringContainsString('Continue Checkout', $body);
-        self::assertStringNotContainsString('Continue Assessment', $body);
-    }
-
-    /**
-     * The half of the drawer's continue action that only a real journey can
-     * exercise: a questionnaire that has already been answered.
-     *
-     * The two cases above distinguish "asks the routing decision" from "reads
-     * the line's kind", and both hold with no journey at all — so on their own
-     * they leave the *journey* argument unasserted, and dropping it (asking the
-     * router with a null state) changes nothing they can see. That argument is
-     * the whole of the fix: a buyer who finished their assessment was still
-     * being offered "Continue Assessment" back to the form they had completed.
-     */
-    public function testAFinishedQuestionnaireTurnsTheDrawerActionIntoCheckout(): void
-    {
-        $this->seedCart([$this->rxLine('semaglutide', variantId: 'semaglutide-1m')]);
-        $body = $this->getAsJourney('/', [self::SEMAGLUTIDE_FORM => 'completed']);
-
-        self::assertStringContainsString('Continue Checkout', $body);
-        self::assertStringContainsString('href="/checkout/"', $body);
-        self::assertStringNotContainsString('Continue Assessment', $body);
-    }
-
     /**
      * And the other direction, so the case above cannot be satisfied by a
      * drawer that has simply stopped offering the assessment to anybody: a
@@ -261,6 +261,96 @@ final class MiniCartTest extends TestCase
         self::assertStringContainsString('href="/intake/"', $body);
     }
 
+    /**
+     * The drawer offers both ways forward at once, the way the product page
+     * does: answer the questionnaire now, or pay now and answer it from the
+     * patient portal afterwards. It used to offer whichever one the routing
+     * decision happened to name, so a buyer who wanted to pay had no way to
+     * say so from the cart.
+     *
+     * Both actions live in the drawer footer rather than on each line card.
+     * The action was always computed once for the whole cart and then drawn
+     * per line, so a cart with two prescriptions showed the same
+     * "Start Assessment" link twice, pointing at the same URL.
+     *
+     * Scoped to the drawer, like every other absence assertion here: the page
+     * behind it has its own "Start Assessment" buttons, and a body-wide search
+     * would find those instead.
+     */
+    public function testTheDrawerOffersBothTheAssessmentAndCheckoutForAnOutstandingRxLine(): void
+    {
+        $this->seedCart([$this->rxLine('semaglutide', variantId: 'semaglutide-1m')]);
+        $panel = $this->cartPanelHtml($this->get('/'));
+
+        self::assertStringContainsString('Start Assessment', $panel);
+        self::assertStringContainsString('href="/intake/"', $panel);
+        self::assertStringContainsString('Proceed to Checkout', $panel);
+        self::assertStringContainsString('href="/checkout/"', $panel);
+    }
+
+    /**
+     * "The assessment applies to Rx only" is not a rule the drawer has to
+     * enforce separately: the routing decision names an intake step only when
+     * a line declares a questionnaire, and an accessory never does. Asserted
+     * so a later change that starts reading the line's kind instead is caught.
+     */
+    public function testAnAccessoryOnlyCartIsOfferedCheckoutAndNoAssessment(): void
+    {
+        $this->seedCart([$this->accessoryLine()]);
+        $panel = $this->cartPanelHtml($this->get('/'));
+
+        self::assertStringContainsString('Proceed to Checkout', $panel);
+        self::assertStringNotContainsString('Assessment', $panel);
+    }
+
+    /** Tadalafil declares no teleform, so an Rx line alone does not earn the assessment action. */
+    public function testAnRxLineThatDeclaresNoQuestionnaireIsOfferedCheckoutAlone(): void
+    {
+        $this->seedCart([$this->rxLine()]);
+        $panel = $this->cartPanelHtml($this->get('/'));
+
+        self::assertStringContainsString('Proceed to Checkout', $panel);
+        self::assertStringNotContainsString('Assessment', $panel);
+    }
+
+    /**
+     * A finished questionnaire has nothing left to offer, so only checkout
+     * remains.
+     *
+     * This is the half of the drawer's action that only a real journey can
+     * exercise. The cases above distinguish "asks the routing decision" from
+     * "reads the line's kind", and both hold with no journey at all -- so on
+     * their own they leave the *journey* argument unasserted, and dropping it
+     * (asking the router with a null state) changes nothing they can see.
+     * That argument is the whole of the earlier fix: a buyer who finished
+     * their assessment was still being offered "Continue Assessment" back to
+     * the form they had completed.
+     */
+    public function testAFinishedQuestionnaireLeavesOnlyTheCheckoutAction(): void
+    {
+        $this->seedCart([$this->rxLine('semaglutide', variantId: 'semaglutide-1m')]);
+        $panel = $this->cartPanelHtml($this->getAsJourney('/', [self::SEMAGLUTIDE_FORM => 'completed']));
+
+        self::assertStringContainsString('Proceed to Checkout', $panel);
+        self::assertStringNotContainsString('Assessment', $panel);
+    }
+
+    /**
+     * The safety case. A journey the server stopped is offered its own
+     * explanation and nothing else -- putting a pay button in front of
+     * someone the guard is about to turn away would be an invitation to a
+     * refusal, and `not_disqualified` exists precisely so they cannot pay.
+     */
+    public function testADisqualifiedJourneyIsOfferedNeitherAction(): void
+    {
+        $this->seedCart([$this->rxLine('semaglutide', variantId: 'semaglutide-1m')]);
+        $panel = $this->cartPanelHtml($this->getAsDisqualifiedJourney('/'));
+
+        self::assertStringNotContainsString('Proceed to Checkout', $panel);
+        self::assertStringNotContainsString('Start Assessment', $panel);
+        self::assertStringContainsString('href="/not-eligible/"', $panel);
+    }
+
     public function testAnRxLineNeverOffersAQuantityStepper(): void
     {
         $this->seedCart([$this->rxLine()]);
@@ -270,15 +360,13 @@ final class MiniCartTest extends TestCase
         self::assertStringNotContainsString('cart-qty-decrement', $body);
     }
 
-    public function testAnAccessoryLineOffersAStepperAndContinueCheckout(): void
+    public function testAnAccessoryLineOffersAQuantityStepper(): void
     {
         $this->seedCart([$this->accessoryLine()]);
         $body = $this->get('/');
 
         self::assertStringContainsString('cart-qty-increment', $body);
         self::assertStringContainsString('cart-qty-decrement', $body);
-        self::assertStringContainsString('Continue Checkout', $body);
-        self::assertStringContainsString('href="/checkout/"', $body);
     }
 
     /**

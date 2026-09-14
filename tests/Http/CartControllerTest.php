@@ -607,7 +607,7 @@ final class CartControllerTest extends TestCase
      * A `FlowDefinition` missing `checkout` is substituted through the
      * container to force that gap.
      */
-    public function testAMissingFlowStepLeavesTheLineWithNoContinueLinkRatherThanFatalling(): void
+    public function testAMissingFlowStepLeavesTheDrawerWithNoActionRatherThanFatalling(): void
     {
         $_SESSION['cart'] = ['session' => null, 'territory' => null, 'lines' => [[
             'slug' => 'seeded', 'name' => 'Seeded Product', 'kind' => 'otc',
@@ -625,9 +625,12 @@ final class CartControllerTest extends TestCase
 
         self::assertSame(200, $response->getStatusCode());
 
+        // The routing decision answers `checkout` for this cart and this flow
+        // does not define that step, so there is no path to offer. The drawer
+        // renders without the action rather than taking the page down with it.
         $cart = $this->cartAfterGet($app);
-        self::assertNull($cart['lines'][0]['continue_url']);
-        self::assertNull($cart['lines'][0]['continue_label']);
+        self::assertNull($cart['actions']['checkout']);
+        self::assertNull($cart['actions']['assessment']);
     }
 
     public function testANonNumericQuantityIsRejectedWithoutChangingTheCart(): void

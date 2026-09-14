@@ -61,18 +61,36 @@ use Slim\Views\Twig;
 final class TemplateGlobalsMiddleware implements MiddlewareInterface
 {
     /**
-     * What the drawer's continue button says for each step it can send
-     * someone to. Keyed by step name so the wording and the destination are
-     * declared in one place and cannot drift apart.
+     * What the drawer's assessment button says for each questionnaire step it
+     * can send someone to. Keyed by step name so the wording and the
+     * destination are declared in one place and cannot drift apart.
      */
-    private const array CONTINUE_LABELS = [
+    private const array ASSESSMENT_LABELS = [
         'prequalification' => 'Continue Assessment',
         'intake' => 'Start Assessment',
         'intake.medical' => 'Continue Assessment',
-        'checkout' => 'Continue Checkout',
+    ];
+
+    /**
+     * Steps that replace both drawer actions with a single one of their own.
+     *
+     * Each is a step the buyer has to pass through or be told about before
+     * anything else is on offer, so putting a pay button beside it would
+     * invite a refusal: `not_eligible` is a journey the server stopped and
+     * `not_disqualified` will not let it pay, `verify` is an identity gate
+     * checkout still waits on, and `receipt` belongs to a cart that has
+     * already been bought.
+     */
+    private const array TERMINAL_LABELS = [
         'not_eligible' => 'Review Your Assessment',
+        'verify' => 'Verify Your Identity',
         'receipt' => 'View Your Order',
     ];
+
+    private const string CHECKOUT_LABEL = 'Proceed to Checkout';
+
+    /** @var array{assessment: null, checkout: null, terminal: null} */
+    private const array NO_ACTIONS = ['assessment' => null, 'checkout' => null, 'terminal' => null];
 
     private const int MAX_FOOTER_PRODUCTS = 6;
 
@@ -101,6 +119,9 @@ final class TemplateGlobalsMiddleware implements MiddlewareInterface
         ]);
         $environment->addGlobal('csrf_token', $request->getAttribute('csrf_token'));
         $environment->addGlobal('maps_api_key', $this->config->get('app.features.google_maps_api_key'));
+        // Null is a supported value and means "render no portal link at all";
+        // {@see config/app.php} explains why there is no default.
+        $environment->addGlobal('portal_url', $this->config->get('app.portal.url'));
         $environment->addGlobal('footer_products', $this->footerProducts());
         $environment->addGlobal('current_path', $path);
         $environment->addGlobal('cart', $this->cartViewModel($path));
@@ -157,22 +178,22 @@ final class TemplateGlobalsMiddleware implements MiddlewareInterface
     {
         $store = $this->resolveCartStore($path);
         if ($store === null) {
-            return ['count' => 0, 'subtotal_cents' => 0, 'notice' => null, 'lines' => []];
+            return ['count' => 0, 'subtotal_cents' => 0, 'notice' => null, 'lines' => [], 'actions' => self::NO_ACTIONS];
         }
 
         $cart = $store->cart();
-        $continue = $this->continueStep($cart, $path);
 
         return [
             'count' => $cart->itemCount(),
             'subtotal_cents' => $cart->subtotalCents(),
+            'actions' => $this->cartActions($cart, $path),
             // Single-read: the notice is shown on the next page and never
             // again, which is what makes it safe to consume it here rather
             // than leave it for a controller that may never run (a plain
             // page view has no controller-side notice consumer at all).
             'notice' => $store->takeNotice(),
             'lines' => array_map(
-                fn (CartLine $line): array => $this->lineViewModel($line, $cart, $continue),
+                fn (CartLine $line): array => $this->lineViewModel($line, $cart),
                 $cart->lines(),
             ),
         ];
@@ -203,32 +224,21 @@ final class TemplateGlobalsMiddleware implements MiddlewareInterface
      * One line's presentation shape. `variant_name` and `image` are resolved
      * against the catalog rather than stored on the line itself, since a
      * line only snapshots what the mirror needs (`[7.11]`) and the catalog is
-     * the source of truth for everything else. `continue_url`/`continue_label`
-     * encode the three card shapes the mockup drew: a bundled child has
-     * neither (it is not something the buyer continues on its own), a
-     * prescription continues to the intake it still needs, and everything
-     * else continues straight to checkout.
+     * the source of truth for everything else.
      *
-     * Resolving `intake`/`checkout` goes through {@see self::stepPath()}
-     * rather than `$this->flow->pathFor()` directly, because this global is
-     * published on every page. Both steps exist in the shipped funnel today,
-     * so `pathFor()` throwing is unreachable right now, but a future edit
-     * that renames or drops one of them must not turn a cart-drawer detail
-     * into a sitewide 500 — the same must-not-block-the-page reasoning
-     * {@see self::resolveCartStore()} applies to a database outage. A line
-     * whose continue step cannot be resolved gets `null`/`null`, the same
-     * shape a bundled child already renders as: a card with no footer
-     * action.
+     * A line carries no action of its own. The drawer's actions are a
+     * property of the cart, not of any one line in it: they were computed
+     * once for the cart and then drawn on every eligible card, so a cart
+     * holding two prescriptions offered the same "Start Assessment" twice,
+     * pointing at the same URL. {@see self::cartActions()} now publishes them
+     * once, and the drawer renders them once, in its footer.
      *
      * @return array<string, mixed>
      */
-    private function lineViewModel(CartLine $line, Cart $cart, ?array $continue): array
+    private function lineViewModel(CartLine $line, Cart $cart): array
     {
         $product = $this->catalog->product($line->slug);
         $isChild = $line->isChild();
-
-        $continueUrl = $isChild ? null : ($continue['url'] ?? null);
-        $continueLabel = $continueUrl === null ? null : ($continue['label'] ?? null);
 
         return [
             'slug' => $line->slug,
@@ -244,35 +254,53 @@ final class TemplateGlobalsMiddleware implements MiddlewareInterface
             'parent_name' => $isChild ? $cart->line((string) $line->parentSlug)?->name : null,
             'can_change_quantity' => $line->kind !== 'rx' && !$isChild,
             'max_quantity' => self::maxQuantity($product),
-            'continue_url' => $continueUrl,
-            'continue_label' => $continueLabel,
         ];
     }
 
     /**
-     * Where the drawer's "continue" action sends the visitor, resolved once
-     * for the cart rather than guessed per line.
+     * What the drawer offers, resolved once for the cart rather than guessed
+     * per line.
      *
-     * It asks the routing decision (`[8.1]`) with journey state, because the
-     * kind of a line says what was bought and not what is left to do: an Rx
-     * line whose questionnaire is already finished was still being offered
-     * "Continue Assessment" back to the form it had completed. The label
-     * follows the answer, so the button never names a step the visitor is not
-     * being sent to.
+     * Two actions, because there are two legitimate ways forward and the
+     * buyer picks: answer the questionnaire now, or pay now and answer it
+     * from the patient portal afterwards. The drawer used to offer whichever
+     * single step the routing decision named, so a buyer who wanted to pay
+     * had no way to say so from the cart -- the product page's two buttons
+     * had no counterpart here.
      *
-     * A cart the router sends `home` gets no action at all — the drawer is
-     * already on every page, so a button pointing at the page behind it is
-     * noise. The journey is read through the same swallow-and-log contract as
-     * the cart store: a drawer on every page must not be able to 500 one
+     * It still asks the routing decision (`[8.1]`) with journey state, because
+     * the kind of a line says what was bought and not what is left to do: an
+     * Rx line whose questionnaire is already finished was being offered
+     * "Continue Assessment" back to the form it had completed. That is also
+     * what keeps the assessment action Rx-only without a rule of its own --
+     * the decision names an intake step only when some line declares a
+     * questionnaire, and an accessory never does. Reading the line's kind
+     * instead would offer an assessment for a prescription that declares no
+     * form at all.
+     *
+     * Three shapes come out of it:
+     *
+     * - a questionnaire is outstanding: both actions, assessment first;
+     * - a step in {@see self::TERMINAL_LABELS} is owed: that one action alone,
+     *   because each is something the buyer must pass or be told about before
+     *   anything else is on offer -- a pay button beside "you are not
+     *   eligible" invites a refusal the guard is about to make anyway;
+     * - anything else with a payable cart: checkout alone.
+     *
+     * A cart the router sends `home` gets nothing: the drawer is on every
+     * page, so a button pointing at the page behind it is noise.
+     *
+     * The journey is read through the same swallow-and-log contract as the
+     * cart store: a drawer on every page must not be able to 500 one
      * (`[20.1]`), and with no journey the router still answers correctly for
      * everything that does not depend on completion.
      *
-     * @return array{url: ?string, label: ?string}|null
+     * @return array{assessment: ?array{url: string, label: string}, checkout: ?array{url: string, label: string}, terminal: ?array{url: string, label: string}}
      */
-    private function continueStep(Cart $cart, string $path): ?array
+    private function cartActions(Cart $cart, string $path): array
     {
         if ($cart->isEmpty()) {
-            return null;
+            return self::NO_ACTIONS;
         }
 
         try {
@@ -284,7 +312,15 @@ final class TemplateGlobalsMiddleware implements MiddlewareInterface
 
         $step = $this->router->nextStep($cart, $state);
         if ($step === 'home') {
-            return null;
+            return self::NO_ACTIONS;
+        }
+
+        if (isset(self::TERMINAL_LABELS[$step])) {
+            $url = $this->stepPath($step);
+
+            return $url === null
+                ? self::NO_ACTIONS
+                : ['assessment' => null, 'checkout' => null, 'terminal' => ['url' => $url, 'label' => self::TERMINAL_LABELS[$step]]];
         }
 
         // The welcome page is the right answer for a visitor who has not
@@ -292,24 +328,26 @@ final class TemplateGlobalsMiddleware implements MiddlewareInterface
         // alone. Offering it as a link closes no loop; answering it from the
         // routing decision would open one, because form submission is not a
         // funnel step and the eligibility step forwards through that same
-        // decision — a visitor routed back to the welcome page would keep
+        // decision -- a visitor routed back to the welcome page would keep
         // being sent there by the very button that is meant to take them on.
         // A link has no such round trip: it is followed once, by choice.
         //
         // Conditional on the decision having already settled on the intake
         // step, which is what makes the welcome page enterable: its own
         // requirement is that pre-qualification is satisfied, and the routing
-        // decision asks that question first — so an answer of `intake.medical`
+        // decision asks that question first -- so an answer of `intake.medical`
         // is itself the proof that no eligibility form is outstanding.
         if ($step === 'intake.medical' && ($state === null || $state->formStatus === [])) {
             $step = 'intake';
         }
 
-        $url = $this->stepPath($step);
+        $assessmentUrl = isset(self::ASSESSMENT_LABELS[$step]) ? $this->stepPath($step) : null;
+        $checkoutUrl = $this->stepPath('checkout');
 
         return [
-            'url' => $url,
-            'label' => $url === null ? null : (self::CONTINUE_LABELS[$step] ?? 'Continue'),
+            'assessment' => $assessmentUrl === null ? null : ['url' => $assessmentUrl, 'label' => self::ASSESSMENT_LABELS[$step]],
+            'checkout' => $checkoutUrl === null ? null : ['url' => $checkoutUrl, 'label' => self::CHECKOUT_LABEL],
+            'terminal' => null,
         ];
     }
 
