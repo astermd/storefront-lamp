@@ -112,9 +112,35 @@ final class Field
         return FieldTypes::isDisplayOnly($this->type);
     }
 
+    /**
+     * Whether this field's answer is a list rather than a scalar (`[10.36]`).
+     *
+     * The type is necessary and not sufficient. The EMR authors *every*
+     * choice question as `choice-multi` -- a yes/no contraindication, "sex
+     * assigned at birth" and a genuine select-all-that-apply are all the same
+     * type -- and puts the distinction in `properties`: `multiSelect` says
+     * whether more than one answer is allowed, and `choiceInputType` says
+     * which control the author drew. Reading only the type rendered every
+     * radio question as a checkbox group that accepted both answers, and
+     * stored what came back as a list.
+     *
+     * `multiSelect` wins when it is present, because it is the explicit
+     * statement of the thing being asked; `choiceInputType` is consulted only
+     * as a fallback. A field declaring neither stays multi, which is what
+     * `choice-multi` meant before this distinction existed.
+     */
     public function isMultiValue(): bool
     {
-        return FieldTypes::isMultiValue($this->type);
+        if (!FieldTypes::isMultiValue($this->type)) {
+            return false;
+        }
+
+        $multiSelect = $this->properties['multiSelect'] ?? null;
+        if (is_bool($multiSelect)) {
+            return $multiSelect;
+        }
+
+        return ($this->properties['choiceInputType'] ?? null) !== 'radio';
     }
 
     public function isBoolean(): bool

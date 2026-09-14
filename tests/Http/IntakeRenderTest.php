@@ -175,4 +175,48 @@ final class IntakeRenderTest extends TestCase
             self::assertSame(2, preg_match_all('/<input\s/', $html), "{$type} renders one real input per option");
         }
     }
+
+    /**
+     * The bug this pair exists to catch, at the only level it was visible:
+     * the markup. The EMR authors both controls as `choice-multi` and
+     * distinguishes them in `properties`, so a renderer reading the type
+     * alone drew "What is your sex assigned at birth?" as two checkboxes a
+     * visitor could tick together.
+     *
+     * Asserted on the rendered input rather than on the chosen template,
+     * because the template name is not what a visitor can tick.
+     */
+    public function testASingleSelectChoiceRendersRadiosThatCannotBothBeTicked(): void
+    {
+        $html = self::render([
+            'fieldId' => 'sex_at_birth', 'name' => 'sex_at_birth', 'type' => 'choice-multi', 'label' => 'Sex',
+            'properties' => [
+                'options' => [['value' => 'male', 'label' => 'Male'], ['value' => 'female', 'label' => 'Female']],
+                'choiceInputType' => 'radio',
+                'multiSelect' => false,
+            ],
+        ]);
+
+        self::assertSame(2, preg_match_all('/<input[^>]*type="radio"/', $html), 'both options must be radios');
+        self::assertSame(0, preg_match_all('/type="checkbox"/', $html));
+        // A radio group is one answer, so the name carries no `[]` -- posting
+        // `sex_at_birth[]` would store a list and defeat the switch entirely.
+        self::assertStringNotContainsString('name="sex_at_birth[]"', $html);
+    }
+
+    /** The companion: a real select-all-that-apply keeps its checkboxes and its list-shaped name. */
+    public function testAMultiSelectChoiceStillRendersCheckboxesWithAListShapedName(): void
+    {
+        $html = self::render([
+            'fieldId' => 'conditions', 'name' => 'conditions', 'type' => 'choice-multi', 'label' => 'Conditions',
+            'properties' => [
+                'options' => [['value' => 'a', 'label' => 'A'], ['value' => 'b', 'label' => 'B']],
+                'choiceInputType' => 'checkbox',
+                'multiSelect' => true,
+            ],
+        ]);
+
+        self::assertSame(2, preg_match_all('/<input[^>]*type="checkbox"/', $html));
+        self::assertStringContainsString('name="conditions[]"', $html);
+    }
 }

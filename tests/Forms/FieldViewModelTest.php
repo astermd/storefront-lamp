@@ -32,6 +32,76 @@ final class FieldViewModelTest extends TestCase
         self::assertSame('field-alert.twig', self::viewModel(['fieldId' => 'a', 'name' => 'a', 'type' => 'alert', 'label' => 'A'])['template']);
     }
 
+    /**
+     * The EMR authors every choice question as `choice-multi` and puts the
+     * real distinction in `properties`: `choiceInputType` says radio or
+     * checkbox and `multiSelect` says whether more than one answer is
+     * allowed. Dispatching on the type alone drew every radio question --
+     * "sex assigned at birth", "are you 18 or older", every yes/no
+     * contraindication -- as a checkbox group that let a visitor tick both.
+     */
+    public function testASingleSelectChoiceFieldIsDrawnAsRadiosRatherThanCheckboxes(): void
+    {
+        $model = self::viewModel([
+            'fieldId' => 'sex_at_birth', 'name' => 'sex_at_birth', 'type' => 'choice-multi', 'label' => 'Sex',
+            'properties' => [
+                'options' => [['value' => 'male', 'label' => 'Male'], ['value' => 'female', 'label' => 'Female']],
+                'choiceInputType' => 'radio',
+                'multiSelect' => false,
+            ],
+        ]);
+
+        self::assertSame('field-choice-single.twig', $model['template']);
+    }
+
+    /** The other side of the same switch: a genuine multi-select is untouched. */
+    public function testAMultiSelectChoiceFieldIsStillDrawnAsCheckboxes(): void
+    {
+        $model = self::viewModel([
+            'fieldId' => 'conditions', 'name' => 'conditions', 'type' => 'choice-multi', 'label' => 'Conditions',
+            'properties' => [
+                'options' => [['value' => 'a', 'label' => 'A']],
+                'choiceInputType' => 'checkbox',
+                'multiSelect' => true,
+            ],
+        ]);
+
+        self::assertSame('field-choice-multi.twig', $model['template']);
+    }
+
+    /**
+     * A single-select answer is a scalar, not a one-element list. The
+     * template switch is only half the fix: the stored answer has to change
+     * shape with it, or the option a visitor picked comes back unselected.
+     */
+    public function testASingleSelectChoiceMarksItsOptionFromAScalarAnswer(): void
+    {
+        $model = self::viewModel([
+            'fieldId' => 'sex_at_birth', 'name' => 'sex_at_birth', 'type' => 'choice-multi', 'label' => 'Sex',
+            'properties' => [
+                'options' => [['value' => 'male', 'label' => 'Male'], ['value' => 'female', 'label' => 'Female']],
+                'choiceInputType' => 'radio',
+                'multiSelect' => false,
+            ],
+        ], 'female');
+
+        self::assertFalse($model['options'][0]['selected']);
+        self::assertTrue($model['options'][1]['selected'], 'the picked option came back unselected');
+    }
+
+    /**
+     * `multiSelect` is absent on plenty of authored fields, so the default
+     * decides what those render as. It stays multi: `choice-multi` meant a
+     * checkbox group before this switch existed, and a field that says
+     * nothing must keep meaning what it already meant.
+     */
+    public function testAChoiceFieldThatDeclaresNeitherPropertyStaysMulti(): void
+    {
+        $model = self::viewModel(['fieldId' => 'a', 'name' => 'a', 'type' => 'choice-multi', 'label' => 'A']);
+
+        self::assertSame('field-choice-multi.twig', $model['template']);
+    }
+
     public function testAnUnsupportedTypeGetsTheUnsupportedPartialRatherThanBeingOmitted(): void
     {
         $model = self::viewModel(['fieldId' => 'a', 'name' => 'a', 'type' => 'signature', 'label' => 'Sign']);

@@ -147,6 +147,15 @@ final class FieldViewModel
             return 'field-unsupported.twig';
         }
 
+        // A `choice-multi` that accepts one answer is drawn with radios, and
+        // the alias table cannot express that: it is keyed on the type, and
+        // the two controls share one. {@see Field::isMultiValue()} is the
+        // single place that reads the authored properties deciding it, so the
+        // control and the answer shape can never disagree.
+        if ($field->type === 'choice-multi' && !$field->isMultiValue()) {
+            return 'field-choice-single.twig';
+        }
+
         return 'field-' . (self::TEMPLATE_ALIASES[$field->type] ?? $field->type) . '.twig';
     }
 

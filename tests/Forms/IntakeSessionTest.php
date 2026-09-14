@@ -75,9 +75,9 @@ final class IntakeSessionTest extends TestCase
         'email' => 'ada@example.com',
         'phone' => '5551234567',
         'date_of_birth' => '1990-04-01',
-        'age_confirmation' => ['yes'],
-        'sex_at_birth' => ['female'],
-        'pregnancy_status' => ['no'],
+        'age_confirmation' => 'yes',
+        'sex_at_birth' => 'female',
+        'pregnancy_status' => 'no',
         'comorbidities_conditions' => ['high-blood-pressure'],
         'bmi_height' => '66',
         'bmi_weight' => '200',
@@ -135,12 +135,12 @@ final class IntakeSessionTest extends TestCase
     {
         // `[9.11]`: the server's own copy is the prefill source, so a returning
         // visitor sees what they told us rather than what a browser remembered.
-        $this->state->storeAnswers(self::TELEFORM, ['first_name' => 'Ada', 'pregnancy_status' => ['no']]);
+        $this->state->storeAnswers(self::TELEFORM, ['first_name' => 'Ada', 'pregnancy_status' => 'no']);
 
         $view = $this->session(self::recordedForm())->open(self::TELEFORM, IntakeSession::STEP_INTAKE);
 
         self::assertSame('Ada', $view->answers->value('first_name'));
-        self::assertSame(['no'], $view->answers->value('pregnancy_status'));
+        self::assertSame('no', $view->answers->value('pregnancy_status'), 'a radio answer round-trips as the scalar it was posted as');
         self::assertSame([], $view->errors, 'a first render has nothing to correct');
     }
 
@@ -206,11 +206,11 @@ final class IntakeSessionTest extends TestCase
         $session = $this->session(self::recordedForm());
 
         $session->save(self::TELEFORM, IntakeSession::STEP_INTAKE, self::PAGE_ONE, 0);
-        $session->save(self::TELEFORM, IntakeSession::STEP_INTAKE, ['mtc_men2_history' => ['no']], 1);
+        $session->save(self::TELEFORM, IntakeSession::STEP_INTAKE, ['mtc_men2_history' => 'no'], 1);
 
         $stored = $this->state->answersFor(self::TELEFORM);
         self::assertSame('Ada', $stored['first_name']);
-        self::assertSame(['no'], $stored['mtc_men2_history']);
+        self::assertSame('no', $stored['mtc_men2_history']);
     }
 
     public function testSaveReportsTheClampedOneBasedPositionOfThePageBeingAdvancedTo(): void
