@@ -337,6 +337,20 @@ final class CheckoutService
             $errors[$key] = self::CONSENT_REQUIRED;
         }
 
+        //    The card joins them, and only on the credential that carries one:
+        //    a token, an order reference or a stored instrument has no number
+        //    to be the wrong length. This is a shape check and not a verdict
+        //    -- `[13.28]` still leaves "is this card good" entirely to the
+        //    provider ({@see CardNumber}) -- but a number of no issued length
+        //    is worth saying here rather than after a round trip that can only
+        //    answer it in the provider's words.
+        if ($credential->kind === PaymentCredential::KIND_CARD) {
+            $problem = CardNumber::problem($credential->number);
+            if ($problem !== null) {
+                $errors['card_number'] = $problem;
+            }
+        }
+
         if ($errors !== []) {
             return new CheckoutResult(
                 outcome: PlacementOutcome::declined(null, self::CORRECTIONS_NEEDED, 'validation_failed'),

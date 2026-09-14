@@ -183,9 +183,15 @@ final class CheckoutController
      * four in this century, which is the only reading a card can have: an
      * expiry is always in the future and no card is issued eighty years out.
      *
-     * Nothing here validates the number. A card is the provider's to judge,
-     * and a storefront-side "invalid card" message would either duplicate
-     * their rules or contradict them (`[13.28]` shows their reason verbatim).
+     * Nothing here validates the number, and the one check that does run is
+     * not a judgement about the card. Whether a card is *good* stays entirely
+     * the provider's to answer -- a storefront-side "invalid card" message
+     * would either duplicate their rules or contradict them, and `[13.28]`
+     * shows their reason verbatim. What {@see \AsterMD\Storefront\Checkout\CardNumber}
+     * refuses, in CheckoutService alongside the other corrections, is a number
+     * of no issued length: the box accepted an unbounded string, and a buyer
+     * who pasted a statement line paid a round trip to the provider to be told
+     * so in the provider's words.
      *
      * @param array<string, mixed> $body
      */

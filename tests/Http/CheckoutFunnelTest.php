@@ -405,6 +405,47 @@ final class CheckoutFunnelTest extends TestCase
         self::assertNotSame([], $_SESSION['cart']['lines']);
     }
 
+    /**
+     * `[13.28]` leaves the verdict on a card to the provider, and it still
+     * does — but the card box accepted an unbounded string, so a buyer who
+     * pasted a whole statement line paid a round trip to the provider to be
+     * shown a decline written for a developer.
+     *
+     * A length is not a verdict. Refusing it here means nothing reaches the
+     * provider, which is the assertion that distinguishes this from any other
+     * failed submission.
+     */
+    public function testACardNumberOfNoIssuedLengthIsRefusedWithoutCallingTheProvider(): void
+    {
+        $app = $this->app([]);
+        $token = $this->walkToCheckout($app);
+
+        $response = $this->post($app, '/checkout/', $this->submission($token, card: '41111111111111111111111111'));
+        $body = (string) $response->getBody();
+
+        self::assertSame(200, $response->getStatusCode());
+        self::assertStringContainsString('Enter a card number between 13 and 19 digits.', $body);
+        self::assertSame([], $this->transport->requests, 'nothing reached the provider');
+        self::assertSame([], $this->rows('SELECT * FROM orders'));
+        self::assertNotSame([], $_SESSION['cart']['lines'], 'the cart survives a correction');
+    }
+
+    /**
+     * The companion, and the reason the rule is length alone: providers issue
+     * sandbox numbers that fail a Luhn checksum on purpose. A storefront that
+     * checked Luhn would refuse the provider's own test cards locally, and
+     * tell whoever typed one that their card number was wrong.
+     */
+    public function testASandboxCardThatFailsLuhnStillReachesTheProvider(): void
+    {
+        $app = $this->app(['vrio-order-declined.json']);
+        $token = $this->walkToCheckout($app);
+
+        $this->post($app, '/checkout/', $this->submission($token, card: '1444444444444440'));
+
+        self::assertNotSame([], $this->transport->requests, 'a sandbox card was refused before the provider saw it');
+    }
+
     public function testADeclineIsNotErasedFromTheEmrFunnelByTheReRenderThatFollowsIt(): void
     {
         // The EMR keeps one checkout record per session and updates `event` in

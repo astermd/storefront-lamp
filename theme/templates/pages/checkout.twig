@@ -219,10 +219,20 @@
             {# No value attribute on any of the three, ever. The buyer's contact
                details are preserved so the form re-fills after a decline
                ([13.30]); the card is not a contact detail ([15.8]). #}
-            <div class="relative">
-              <input type="text" id="checkout-card-number" name="card_number" inputmode="numeric" autocomplete="cc-number" placeholder=" " class="field-input w-full rounded-sm border border-border bg-background px-4 pr-10 text-sm text-heading" />
-              <i data-lucide="lock" class="pointer-events-none absolute right-4 top-1/2 size-4 -translate-y-1/2 text-icon-muted"></i>
-              <label for="checkout-card-number" class="field-label">Card number</label>
+            <div>
+              {# `maxlength` counts the formatted value: 19 digits is the longest
+                 card ISO/IEC 7812 issues, and theme/js/checkout.js groups them
+                 in fours, so the box has to hold four separators as well. The
+                 server checks the digits ({@see AsterMD\Storefront\Checkout\CardNumber})
+                 -- this only stops the typing. #}
+              <div class="relative">
+                <input type="text" id="checkout-card-number" name="card_number" inputmode="numeric" autocomplete="cc-number" maxlength="23" placeholder=" "
+                  {% if checkout.errors.card_number|default(null) %}aria-invalid="true" aria-describedby="checkout-error-card_number"{% endif %}
+                  class="field-input w-full rounded-sm border border-border bg-background px-4 pr-10 text-sm text-heading" />
+                <i data-lucide="lock" class="pointer-events-none absolute right-4 top-1/2 size-4 -translate-y-1/2 text-icon-muted"></i>
+                <label for="checkout-card-number" class="field-label">Card number</label>
+              </div>
+              {% include 'partials/checkout/field-error.twig' with { field: 'card_number' } %}
             </div>
             <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div class="relative">
