@@ -15,11 +15,17 @@ use PHPUnit\Framework\TestCase;
  * the shipped catalog rather than against a fixture.
  *
  * A fixture would give every product a description and every case in here
- * would pass without the chain existing at all. The deployment this theme
- * ships against has the opposite shape: **every product synced from the EMR
- * carries an empty description**, so the fallback is not a nicety here, it is
- * the only thing standing between a product page and
- * `<meta name="description" content="">`.
+ * would pass without the chain existing at all, which is why the sweep below
+ * runs against whatever this deployment has actually synced.
+ *
+ * What it may not do is assume what that is. It used to: the EMR channel this
+ * theme was written against synced every product with an empty description,
+ * so the sweep asserted exactly that and the fallback was the only thing
+ * standing between a product page and `<meta name="description" content="">`.
+ * A later sync brought products carrying real copy and the premise died with
+ * it. The sweep now asserts the part that survives a catalog change --
+ * nothing resolves to empty -- and the two branches of the chain are stated
+ * as cases of their own.
  */
 final class MetaResolverTest extends TestCase
 {
@@ -94,7 +100,25 @@ final class MetaResolverTest extends TestCase
         self::assertSame([], $this->resolver()->problems());
     }
 
-    public function testEveryProductInTheShippedCatalogFallsThroughToTheDefaultDescription(): void
+    /**
+     * `[24.4]`: no product page may render an empty description, whether the
+     * product carries copy of its own or falls through to the configured
+     * default.
+     *
+     * This used to assert that *every* shipped product had an empty
+     * description and therefore took the default. That premise was written
+     * down as one — "if a re-sync ever brings real copy with it, this case has
+     * to be re-argued" — and a re-sync duly brought real copy, so here is the
+     * re-argument: the claim about what the catalog contains was never the
+     * rule. The rule is that whatever it contains resolves to something, and
+     * that holds for both kinds of product rather than only for the kind this
+     * channel happened to be shipping.
+     *
+     * Which kind each product is stays asserted below, as a stated case, so
+     * the fallback is still proved rather than inferred from a catalog that is
+     * never the same twice.
+     */
+    public function testNoProductInTheShippedCatalogResolvesToAnEmptyDescription(): void
     {
         $resolver = $this->resolver();
 
@@ -103,16 +127,25 @@ final class MetaResolverTest extends TestCase
         self::assertNotSame([], $catalog['products']);
 
         foreach ($catalog['products'] as $slug => $product) {
-            // The premise, stated rather than assumed: if a re-sync ever
-            // brings real copy with it, this case has to be re-argued instead
-            // of quietly passing for a different reason.
-            self::assertSame('', (string) ($product['description'] ?? ''), "product {$slug} description");
-            self::assertSame(
-                self::DEFAULT_DESCRIPTION,
-                $resolver->description((string) ($product['description'] ?? '')),
+            self::assertNotSame(
+                '',
+                $resolver->description(null, (string) ($product['description'] ?? '')),
                 "product {$slug} meta description",
             );
         }
+    }
+
+    /**
+     * The two cases the catalog sweep above used to cover by accident of what
+     * was synced, stated instead so both are always exercised.
+     */
+    public function testAProductsOwnDescriptionIsUsedAndAnAbsentOneFallsBack(): void
+    {
+        $resolver = $this->resolver();
+
+        self::assertSame('Keto Gummies, 60ct.', $resolver->description(null, 'Keto Gummies, 60ct.'));
+        self::assertSame(self::DEFAULT_DESCRIPTION, $resolver->description(null, ''));
+        self::assertSame(self::DEFAULT_DESCRIPTION, $resolver->description(null, null));
     }
 
     public function testAnOverrideBeatsTheProductAndTheProductBeatsTheDefault(): void

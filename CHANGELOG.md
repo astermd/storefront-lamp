@@ -101,11 +101,24 @@ The cache was NOT fully cleared. Whatever it was holding is still being served.
 
 ### Tests
 
-`vendor/bin/phpunit` is green at **2079 tests / 7155 assertions** on a clone
-with no synced catalog, up from 2044 / 7102. Every field type that draws an
-element is covered by name, so a partial added later without the hook fails
-rather than silently ignoring it. The two `cache:clear` permission cases skip
-as root, where the refusal they arrange cannot happen.
+`vendor/bin/phpunit` is green at **2081 tests / 7158 assertions**, up from
+2044 / 7102. Every field type that draws an element is covered by name, so a
+partial added later without the hook fails rather than silently ignoring it.
+The two `cache:clear` permission cases skip as root, where the refusal they
+arrange cannot happen.
+
+Two SEO cases were re-argued rather than repaired. Both asserted that every
+product in the shipped catalog carries an empty description — true of the
+channel they were written against, and one of them said so as a premise to be
+revisited if a sync ever brought real copy. A sync did. The claim about what a
+catalog contains was never the rule: the rule is that a product's own copy
+wins and an absent one falls back, so each branch is now a stated case against
+a catalog the test supplies. What still sweeps the real catalog asserts only
+what survives a re-sync — that nothing resolves to an empty description. The
+branch where a product *has* copy had no end-to-end coverage at all until now,
+because no synced product had ever exercised it.
+
+- `tests/Seo/MetaResolverTest.php`, `tests/Seo/HeadMetadataTest.php`
 
 The EMR's hosted engine reads none of these three properties, so there was no
 reference renderer to match — the storefront defines the behaviour, and mode A
