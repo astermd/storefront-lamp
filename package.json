@@ -1,6 +1,6 @@
 {
   "name": "astermd-storefront-lamp",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Build-time asset pipeline for the AsterMD storefront theme. Not needed at runtime — public/assets/build/ is committed.",
   "private": true,
   "license": "MIT",
