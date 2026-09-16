@@ -12,10 +12,9 @@ use AsterMD\Storefront\Verification\IdentityVerdict;
  * what it was asked.
  *
  * A stub rather than the live gateway because the pass branch **cannot** be
- * exercised against the provider: twenty calls recorded on 2026-08-25 across
- * nine identities and all three checks returned `valid: false` without
- * exception, so no input produces a pass and a live-walk test expecting one
- * would be asserting a fiction.
+ * exercised against the provider: all three checks returned `valid: false` without
+ * exception across test identities, so no input produces a pass and a live-walk
+ * test expecting one would be asserting a fiction.
  *
  * It lives in its own PSR-4 file rather than beside its first consumer for the
  * reason {@see \AsterMD\Storefront\Tests\Domain\FakeCatalog} does: a class

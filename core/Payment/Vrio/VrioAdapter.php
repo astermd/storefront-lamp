@@ -75,11 +75,11 @@ final class VrioAdapter implements PaymentAdapter
      * `[21.9a]`: the orders this provider holds inside a window.
      *
      * **Both filters are applied server-side, and that was verified rather
-     * than assumed.** Negative controls recorded on 2026-08-25: a 1990 window
-     * returns 0 orders and a nonexistent campaign returns 0, while the real
-     * campaign over three days returns exactly the known orders out of the
-     * 143 the account took in that span. Reading the account and filtering
-     * here would page every campaign on a shared merchant to find our own.
+     * than assumed.** A 1990 window returns 0 orders and a nonexistent campaign
+     * returns 0, while the real campaign over three days returns exactly the
+     * known orders out of the 143 the account took in that span. Reading the
+     * account and filtering here would page every campaign on a shared merchant
+     * to find our own.
      *
      * **The campaign is checked again on the way back.** The filter works
      * today; the cost of it silently becoming inert is that every other

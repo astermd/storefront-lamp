@@ -12,13 +12,12 @@ use AsterMD\Storefront\Journey\JourneyState;
  * What one identity check said (`[22.20]`).
  *
  * **Three states, not two**, and this object exists because collapsing them is
- * the defect that matters here. Recorded live on 2026-08-25 against the
- * configured provider: every identity call returns HTTP 200 and the answer is
- * only ever in the body, `valid` is nullable, and a request the storefront
- * built wrongly comes back as a 400 exception rather than a verdict at all. So
- * "did not pass" covers a refused identity, a provider that answered without
- * deciding, and our own bug — and `[20.1]` says only the first of those may be
- * shown to a buyer as a failed check or used to block one.
+ * the defect that matters here. Every identity call returns HTTP 200 and the
+ * answer is only ever in the body, `valid` is nullable, and a request the
+ * storefront built wrongly comes back as a 400 exception rather than a verdict
+ * at all. So "did not pass" covers a refused identity, a provider that
+ * answered without deciding, and our own bug — and `[20.1]` says only the
+ * first of those may be shown to a buyer as a failed check or used to block one.
  *
  * The statuses are {@see JourneyState}'s own vocabulary rather than a private
  * set, because the step writes this straight onto the journey and

@@ -62,8 +62,7 @@ final class SessionResolver
      * wrong (`[4.12]`). Without it, `reconciled` makes a mistaken read
      * permanent.
      *
-     * Still generation 1: the shape was confirmed against a live session read
-     * on 2026-08-23, and both extractor path lists already led with the keys
+     * Still generation 1: both extractor path lists already lead with the keys
      * the EMR actually returns, so no journey needs re-reading.
      */
     public const int READ_MODEL_SHAPE = 1;

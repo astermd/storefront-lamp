@@ -11,10 +11,10 @@ use PHPUnit\Framework\TestCase;
 /**
  * The verdict's whole job is refusing to collapse three states into two.
  *
- * Recorded live on 2026-08-25: every identity call is HTTP 200 and the answer
- * is only in the body, `valid` is nullable, and a request we built wrongly
- * arrives as an exception rather than a verdict. So "not passed" covers three
- * different things and only one of them is a statement about the buyer.
+ * Every identity call is HTTP 200 and the answer is only in the body, `valid`
+ * is nullable, and a request we built wrongly arrives as an exception rather
+ * than a verdict. So "not passed" covers three different things and only one of
+ * them is a statement about the buyer.
  */
 final class IdentityVerdictTest extends TestCase
 {

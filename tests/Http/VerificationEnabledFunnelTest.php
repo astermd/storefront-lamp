@@ -47,9 +47,8 @@ use Slim\Psr7\Factory\ServerRequestFactory;
  * and whether they actually get through.
  *
  * **Nothing here reaches a network.** The passing verdict is a stub, and it
- * must be: twenty calls recorded live on 2026-08-25 across nine identities and
- * all three checks came back `valid: false` without exception, so no input
- * produces a pass against the configured provider.
+ * must be: all three checks came back `valid: false` without exception across
+ * test identities, so no input produces a pass against the configured provider.
  */
 final class VerificationEnabledFunnelTest extends TestCase
 {
