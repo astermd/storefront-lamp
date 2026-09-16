@@ -36,6 +36,20 @@ use AsterMD\Storefront\Payment\PaymentCredential;
  * `[13.x]` reconciliation exists to catch after the fact. Sending the figure
  * the buyer agreed to makes the two agree by construction.
  *
+ * **The campaign is a line's `provider.offer_id`**, not a deployment setting.
+ * That is how the EMR spells it: a variant's provider mapping carries
+ * `offer_id` and `product_id`, and for this provider those are the campaign and
+ * the campaign-scoped product. The catalog therefore already holds everything an
+ * order needs, and {@see OrderLine} keeps both opaque -- which is exactly what
+ * `[14.1]` capability 3 asks of it, and why a second provider needed no new
+ * catalog field.
+ *
+ * **`product_id` is the campaign-scoped id, not the bare one.** A campaign
+ * lists each product twice over: `campaignProductId` (15271) and `productId`
+ * (14015, which also appears in parentheses at the front of `productName`).
+ * The EMR maps the first, and the first is what an order is placed with --
+ * sending the bare id would name a product the campaign does not offer.
+ *
  * **Unverified against a live account**: the field names below are the
  * provider's documented ones, and no order has been placed through them. What
  * *is* recorded is the refusal shape — see
@@ -56,12 +70,12 @@ final class CheckoutChampPayload
      *
      * @return array<string, mixed>
      */
-    public static function forLead(OrderEnvelope $order, CheckoutChampCredentials $credentials): array
+    public static function forLead(OrderEnvelope $order, string $salesUrl = ''): array
     {
         $buyer = $order->buyer;
 
         $body = [
-            'campaignId' => $credentials->campaignId,
+            'campaignId' => (string) self::campaignFor($order),
             'firstName' => $buyer->firstName,
             'lastName' => $buyer->lastName,
             'emailAddress' => $buyer->email,
@@ -94,7 +108,41 @@ final class CheckoutChampPayload
             $body['requestUri'] = $order->sessionUuid;
         }
 
+        // Optional, and worth sending: the provider shows it against the order
+        // in its own dashboard, so an operator reconciling one by hand can see
+        // which storefront page it came from rather than only a campaign
+        // number. Absent rather than empty when the deployment has no URL
+        // configured, on `[20.8]`'s no-invented-identifier terms.
+        if ($salesUrl !== '') {
+            $body['salesUrl'] = $salesUrl;
+        }
+
         return $body;
+    }
+
+    /**
+     * The campaign this order is placed under, or null when its lines do not
+     * agree on one.
+     *
+     * Read from the lines rather than from configuration because that is where
+     * the EMR puts it. Null has two causes and the caller refuses on both: no
+     * chargeable line carries a campaign, or two of them carry different ones.
+     *
+     * **Disagreement is refused rather than resolved.** A cart is one order
+     * (`[13.19]`) and an order belongs to one campaign, so a cart spanning two
+     * has no correct single answer -- and picking the first line's would place
+     * the whole order under a campaign that does not offer half of it, which
+     * the provider reports as the cart being empty.
+     */
+    public static function campaignFor(OrderEnvelope $order): ?string
+    {
+        $campaigns = [];
+
+        foreach ($order->chargeableLines() as $line) {
+            $campaigns[(string) $line->providerOffer] = true;
+        }
+
+        return count($campaigns) === 1 ? (string) array_key_first($campaigns) : null;
     }
 
     /**
@@ -108,11 +156,10 @@ final class CheckoutChampPayload
     public static function forOrder(
         OrderEnvelope $order,
         PaymentCredential $credential,
-        CheckoutChampCredentials $credentials,
         string $sessionId,
     ): array {
         return [
-            'campaignId' => $credentials->campaignId,
+            'campaignId' => (string) self::campaignFor($order),
             'sessionId' => $sessionId,
         ] + self::lines($order) + self::paymentFor($credential);
     }

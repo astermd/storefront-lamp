@@ -26,11 +26,12 @@ namespace AsterMD\Storefront\Payment\CheckoutChamp;
  * rejects anything that is not a bare hostname. Splitting here means one place
  * rather than every call site.
  *
- * `campaignId` is a `[14.6c]` routing hint -- an opaque provider-side
- * identifier deciding which campaign an order is placed under. **The EMR
- * channel payload does not carry one**, which is the one value a deployment has
- * to supply by hand; `config:validate` reports its absence rather than letting
- * every checkout fail at the provider with "No products exist in the order".
+ * **There is no campaign here**, although every order needs one. The campaign
+ * is a *per-line* routing hint on this provider, carried by the catalog as a
+ * variant's `provider.offer_id` -- the same slot the other provider uses for
+ * its offer id, which is what let the catalog stay provider-neutral. It
+ * therefore belongs to the order rather than to the connection, and
+ * {@see CheckoutChampPayload::campaignFor()} resolves it.
  */
 final class CheckoutChampCredentials implements \JsonSerializable
 {
@@ -39,15 +40,11 @@ final class CheckoutChampCredentials implements \JsonSerializable
         public readonly string $basePath,
         public readonly string $loginId,
         private readonly string $password,
-        public readonly string $campaignId,
     ) {
     }
 
-    /**
-     * @param array<string, mixed> $config     the channel's `payment_processor.config`
-     * @param string               $campaignId the deployment's own routing hint, since the channel carries none
-     */
-    public static function fromChannelConfig(array $config, string $campaignId = ''): self
+    /** @param array<string, mixed> $config the channel's `payment_processor.config` */
+    public static function fromChannelConfig(array $config): self
     {
         $loginId = trim((string) ($config['api_username'] ?? ''));
         $password = trim((string) ($config['api_password'] ?? ''));
@@ -62,15 +59,7 @@ final class CheckoutChampCredentials implements \JsonSerializable
             throw new \InvalidArgumentException('The payment processor configuration carries no usable api_endpoint.');
         }
 
-        // The channel has no campaign, so a deployment sets it in
-        // `config/payment.php`. The processor block is read only as a fallback,
-        // for a deployment whose operator hand-added it there before this took
-        // its configured home.
-        $campaignId = trim($campaignId) !== ''
-            ? trim($campaignId)
-            : trim((string) ($config['campaign_id'] ?? ''));
-
-        return new self($host, $basePath, $loginId, $password, $campaignId);
+        return new self($host, $basePath, $loginId, $password);
     }
 
     /**
@@ -104,7 +93,6 @@ final class CheckoutChampCredentials implements \JsonSerializable
             'host' => $this->host,
             'basePath' => $this->basePath,
             'loginId' => $this->loginId,
-            'campaignId' => $this->campaignId,
             'password' => '[REDACTED]',
         ];
     }

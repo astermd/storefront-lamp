@@ -529,19 +529,40 @@ treats the file as a secret to destroy rather than a log to ship. And the
 adapter's declared PCI posture says all of this, so `config:validate` prints it
 to an operator before they go live rather than after.
 
-### 22. The campaign is a deployment's to supply, not the channel's
+### 22. The campaign is a line's `offer_id`, and the product id is the campaign-scoped one
 
-The EMR channel's `payment_processor.config` for this provider carries
-`integration_name`, `api_endpoint`, `api_username`, `api_password` and
-`advanced_settings` — and **no campaign id**. The provider needs one on every
-order.
+The EMR channel's `payment_processor.config` for this provider carries no
+campaign, and it does not need to: **the campaign is per line**, carried by the
+catalog as a variant's `provider.offer_id` — the same slot the other provider
+fills with its offer id. A second provider therefore needed no new catalog
+field, which is the strongest evidence `[14.1]` capability 3 was drawn in the
+right place.
 
-So it lives in `config/payment.php` as `payment.campaign_id`, declared by the
-adapter through `AdapterCapabilities::$requiredDeploymentKeys` and checked by
-`config:validate`. The same mechanism carries the other provider's
-`shipping_profile_id`, which the EMR equally does not supply — what is mandatory
-is a property of the provider, and a validator with a fixed list would fail
-every deployment of whichever one it was not written for.
+The companion `provider.product_id` is the **campaign-scoped** product id, not
+the bare one. A campaign lists each product under two identifiers:
+
+```
+campaignProductId: 15271     <- what the EMR maps, and what an order is placed with
+productId:         14015     <- also shown in parentheses at the front of productName
+productName:       "(14015) NAD+ (500MG)"
+```
+
+Sending the bare `productId` would name a product the campaign does not offer,
+which the provider reports as the cart being empty. The EMR maps the right one
+already.
+
+**Two consequences for the adapter.** The campaign is resolved from the order
+rather than from configuration, so it can be *missing* or *contradictory* in a
+way a configured value could not — a cart whose lines carry two different
+campaigns has no correct single answer, since a cart is one order (`[13.19]`) and
+an order belongs to one campaign. Both cases are refused before the wire, because
+the provider answers either one with "No products exist in the order": a catalog
+fault described as a cart problem, which is the worst possible place to debug one.
+
+**A caution about `campaignQuery`.** Called with no parameters it returns a
+*page*, not the account. Reading that page as the whole account is how campaign
+459 came to look absent from an account that has it — pass `campaignId` to ask
+about one.
 
 ### 23. What is not recorded, and what happens if it is wrong
 

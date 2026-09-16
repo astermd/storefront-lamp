@@ -890,11 +890,19 @@ Two shapes of difference it forced, both worth knowing about:
   is about what the storefront knows, not about pretending two third-party interfaces are
   one. `tests/Payment/RefusingTransportTest.php` asserts every *registered* category is
   fenced, so a third provider added without one fails there rather than in production.
-- **`AdapterCapabilities::$requiredDeploymentKeys`** was added for it. The EMR channel
-  carries no campaign for this provider, just as it carries no shipping profile for the
-  other, so each adapter declares which `payment.*` keys it needs and `config:validate`
-  checks the declaration. A fixed list in the validator would fail every deployment of
-  whichever provider it was not written for.
+- **`AdapterCapabilities::$requiredDeploymentKeys`** was added while building it, and it
+  survives although this adapter declares none. Each adapter now states which `payment.*`
+  keys it needs and `config:validate` checks the declaration, rather than the validator
+  holding a fixed list that would fail every deployment of whichever provider it was not
+  written for — the other adapter's `shipping_profile_id` goes through it.
+
+**The campaign comes from the catalog, not from configuration.** A variant's
+`provider.offer_id` is the CheckoutChamp campaign and `provider.product_id` is its
+campaign-scoped product id, which is how the EMR already maps them — so the second
+provider needed no new catalog field at all. It does mean an order can fail to name a
+campaign in a way a configured one could not: a cart whose lines carry two different
+campaigns has no correct single answer, and is refused before the wire rather than placed
+under one that does not offer half of it.
 
 It declares `supportsPromotions`, `supportsOrderSearch` and `supportsAuthorizeCapture` all
 **false**, and each for a stated reason rather than as a stub — see

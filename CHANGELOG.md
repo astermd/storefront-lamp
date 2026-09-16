@@ -45,11 +45,11 @@ Two things it forced, both general rather than provider-specific:
   test-environment fence had to be per adapter. `tests/Payment/RefusingTransportTest.php`
   now asserts that *every registered category* is fenced, so a third provider
   added without one fails there rather than by charging a card.
-- **`AdapterCapabilities::$requiredDeploymentKeys`.** The EMR channel carries no
-  campaign for this provider, just as it carries no shipping profile for the
-  other. Each adapter now declares which `payment.*` keys it needs and
-  `config:validate` checks the declaration; the hardcoded `shipping_profile_id`
-  check it replaces was failing conceptually for any provider that has none.
+- **`AdapterCapabilities::$requiredDeploymentKeys`.** Each adapter now declares
+  which `payment.*` keys it needs and `config:validate` checks the declaration.
+  The hardcoded `shipping_profile_id` check it replaces demanded a key that a
+  provider without one has never heard of. This adapter declares none, and the
+  mechanism still earns its place through the other one.
 
 **Three capabilities are declared false, each for a stated reason.**
 `supportsPromotions`, because the client exposes no discount-quote endpoint and
@@ -77,14 +77,24 @@ unverified assumption is arranged to fail as a stated decline — a success with
 neither reconciled nor captured. `docs/INTEGRATION-NOTES.md` items 19–23 carry
 the list.
 
-New configuration: `payment.campaign_id` (`PAYMENT_CAMPAIGN_ID`), which this
-provider needs on every order and the EMR channel does not supply.
+**No new configuration.** The campaign this provider needs on every order is a
+variant's `provider.offer_id` in the catalog, and its `provider.product_id` is
+the campaign-scoped product id — which is how the EMR already maps them, so a
+second provider needed no new catalog field at all. The campaign therefore
+arrives with the order rather than from configuration, which moves where a fault
+shows up: a cart whose lines carry two different campaigns has no correct single
+answer and is refused before the wire, rather than being placed under one that
+does not offer half of it.
+
+`salesUrl` is sent on the lead call — the storefront's own checkout URL, which
+the provider shows against the order in its dashboard so an operator reconciling
+one by hand sees where it came from rather than only a campaign number.
 
 - `core/Payment/CheckoutChamp/` (new, seven classes), `composer.json`
   (`astermd/checkoutchamp-client`)
 - `core/Payment/AdapterCapabilities.php`, `core/Payment/Vrio/VrioAdapter.php`,
   `core/Console/ValidateCommand.php`, `core/Bootstrap/AppFactory.php`,
-  `bin/console`, `config/payment.php`, `.env.example`
+  `bin/console`
 
 ### `theme:sync` no longer carries one channel's credentials into another's file
 
@@ -306,7 +316,7 @@ The cache was NOT fully cleared. Whatever it was holding is still being served.
 
 ### Tests
 
-`vendor/bin/phpunit` is green at **2191 tests / 7394 assertions**, up from
+`vendor/bin/phpunit` is green at **2192 tests / 7395 assertions**, up from
 2044 / 7102, and at the same figures on a clone with no synced catalog. Every field type that draws an element is covered by name, so a
 partial added later without the hook fails rather than silently ignoring it.
 The two `cache:clear` permission cases skip as root, where the refusal they

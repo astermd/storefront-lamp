@@ -60,28 +60,16 @@ final class CheckoutChampCredentialsTest extends TestCase
         CheckoutChampCredentials::fromChannelConfig($this->config(['api_endpoint' => '']));
     }
 
-    public function testTheCampaignComesFromTheDeploymentBecauseTheChannelHasNone(): void
+    public function testCredentialsCarryNoCampaignBecauseTheOrderDoes(): void
     {
-        $credentials = CheckoutChampCredentials::fromChannelConfig($this->config(), '9');
-
-        self::assertSame('9', $credentials->campaignId);
-    }
-
-    public function testAHandAddedProcessorCampaignIsAFallbackAndNotAnOverride(): void
-    {
-        // A deployment that set it in the processor block before it had a
-        // configured home still works; a deployment that sets both gets the
-        // configured one, because that is the value `config:validate` checks.
-        $fromBlock = CheckoutChampCredentials::fromChannelConfig($this->config(['campaign_id' => '11']));
-        $configured = CheckoutChampCredentials::fromChannelConfig($this->config(['campaign_id' => '11']), '9');
-
-        self::assertSame('11', $fromBlock->campaignId);
-        self::assertSame('9', $configured->campaignId);
-    }
-
-    public function testAnAbsentCampaignIsEmptyRatherThanGuessed(): void
-    {
-        self::assertSame('', CheckoutChampCredentials::fromChannelConfig($this->config())->campaignId);
+        // The campaign is a per-line routing hint on this provider — the EMR
+        // spells it as a variant's `provider.offer_id` — so it belongs to the
+        // order rather than to the connection. Pinned because putting it back
+        // here is the obvious wrong move: it would make every order in a
+        // deployment share one campaign, which the catalog does not.
+        self::assertFalse(
+            property_exists(CheckoutChampCredentials::fromChannelConfig($this->config()), 'campaignId'),
+        );
     }
 
     public function testThePasswordNeverRendersInADebugDump(): void

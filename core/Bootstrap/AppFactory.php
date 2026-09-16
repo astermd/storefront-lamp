@@ -714,7 +714,6 @@ final class AppFactory
             $registry->register('checkout_champ', static fn (): PaymentAdapter => new CheckoutChampAdapter(
                 CheckoutChampCredentials::fromChannelConfig(
                     (array) $config->get('channel.generated.payment_processor.config', []),
-                    (string) $config->get('payment.campaign_id', ''),
                 ),
                 new CheckoutChampApiFactory(
                     // Composed exactly as the other adapter's transport is, and
@@ -735,6 +734,10 @@ final class AppFactory
                     })(),
                 ),
                 $c->get(OperatorLog::class),
+                // Optional, and shown against the order in the provider's own
+                // dashboard: an operator reconciling one by hand sees which page
+                // it came from rather than only a campaign number.
+                rtrim((string) $config->get('app.url', ''), '/') . '/checkout/',
             ));
 
             return $registry;

@@ -20,18 +20,6 @@ return [
 
     'shipping_profile_id' => (int) ($env['PAYMENT_SHIPPING_PROFILE_ID'] ?? 1),
 
-    // The campaign an order is placed under, for a provider whose EMR channel
-    // payload carries no campaign of its own. Only the `checkout_champ` adapter
-    // reads it; the `vrio` adapter takes its campaign from the synced channel,
-    // where the EMR does supply one.
-    //
-    // There is no default and no guess. An empty campaign is refused before the
-    // wire, because the provider answers an order carrying one with "No
-    // products exist in the order" — a message about the cart, for a
-    // configuration fault, which is the worst possible place to debug it.
-    // `config:validate` reports it as an error when that adapter is configured.
-    'campaign_id' => (string) ($env['PAYMENT_CAMPAIGN_ID'] ?? ''),
-
     'currency' => 'USD',
 
     // Whether an order takes the money at checkout or only reserves it.

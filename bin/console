@@ -134,10 +134,10 @@ $resolveAdapter = static function () use ($config, $rootDir): PaymentAdapter {
     $registry->register('checkout_champ', static fn (): PaymentAdapter => new CheckoutChampAdapter(
         CheckoutChampCredentials::fromChannelConfig(
             (array) $config->get('channel.generated.payment_processor.config', []),
-            (string) $config->get('payment.campaign_id', ''),
         ),
         new CheckoutChampApiFactory(),
         $log,
+        rtrim((string) $config->get('app.url', ''), '/') . '/checkout/',
     ));
 
     return $registry->for((string) ($config->get('payment.adapter')

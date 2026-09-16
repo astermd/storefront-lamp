@@ -605,17 +605,17 @@ On a deployment whose channel names the other provider:
 ```
 $ bin/console provider:ping
 Provider: checkout_champ
-checkout_champ api.checkoutchamp.com — login store_api, 4 campaign(s), campaign 9 configured
+checkout_champ api.checkoutchamp.com — login store_api, 4 campaign(s) visible, order campaign taken from the catalog
 PCI posture: Reduced scope via stored-customer reuse: [...] NOTE that this provider
 authenticates and takes every parameter in the QUERY STRING [...]
 ```
 
-`campaign (none) configured` there is the one to act on: this provider needs a
-campaign on every order and the EMR channel does not supply one, so it comes from
-`PAYMENT_CAMPAIGN_ID`. Without it every checkout is refused before the wire —
-deliberately, because the provider itself answers an order with no campaign with
-"No products exist in the order", which describes a configuration fault as a cart
-problem. `config:validate` reports it as an error.
+"order campaign taken from the catalog" is not a setting to check: this provider's
+campaign is a variant's `provider.offer_id`, so it arrives with the order rather
+than from configuration. What that moves is where a fault shows up — a product
+with no provider mapping, or a cart whose lines carry two different campaigns, is
+refused at checkout rather than at start-up. `config:validate` reports unmapped
+variants as a warning, which is the signal to look at.
 
 Both exited **0**. Both return **1** when the call fails or the adapter cannot
 be resolved. `emr:ping` proves that credentials work, the channel resolves and

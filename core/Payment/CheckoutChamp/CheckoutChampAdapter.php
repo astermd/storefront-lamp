@@ -42,6 +42,15 @@ use AsterMD\Storefront\Support\OperatorLog;
  * because sending one would imply a provider-side guarantee that does not
  * exist.
  *
+ * **The campaign comes from the catalog, not from configuration.** A variant's
+ * provider mapping carries `offer_id` and `product_id`, and for this provider
+ * those are the campaign and the campaign-scoped product -- the same two opaque
+ * slots the other provider fills with its own vocabulary. So a second provider
+ * needed no new catalog field, which is the strongest evidence that `[14.1]`
+ * capability 3 was drawn in the right place. It also means an order can fail to
+ * name a campaign in a way a configured one could not, and
+ * {@see CheckoutChampPayload::campaignFor()} is where that is decided.
+ *
  * **What is recorded and what is not.** The refusal envelope is recorded
  * against the live sandbox: `{"result": "ERROR", "message": "<sentence>"}`, in
  * four variants. The success envelope is the provider's documented shape and
@@ -55,6 +64,7 @@ final class CheckoutChampAdapter implements PaymentAdapter
         private readonly CheckoutChampCredentials $credentials,
         private readonly CheckoutChampApiFactory $apiFactory,
         private readonly OperatorLog $log,
+        private readonly string $salesUrl = '',
     ) {
     }
 
@@ -95,11 +105,11 @@ final class CheckoutChampAdapter implements PaymentAdapter
             credentialStrategy: AdapterCapabilities::STRATEGY_ORDER_REFERENCE,
             collectionSurface: AdapterCapabilities::SURFACE_THEME_FIELDS,
             requiredConfigKeys: ['api_endpoint', 'api_username', 'api_password'],
-            routingHintKeys: ['campaign_id'],
+            routingHintKeys: ['offer_id', 'product_id'],
             pciPosture: 'Reduced scope via stored-customer reuse: the card is collected by the storefront once, at checkout, and is never held afterwards — later charges name the customer the provider already holds. NOTE that this provider authenticates and takes every parameter in the QUERY STRING, including the card number and security code, so anything on the egress path that records request URLs (a forward proxy, an egress gateway, an APM agent, a TLS-inspecting appliance) records cardholder data and this deployment\'s provider password in clear text. Audit that path before going live; it is a larger obligation than the collection surface itself.',
             supportsOrderSearch: false,
             supportsAuthorizeCapture: false,
-            requiredDeploymentKeys: ['campaign_id'],
+            requiredDeploymentKeys: [],
         );
     }
 
@@ -127,14 +137,22 @@ final class CheckoutChampAdapter implements PaymentAdapter
             return PlacementOutcome::declined(null, CheckoutChampOutcome::GENERIC_DECLINE, 'credential_unusable');
         }
 
-        // The routing hint the EMR channel does not carry. Refused here rather
-        // than sent empty, because the provider answers an empty campaign with
-        // "No products exist in the order" -- a message about the cart, for a
-        // configuration fault, which is the worst possible place to debug it.
-        if ($this->credentials->campaignId === '') {
-            $this->log->error('payment.campaign_not_configured', ['anchor' => $order->anchorSlug]);
+        // The campaign is a line's own routing hint, so it can be missing or
+        // contradictory in a way a configured value could not. Refused here
+        // rather than sent empty, because the provider answers an order with no
+        // campaign with "No products exist in the order" -- a message about the
+        // cart, for a catalog fault, which is the worst possible place to debug
+        // one.
+        if (CheckoutChampPayload::campaignFor($order) === null) {
+            $this->log->error('payment.campaign_unresolved', [
+                'anchor' => $order->anchorSlug,
+                'offers' => array_values(array_unique(array_map(
+                    static fn ($line): ?string => $line->providerOffer,
+                    $order->chargeableLines(),
+                ))),
+            ]);
 
-            return PlacementOutcome::declined(null, CheckoutChampOutcome::GENERIC_DECLINE, 'campaign_not_configured');
+            return PlacementOutcome::declined(null, CheckoutChampOutcome::GENERIC_DECLINE, 'campaign_unresolved');
         }
 
         $sessionId = $this->openSession($order);
@@ -143,7 +161,7 @@ final class CheckoutChampAdapter implements PaymentAdapter
             return PlacementOutcome::declined(null, CheckoutChampOutcome::GENERIC_DECLINE, 'lead_not_created');
         }
 
-        $body = CheckoutChampPayload::forOrder($order, $credential, $this->credentials, $sessionId);
+        $body = CheckoutChampPayload::forOrder($order, $credential, $sessionId);
         $authorize = $order->settlement->isAuthorize();
 
         try {
@@ -200,7 +218,7 @@ final class CheckoutChampAdapter implements PaymentAdapter
     {
         try {
             $envelope = $this->apiFactory->create($this->credentials)
-                ->importLeads(CheckoutChampPayload::forLead($order, $this->credentials))
+                ->importLeads(CheckoutChampPayload::forLead($order, $this->salesUrl))
                 ->getInArray()['response'];
         } catch (\Throwable $e) {
             $this->log->error('payment.lead_threw', ['reason' => CardScrubber::scrub($e->getMessage())]);
@@ -311,11 +329,11 @@ final class CheckoutChampAdapter implements PaymentAdapter
         return [
             'ok' => true,
             'detail' => sprintf(
-                'checkout_champ %s — login %s, %d campaign(s), campaign %s configured',
+                'checkout_champ %s — login %s, %d campaign(s) visible, order campaign taken %s',
                 $this->credentials->host,
                 $this->credentials->loginId,
                 count($campaigns),
-                $this->credentials->campaignId === '' ? '(none)' : $this->credentials->campaignId,
+                'from the catalog',
             ),
         ];
     }

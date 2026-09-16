@@ -22,20 +22,21 @@ use PHPUnit\Framework\TestCase;
 
 final class CheckoutChampAdapterTest extends TestCase
 {
-    private function credentials(string $campaignId = '9'): CheckoutChampCredentials
+    private function credentials(): CheckoutChampCredentials
     {
-        return new CheckoutChampCredentials('api.checkoutchamp.com', '', 'store_api', 'secret', $campaignId);
+        return new CheckoutChampCredentials('api.checkoutchamp.com', '', 'store_api', 'secret');
     }
 
     private function adapter(
         FakeCheckoutChampTransport $transport,
         ?CapturedLog $log = null,
-        string $campaignId = '9',
+        string $salesUrl = 'https://store.example.test/checkout/',
     ): CheckoutChampAdapter {
         return new CheckoutChampAdapter(
-            $this->credentials($campaignId),
+            $this->credentials(),
             new CheckoutChampApiFactory($transport),
             ($log ?? new CapturedLog())->log,
+            $salesUrl,
         );
     }
 
@@ -165,19 +166,58 @@ final class CheckoutChampAdapterTest extends TestCase
         self::assertCount(1, $transport->requests, 'the order call was never made');
     }
 
-    public function testAnUnconfiguredCampaignIsRefusedBeforeTheWire(): void
+    public function testTheCampaignIsTakenFromTheLinesOwnMapping(): void
     {
-        // The provider answers an order with no campaign with "No products
-        // exist in the order" — a message about the cart, for a configuration
-        // fault, which is the worst possible place to debug it.
+        // The EMR spells a CheckoutChamp campaign as a variant's
+        // `provider.offer_id` — the same slot the other provider fills with its
+        // offer id. So a second provider needed no new catalog field, and the
+        // campaign travels with the order rather than with the connection.
+        $transport = $this->transportThatPlaces();
+
+        $this->adapter($transport)->place($this->envelope(), $this->card());
+
+        self::assertSame('459', $transport->params(0)['campaignId'] ?? null);
+        self::assertSame('459', $transport->params(1)['campaignId'] ?? null);
+    }
+
+    public function testACartWhoseLinesDisagreeAboutTheCampaignIsRefusedBeforeTheWire(): void
+    {
+        // A cart is one order ([13.19]) and an order belongs to one campaign, so
+        // a cart spanning two has no correct single answer. Taking the first
+        // line's would place the whole order under a campaign that does not
+        // offer half of it — which the provider reports as the cart being
+        // empty, a catalog fault described as a cart problem.
         $transport = new FakeCheckoutChampTransport();
         $log = new CapturedLog();
 
-        $outcome = $this->adapter($transport, $log, campaignId: '')->place($this->envelope(), $this->card());
+        $outcome = $this->adapter($transport, $log)->place($this->envelope([
+            new OrderLine('nad-500', 'NAD+ (500mg)', '459', '15271', 12000, 1),
+            new OrderLine('other', 'Something Else', '460', '15999', 5000, 1),
+        ]), $this->card());
 
-        self::assertSame('campaign_not_configured', $outcome->rawStatus);
+        self::assertSame('campaign_unresolved', $outcome->rawStatus);
         self::assertSame([], $transport->requests);
-        self::assertSame('payment.campaign_not_configured', $log->lastError()['event'] ?? null);
+        self::assertSame('payment.campaign_unresolved', $log->lastError()['event'] ?? null);
+    }
+
+    public function testTheCheckoutUrlIsSentSoAnOperatorCanSeeWhereAnOrderCameFrom(): void
+    {
+        $transport = $this->transportThatPlaces();
+
+        $this->adapter($transport)->place($this->envelope(), $this->card());
+
+        self::assertSame('https://store.example.test/checkout/', $transport->params(0)['salesUrl'] ?? null);
+    }
+
+    public function testADeploymentWithNoUrlSendsNoSalesUrlRatherThanAnEmptyOne(): void
+    {
+        // [20.8]: absent rather than empty, on the same terms as every other
+        // identifier this storefront declines to invent.
+        $transport = $this->transportThatPlaces();
+
+        $this->adapter($transport, salesUrl: '')->place($this->envelope(), $this->card());
+
+        self::assertArrayNotHasKey('salesUrl', $transport->params(0));
     }
 
     public function testACartWithNothingChargeableNeverReachesTheProvider(): void
@@ -272,13 +312,18 @@ final class CheckoutChampAdapterTest extends TestCase
         self::assertSame(CaptureOutcome::UNSUPPORTED, $adapter->capture('881234')->state);
     }
 
-    public function testTheDeploymentKeyThisAdapterNeedsIsDeclaredRatherThanAssumed(): void
+    public function testThisAdapterNeedsNoDeploymentKeyOfItsOwn(): void
     {
         // The EMR channel carries no campaign, so config:validate has to be
         // told to look for one — and told by the adapter, not by a list in the
         // validator naming providers.
+        // Nothing, as it turns out: the campaign this provider needs on every
+        // order is catalog data rather than a deployment setting, so there is
+        // no `payment.*` key for an operator to forget. The mechanism still
+        // earns its place — the other adapter declares its shipping profile
+        // through it.
         self::assertSame(
-            ['campaign_id'],
+            [],
             $this->adapter(new FakeCheckoutChampTransport())->capabilities()->requiredDeploymentKeys,
         );
     }
