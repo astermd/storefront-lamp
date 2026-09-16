@@ -313,7 +313,7 @@ final class SyncCommandTest extends TestCase
         // the processor block belongs to a provider that is no longer
         // configured, and every key in it is that provider's vocabulary.
         $this->writeExistingChannel(self::CHANNEL_ID, 'checkout_champ', [
-            'api_username' => 'sc_qa',
+            'api_username' => 'store_api',
             'api_password' => 'a-live-password',
         ]);
 

@@ -67,6 +67,7 @@ final class VrioAdapter implements PaymentAdapter
             pciPosture: 'Reduced scope via reference-order reuse: the card is collected by the storefront once, at checkout, and is never held afterwards — later charges on the same journey name the instrument the provider already holds in its own vault. The collection surface is still the storefront\'s own, so the checkout request itself remains in scope; nothing beyond it is.',
             supportsOrderSearch: true,
             supportsAuthorizeCapture: true,
+            requiredDeploymentKeys: ['shipping_profile_id'],
         );
     }
 

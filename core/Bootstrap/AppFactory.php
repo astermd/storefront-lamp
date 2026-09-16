@@ -82,6 +82,13 @@ use AsterMD\Storefront\Http\Controller\UpsellController;
 use AsterMD\Storefront\Payment\AdapterRegistry;
 use AsterMD\Storefront\Payment\PaymentAdapter;
 use AsterMD\Storefront\Payment\RefusingTransport;
+use AsterMD\CheckoutChampClient\Http\CurlClient as CheckoutChampCurlClient;
+use AsterMD\CheckoutChampClient\Http\HttpClientInterface as CheckoutChampHttpClient;
+use AsterMD\Storefront\Payment\CheckoutChamp\CheckoutChampAdapter;
+use AsterMD\Storefront\Payment\CheckoutChamp\CheckoutChampApiFactory;
+use AsterMD\Storefront\Payment\CheckoutChamp\CheckoutChampCredentials;
+use AsterMD\Storefront\Payment\CheckoutChamp\CheckoutChampRefusingTransport;
+use AsterMD\Storefront\Payment\CheckoutChamp\CheckoutChampWireLog;
 use AsterMD\Storefront\Payment\Vrio\VrioAdapter;
 use AsterMD\Storefront\Payment\Vrio\VrioApiFactory;
 use AsterMD\Storefront\Payment\Vrio\VrioCredentials;
@@ -699,6 +706,35 @@ final class AppFactory
                 ),
                 $c->get(OperatorLog::class),
                 (int) $config->get('payment.shipping_profile_id', 1),
+            ));
+
+            // The second provider. Registering it costs nothing until a channel
+            // names it (`[14.2]`): the factory is not called, so no credentials
+            // are read and no client is built.
+            $registry->register('checkout_champ', static fn (): PaymentAdapter => new CheckoutChampAdapter(
+                CheckoutChampCredentials::fromChannelConfig(
+                    (array) $config->get('channel.generated.payment_processor.config', []),
+                    (string) $config->get('payment.campaign_id', ''),
+                ),
+                new CheckoutChampApiFactory(
+                    // Composed exactly as the other adapter's transport is, and
+                    // for the same two reasons -- the suite must not be able to
+                    // reach the live provider, and the wire log must wrap
+                    // whatever it finds rather than replace it.
+                    (static function () use ($config, $rootDir): ?CheckoutChampHttpClient {
+                        $inner = $config->get('app.env') === 'test' ? new CheckoutChampRefusingTransport() : null;
+
+                        if ($config->get('app.debug.wire_log') !== true) {
+                            return $inner;
+                        }
+
+                        return new CheckoutChampWireLog(
+                            $inner ?? new CheckoutChampCurlClient(),
+                            $rootDir . '/storage/logs/checkout-champ-wire.log',
+                        );
+                    })(),
+                ),
+                $c->get(OperatorLog::class),
             ));
 
             return $registry;

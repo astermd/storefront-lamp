@@ -872,6 +872,41 @@ approved authorize returns is unrecorded — see item 17 of
 behaviour is identical whether the debug switch is on or off; a switch that changed what the
 provider was sent would be worse than no switch.
 
+### The CheckoutChamp adapter
+
+`core/Payment/CheckoutChamp/` is the second implementation, and it exists partly to test
+whether the boundary above was drawn in the right place. It is not shaped like the first:
+**placement is two calls** (`/leads/import/` answers a `sessionId`, `/order/import/` bills
+it — calling the second alone answers "Customer not found"), **lines are numbered
+parameters** (`product1_id`, `product2_id`, …) rather than an array, there is no promotion
+endpoint, and the reusable credential is a single customer id rather than a pair. None of
+that reaches anything above `PaymentAdapter`.
+
+Two shapes of difference it forced, both worth knowing about:
+
+- **Each provider's client declares its own `HttpClientInterface`**, so the test-environment
+  fence is per adapter — `CheckoutChampRefusingTransport` beside
+  `Payment\RefusingTransport`. That is the honest shape of two vendored packages; `[14.3]`
+  is about what the storefront knows, not about pretending two third-party interfaces are
+  one. `tests/Payment/RefusingTransportTest.php` asserts every *registered* category is
+  fenced, so a third provider added without one fails there rather than in production.
+- **`AdapterCapabilities::$requiredDeploymentKeys`** was added for it. The EMR channel
+  carries no campaign for this provider, just as it carries no shipping profile for the
+  other, so each adapter declares which `payment.*` keys it needs and `config:validate`
+  checks the declaration. A fixed list in the validator would fail every deployment of
+  whichever provider it was not written for.
+
+It declares `supportsPromotions`, `supportsOrderSearch` and `supportsAuthorizeCapture` all
+**false**, and each for a stated reason rather than as a stub — see
+[`INTEGRATION-NOTES.md`](INTEGRATION-NOTES.md) items 19–23. The authorize half of
+authorize-and-capture *is* implemented; the capability stays off because the settle call is
+not recorded, and an authorization nobody can capture expires on the acquirer's clock.
+
+**This provider takes every parameter in the query string**, including the card and the
+account password. `CheckoutChampWireLog` therefore holds credentials as well as cardholder
+data while it is on, and the adapter's declared PCI posture says so — which is what puts it
+in front of an operator, via `config:validate`, before they go live rather than after.
+
 ### Where the card goes, and where it does not
 
 **Card data never reaches the EMR.** The storefront charges at the payment aggregator and

@@ -56,6 +56,9 @@ use AsterMD\Storefront\Retention\RetentionPolicy;
 use AsterMD\Storefront\Retention\RetentionSweep;
 use AsterMD\Storefront\Payment\AdapterRegistry;
 use AsterMD\Storefront\Payment\PaymentAdapter;
+use AsterMD\Storefront\Payment\CheckoutChamp\CheckoutChampAdapter;
+use AsterMD\Storefront\Payment\CheckoutChamp\CheckoutChampApiFactory;
+use AsterMD\Storefront\Payment\CheckoutChamp\CheckoutChampCredentials;
 use AsterMD\Storefront\Payment\Vrio\VrioAdapter;
 use AsterMD\Storefront\Payment\Vrio\VrioApiFactory;
 use AsterMD\Storefront\Payment\Vrio\VrioCredentials;
@@ -127,6 +130,14 @@ $resolveAdapter = static function () use ($config, $rootDir): PaymentAdapter {
         new VrioApiFactory(),
         $log,
         (int) $config->get('payment.shipping_profile_id', 1),
+    ));
+    $registry->register('checkout_champ', static fn (): PaymentAdapter => new CheckoutChampAdapter(
+        CheckoutChampCredentials::fromChannelConfig(
+            (array) $config->get('channel.generated.payment_processor.config', []),
+            (string) $config->get('payment.campaign_id', ''),
+        ),
+        new CheckoutChampApiFactory(),
+        $log,
     ));
 
     return $registry->for((string) ($config->get('payment.adapter')

@@ -23,6 +23,14 @@ namespace AsterMD\Storefront\Payment;
  * `$requiredConfigKeys` is what `config:validate` checks before a deployment
  * goes live, and `$pciPosture` is what it reports to the operator (`[15.15]`).
  *
+ * `$requiredDeploymentKeys` is the same check one layer out: keys under
+ * `payment.*` that this adapter needs and the EMR channel cannot supply, so a
+ * deployment sets them by hand. Declared rather than hardcoded in the validator
+ * because what is mandatory is a property of the provider -- the shipping
+ * profile that one provider refuses every order without is a key the next one
+ * has never heard of, and a validator that demanded both would fail every
+ * deployment of each.
+ *
  * `$supportsOrderSearch` is declared rather than assumed for the same reason
  * as the rest: `[21.9a]`'s reverse sweep has to be able to tell "this provider
  * cannot be asked what orders it holds" from "this provider was asked and
@@ -56,8 +64,11 @@ final class AdapterCapabilities
     public const string SURFACE_PROVIDER_HOSTED = 'provider-hosted';
 
     /**
-     * @param list<string> $requiredConfigKeys keys that must exist under `payment.<category>` for this adapter to run
-     * @param list<string> $routingHintKeys    opaque provider-side ids passed through untouched (`[14.6c]`)
+     * @param list<string> $requiredConfigKeys     keys that must exist in the synced channel's
+     *                                              `payment_processor.config` for this adapter to run
+     * @param list<string> $routingHintKeys         opaque provider-side ids passed through untouched (`[14.6c]`)
+     * @param list<string> $requiredDeploymentKeys  keys under `payment.*` in `config/payment.php` that this adapter
+     *                                              needs and the EMR cannot supply, so a deployment sets them by hand
      */
     public function __construct(
         public readonly string $providerCategory,
@@ -72,6 +83,7 @@ final class AdapterCapabilities
         public readonly bool $supportsRecurring = false,
         public readonly bool $supportsOrderSearch = false,
         public readonly bool $supportsAuthorizeCapture = false,
+        public readonly array $requiredDeploymentKeys = [],
     ) {
     }
 

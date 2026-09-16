@@ -33,6 +33,20 @@ final class RefusingTransportTest extends TestCase
      * Placeholders throughout; nothing here reaches a network, which is the
      * whole point of the case.
      */
+    /** The same, on the second provider, whose client declares its own transport interface. */
+    private const array CHECKOUT_CHAMP_CHANNEL = [
+        'channel' => ['id' => 'refusing-transport-test-channel', 'name' => 'Refusing Transport Test'],
+        'payment_processor' => [
+            'provider_category' => 'checkout_champ',
+            'name' => 'Refusing Transport Test Processor',
+            'config' => [
+                'api_endpoint' => 'https://api.checkoutchamp.com',
+                'api_username' => 'not-a-real-login',
+                'api_password' => 'not-a-real-password',
+            ],
+        ],
+    ];
+
     private const array VRIO_CHANNEL = [
         'channel' => ['id' => 'refusing-transport-test-channel', 'name' => 'Refusing Transport Test'],
         'payment_processor' => [
@@ -46,6 +60,52 @@ final class RefusingTransportTest extends TestCase
             ],
         ],
     ];
+
+    public function testEveryRegisteredProviderIsFencedAndNotJustTheFirstOne(): void
+    {
+        // The fence has to be per adapter, because each provider's client
+        // declares its own transport interface — so a second provider added
+        // without one would be a live wire nothing in the suite would notice
+        // until it charged a card.
+        //
+        // Asserted by resolving each registered category and requiring the
+        // innermost transport to refuse, rather than by naming the classes: a
+        // third provider registered without a fence fails here.
+        foreach (['vrio' => self::VRIO_CHANNEL, 'checkout_champ' => self::CHECKOUT_CHAMP_CHANNEL] as $category => $channel) {
+            $adapter = AppFactory::create(dirname(__DIR__, 2), [
+                Config::class => $this->configWith(['channel.generated' => $channel]),
+            ])->getContainer()?->get(PaymentAdapter::class);
+
+            self::assertNotNull($adapter);
+
+            $seen = 0;
+            while (!property_exists($adapter, 'apiFactory')) {
+                $adapter = (new \ReflectionProperty($adapter, 'inner'))->getValue($adapter);
+                self::assertIsObject($adapter, $category . ': a decorator chain that does not end in an object');
+                self::assertLessThan(10, ++$seen, $category . ': the decorator chain does not terminate');
+            }
+
+            $factory = (new \ReflectionProperty($adapter, 'apiFactory'))->getValue($adapter);
+            $transport = (new \ReflectionProperty($factory, 'transport'))->getValue($factory);
+
+            self::assertNotNull($transport, $category . ': the test environment left the transport slot empty');
+
+            // The wire log wraps the transport rather than replacing it, so on
+            // a machine with that switch on the refusal sits one layer down.
+            $seen = 0;
+            while (!str_contains($transport::class, 'Refusing') && property_exists($transport, 'inner')) {
+                $transport = (new \ReflectionProperty($transport, 'inner'))->getValue($transport);
+                self::assertIsObject($transport, $category . ': a transport chain that does not end in an object');
+                self::assertLessThan(10, ++$seen, $category . ': the transport chain does not terminate');
+            }
+
+            self::assertStringContainsString(
+                'Refusing',
+                $transport::class,
+                $category . ': the test environment did not fence this provider',
+            );
+        }
+    }
 
     public function testTheTransportRefusesToSend(): void
     {

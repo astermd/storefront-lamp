@@ -4,8 +4,66 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "a98e5cdd5531415d712dd3a2485f943d",
+    "content-hash": "6987bea846b73d25631b6b05ebf0146a",
     "packages": [
+        {
+            "name": "astermd/checkoutchamp-client",
+            "version": "v0.0.1",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/astermd/checkoutchamp-client.git",
+                "reference": "e38c1d415626e35f5b4ef4c30012abcc64295b5c"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/astermd/checkoutchamp-client/zipball/e38c1d415626e35f5b4ef4c30012abcc64295b5c",
+                "reference": "e38c1d415626e35f5b4ef4c30012abcc64295b5c",
+                "shasum": ""
+            },
+            "require": {
+                "ext-curl": "*",
+                "ext-json": "*",
+                "php": ">=8.4"
+            },
+            "require-dev": {
+                "phpstan/phpstan": "^2.2",
+                "phpunit/phpunit": "^12.0",
+                "squizlabs/php_codesniffer": "^3.13"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "AsterMD\\CheckoutChampClient\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "AsterMD",
+                    "email": "info@astermd.com"
+                }
+            ],
+            "description": "Unofficial PHP client for the Checkout Champ API: orders, leads, upsales, campaigns, customers, transactions and lander clicks, with opt-in redacted request logging.",
+            "keywords": [
+                "API-Client",
+                "checkout-champ",
+                "checkoutchamp",
+                "crm",
+                "ecommerce",
+                "orders",
+                "payments",
+                "rest-client"
+            ],
+            "support": {
+                "email": "info@astermd.com",
+                "issues": "https://github.com/astermd/checkoutchamp-client/issues",
+                "source": "https://github.com/astermd/checkoutchamp-client"
+            },
+            "time": "2026-08-16T13:06:23+00:00"
+        },
         {
             "name": "astermd/sdk",
             "version": "v0.0.2",

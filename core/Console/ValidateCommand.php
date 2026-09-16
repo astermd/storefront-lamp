@@ -773,9 +773,20 @@ final class ValidateCommand extends Command
             }
         }
 
-        $shippingProfileId = $this->config->get('payment.shipping_profile_id');
-        if (!is_int($shippingProfileId) || $shippingProfileId <= 0) {
-            $errors[] = 'payment: payment.shipping_profile_id is not set — the provider refuses every order without one';
+        // Read from the adapter's own declaration rather than hardcoded here.
+        // The shipping profile one provider refuses every order without is a
+        // key the next has never heard of, so a fixed list would fail every
+        // deployment of whichever provider it was not written for.
+        foreach ($capabilities->requiredDeploymentKeys as $key) {
+            $value = $this->config->get('payment.' . $key);
+
+            if ($value === null || $value === '' || $value === 0) {
+                $errors[] = sprintf(
+                    'payment: payment.%s is not set, and the %s adapter cannot place an order without it',
+                    $key,
+                    $capabilities->providerCategory,
+                );
+            }
         }
 
         $this->validateSettlement($catalog, $capabilities, $errors);

@@ -600,6 +600,23 @@ vrio api.vrio.app — campaign 147, 20 items, connection 1
 PCI posture: Reduced scope via reference-order reuse: [...]
 ```
 
+On a deployment whose channel names the other provider:
+
+```
+$ bin/console provider:ping
+Provider: checkout_champ
+checkout_champ api.checkoutchamp.com — login store_api, 4 campaign(s), campaign 9 configured
+PCI posture: Reduced scope via stored-customer reuse: [...] NOTE that this provider
+authenticates and takes every parameter in the QUERY STRING [...]
+```
+
+`campaign (none) configured` there is the one to act on: this provider needs a
+campaign on every order and the EMR channel does not supply one, so it comes from
+`PAYMENT_CAMPAIGN_ID`. Without it every checkout is refused before the wire —
+deliberately, because the provider itself answers an order with no campaign with
+"No products exist in the order", which describes a configuration fault as a cart
+problem. `config:validate` reports it as an error.
+
 Both exited **0**. Both return **1** when the call fails or the adapter cannot
 be resolved. `emr:ping` proves that credentials work, the channel resolves and
 the catalog is readable; `provider:ping` proves the payment adapter is

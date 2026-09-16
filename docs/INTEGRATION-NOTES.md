@@ -464,6 +464,104 @@ channel fetch**, when reproducing what the application does. The two are not
 always the same, and `theme:sync`'s merge semantics are what preserve a key the
 payload has stopped sending.
 
+## The second payment provider
+
+Everything above under "The payment provider" is the `vrio` adapter's. This
+section is the `checkout_champ` one, and the two disagree about almost
+everything except the envelope-shaped fact that both disagree with their own
+documentation.
+
+### 19. Placement is two calls, and the second one alone says "Customer not found"
+
+`POST /order/import/` bills a session; `POST /leads/import/` creates the
+customer and answers the `sessionId` it bills against. Calling `/order/import/`
+or `/order/preauth/` without one answers `"Customer not found"`, which is how
+the sequence was established rather than assumed.
+
+The cost is a second round trip inside a request the buyer is waiting on, and a
+lead created for an order that then fails — a CRM row rather than a charge, and
+the provider's own model rather than a choice this storefront made.
+
+### 20. The envelope is two keys, and `message` changes type between them
+
+A refusal is `{"result": "ERROR", "message": "<one sentence>"}`. A success is
+`{"result": "SUCCESS", "message": {...}}` with the data nested inside. So
+`message` is a **string exactly when the call failed**, and reading it as a
+reason without checking the type renders the word `Array` to a buyer on the
+success path.
+
+Four refusals taken verbatim from the live sandbox, and they are the fixtures
+under `tests/fixtures/checkoutchamp-*.json`:
+
+| Call | `message` |
+|---|---|
+| `/order/import/` with no parameters | `No products exist in the order` |
+| `/order/preauth/` with no parameters | `Customer not found` |
+| `/leads/import/` with only a campaign | `First and last name are required fields.` |
+| `/order/query/` for an unknown order | `No orders matching those parameters could be found` |
+
+Note the first: **an order with no campaign is reported as an empty cart.** A
+configuration fault described as a cart problem is the worst possible place to
+debug one, which is why the adapter refuses an unconfigured campaign before the
+wire rather than letting the provider answer.
+
+`result` is the provider's own verdict field, so unlike the other provider's
+`success` flag it is not derived from the absence of an error key — but it still
+cannot survive a body that never decoded, since a proxy's HTML error page has no
+`result` at all. The check is for the literal `SUCCESS` rather than for the
+absence of `ERROR`.
+
+### 21. Every parameter travels in the query string, including the card and the password
+
+This provider authenticates with `loginId` and `password` as **query
+parameters**, and takes the card number, expiry and security code the same way.
+That is the provider's design and the client follows it.
+
+The consequence is not theoretical and is larger than the collection surface:
+anything on the egress path that records request URLs — a forward proxy, an
+egress gateway, an APM agent, a TLS-inspecting appliance, a crash reporter —
+records cardholder data *and this deployment's provider password* in clear text.
+A URL is the part of a request most things copy by default.
+
+Two things follow in this codebase. `CheckoutChampWireLog` is documented as
+holding credentials as well as card data, so a deployment that switches it on
+treats the file as a secret to destroy rather than a log to ship. And the
+adapter's declared PCI posture says all of this, so `config:validate` prints it
+to an operator before they go live rather than after.
+
+### 22. The campaign is a deployment's to supply, not the channel's
+
+The EMR channel's `payment_processor.config` for this provider carries
+`integration_name`, `api_endpoint`, `api_username`, `api_password` and
+`advanced_settings` — and **no campaign id**. The provider needs one on every
+order.
+
+So it lives in `config/payment.php` as `payment.campaign_id`, declared by the
+adapter through `AdapterCapabilities::$requiredDeploymentKeys` and checked by
+`config:validate`. The same mechanism carries the other provider's
+`shipping_profile_id`, which the EMR equally does not supply — what is mandatory
+is a property of the provider, and a validator with a fixed list would fail
+every deployment of whichever one it was not written for.
+
+### 23. What is not recorded, and what happens if it is wrong
+
+**No order has been placed through this adapter.** The refusal envelope above is
+recorded; the success envelope — where `orderId`, `customerId` and `totalAmount`
+sit inside `message` — is the provider's documented shape.
+
+Two deliberate consequences, so a wrong guess cannot become a charge nobody
+recorded:
+
+- A success carrying no `orderId` is treated as a **decline**, not a placement.
+  An order the storefront cannot name can be neither reconciled nor captured,
+  and a buyer sent to a receipt for one is worse off than a buyer who retries.
+- `supportsOrderSearch` and `supportsAuthorizeCapture` are both declared
+  **false**. `orderQuery` exists and `/order/preauth/` works, but the reverse
+  sweep turns its findings into alerts about money and the capture half of
+  authorize-and-capture is not recorded at all. An authorization nobody can
+  capture expires on the acquirer's clock a few days later, so the capability
+  stays off until the settle call is recorded.
+
 ---
 
 ## What to take from all of this

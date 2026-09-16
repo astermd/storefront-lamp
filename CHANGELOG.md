@@ -9,8 +9,9 @@ names exactly which ones changed.
 ## [Unreleased — 0.0.3]
 
 Adds authorize-and-capture, so a deployment can hold a buyer's funds instead of
-taking them and settle later. Stops `theme:sync` carrying one channel's payment
-credentials into another channel's config file. Renders the three authoring hooks the form builder
+taking them and settle later, and a second payment provider behind the same
+boundary. Stops `theme:sync` carrying one channel's payment credentials into
+another channel's config file. Renders the three authoring hooks the form builder
 writes and the storefront read none of — a field's own class and id, and the
 form's own stylesheet — and stops `cache:clear` claiming to have cleared a cache
 it could not touch, which is what made the first of those look unfixed after it
@@ -21,6 +22,69 @@ deployment opts in: `payment.settlement` defaults to `capture`, which is exactly
 what every deployment did before, and `0006_settlement.php` adds one column with
 that same default. `composer.json` and `package.json` still say 0.0.2 — bump them
 together with the tag when this is released.
+
+### A second payment provider: CheckoutChamp
+
+`core/Payment/CheckoutChamp/` is the second implementation of `[14.1]`'s boundary,
+which until now had one. Adding it was an adapter plus a registry entry, which is
+what `[14.2]` says it should be — nothing above `PaymentAdapter` changed to
+accommodate it.
+
+It is deliberately not shaped like the first, and that was the point. Placement
+is **two calls**: `POST /leads/import/` creates the customer and answers a
+`sessionId`, `POST /order/import/` bills it, and calling the second alone answers
+"Customer not found". Lines are **numbered parameters** (`product1_id`,
+`product2_id`, …) rather than an array, so an unmappable line is skipped without
+leaving a gap — the provider stops reading at the first missing index, so a hole
+would silently drop every line after it. There is no promotion endpoint, and the
+reusable credential is a single customer id rather than a pair.
+
+Two things it forced, both general rather than provider-specific:
+
+- **Each provider's client declares its own `HttpClientInterface`**, so the
+  test-environment fence had to be per adapter. `tests/Payment/RefusingTransportTest.php`
+  now asserts that *every registered category* is fenced, so a third provider
+  added without one fails there rather than by charging a card.
+- **`AdapterCapabilities::$requiredDeploymentKeys`.** The EMR channel carries no
+  campaign for this provider, just as it carries no shipping profile for the
+  other. Each adapter now declares which `payment.*` keys it needs and
+  `config:validate` checks the declaration; the hardcoded `shipping_profile_id`
+  check it replaces was failing conceptually for any provider that has none.
+
+**Three capabilities are declared false, each for a stated reason.**
+`supportsPromotions`, because the client exposes no discount-quote endpoint and
+`[14.4]` says the storefront should hide the control rather than offer a box that
+can only reject. `supportsOrderSearch`, because `orderQuery` exists but its
+projection is unrecorded and `[21.9a]`'s sweep turns findings into alerts about
+money. `supportsAuthorizeCapture`, and that one is the interesting one: the
+authorize half **is** implemented and `POST /order/preauth/` is sent, but the
+call that settles a pre-authorized order is neither exposed by the client nor
+recorded. Declaring it true would let a deployment hold a buyer's funds with no
+proven way to release them, and the hold expires on the acquirer's clock. Turning
+it on is that flag and `capture()`, nothing else.
+
+**This provider takes every parameter in the query string**, including the card
+number, the security code and the account password. `CheckoutChampWireLog`
+therefore holds credentials as well as cardholder data while it is on, and the
+declared PCI posture says so — so `config:validate` puts it in front of an
+operator before they go live rather than after.
+
+Recorded against the live sandbox: the refusal envelope in four variants, which
+are the fixtures under `tests/fixtures/checkoutchamp-*.json`. Not recorded: the
+success envelope, because no order has been placed through this adapter. Every
+unverified assumption is arranged to fail as a stated decline — a success with no
+`orderId` is treated as one, since an order the storefront cannot name can be
+neither reconciled nor captured. `docs/INTEGRATION-NOTES.md` items 19–23 carry
+the list.
+
+New configuration: `payment.campaign_id` (`PAYMENT_CAMPAIGN_ID`), which this
+provider needs on every order and the EMR channel does not supply.
+
+- `core/Payment/CheckoutChamp/` (new, seven classes), `composer.json`
+  (`astermd/checkoutchamp-client`)
+- `core/Payment/AdapterCapabilities.php`, `core/Payment/Vrio/VrioAdapter.php`,
+  `core/Console/ValidateCommand.php`, `core/Bootstrap/AppFactory.php`,
+  `bin/console`, `config/payment.php`, `.env.example`
 
 ### `theme:sync` no longer carries one channel's credentials into another's file
 
@@ -242,7 +306,7 @@ The cache was NOT fully cleared. Whatever it was holding is still being served.
 
 ### Tests
 
-`vendor/bin/phpunit` is green at **2148 tests / 7301 assertions**, up from
+`vendor/bin/phpunit` is green at **2191 tests / 7394 assertions**, up from
 2044 / 7102, and at the same figures on a clone with no synced catalog. Every field type that draws an element is covered by name, so a
 partial added later without the hook fails rather than silently ignoring it.
 The two `cache:clear` permission cases skip as root, where the refusal they
