@@ -7,6 +7,8 @@ declare(strict_types=1);
 namespace AsterMD\Storefront\Console;
 
 use AsterMD\Storefront\Payment\CaptureOutcome;
+use AsterMD\Storefront\Payment\CaptureRequest;
+use AsterMD\Storefront\Payment\OrderLine;
 use AsterMD\Storefront\Payment\PaymentAdapter;
 use AsterMD\Storefront\Payment\SettlementMode;
 use AsterMD\Storefront\Repository\OrderRepository;
@@ -79,9 +81,9 @@ final class CaptureOrderCommand extends Command
             return Command::FAILURE;
         }
 
-        $refusal = $this->localRefusal($reference, $output);
-        if ($refusal !== null) {
-            return $refusal;
+        $row = $this->orderRow($reference, $output);
+        if ($row === null) {
+            return Command::FAILURE;
         }
 
         try {
@@ -101,7 +103,7 @@ final class CaptureOrderCommand extends Command
             return Command::FAILURE;
         }
 
-        $outcome = $adapter->capture($reference);
+        $outcome = $adapter->capture(new CaptureRequest($reference, self::linesFrom($row)));
 
         if ($outcome->isCaptured()) {
             $output->writeln(sprintf('Captured order %s.', $reference));
@@ -119,18 +121,19 @@ final class CaptureOrderCommand extends Command
     }
 
     /**
-     * A refusal the local record justifies, or null to go on to the provider.
+     * The local order, or null when there is a stated reason not to go on.
      *
-     * An unreadable row deliberately answers null. See the class docblock: the
-     * provider is the authority on what it holds, and a database fault must not
-     * be the reason a hold on somebody's card is left to expire.
+     * @return array<string, mixed>|null
      */
-    private function localRefusal(string $reference, OutputInterface $output): ?int
+    private function orderRow(string $reference, OutputInterface $output): ?array
     {
         try {
             $row = $this->orders->findByReference($reference);
         } catch (\Throwable) {
-            $output->writeln('<comment>The local order record could not be read; asking the provider anyway.</comment>');
+            $output->writeln(sprintf(
+                '<error>The local record for %s could not be read, and it is the only place this order\'s lines still exist. Fix the database and retry; the authorization is untouched.</error>',
+                $reference,
+            ));
 
             return null;
         }
@@ -141,7 +144,7 @@ final class CaptureOrderCommand extends Command
                 $reference,
             ));
 
-            return Command::FAILURE;
+            return null;
         }
 
         if ($row['settlement'] !== SettlementMode::Authorize->value) {
@@ -151,9 +154,48 @@ final class CaptureOrderCommand extends Command
                 $row['settlement'],
             ));
 
-            return Command::FAILURE;
+            return null;
         }
 
-        return null;
+        return $row;
+    }
+
+    /**
+     * The order's lines as the neutral shape an adapter reads.
+     *
+     * Rebuilt from `order_lines` rather than from anything the provider holds,
+     * because for at least one provider the provider holds nothing: a
+     * pre-authorized order there has an empty item list until the settling call
+     * fills it.
+     *
+     * @param  array<string, mixed> $row
+     * @return list<OrderLine>
+     */
+    private static function linesFrom(array $row): array
+    {
+        $lines = [];
+
+        foreach (is_array($row['lines'] ?? null) ? $row['lines'] : [] as $line) {
+            if (!is_array($line)) {
+                continue;
+            }
+
+            $lines[] = new OrderLine(
+                slug: (string) ($line['slug'] ?? ''),
+                name: (string) ($line['name'] ?? ''),
+                providerOffer: self::nullableText($line['provider_offer'] ?? null),
+                providerItem: self::nullableText($line['provider_item'] ?? null),
+                unitPriceCents: (int) ($line['unit_price_cents'] ?? 0),
+                quantity: (int) ($line['quantity'] ?? 0),
+                kind: (string) ($line['kind'] ?? 'otc'),
+            );
+        }
+
+        return $lines;
+    }
+
+    private static function nullableText(mixed $value): ?string
+    {
+        return is_string($value) && trim($value) !== '' ? trim($value) : null;
     }
 }

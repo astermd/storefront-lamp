@@ -65,7 +65,7 @@ final class NullPaymentAdapter implements PaymentAdapter
      * settle -- and `unsupported` rather than `failed` says so, because a
      * failed capture invites a retry that would never succeed.
      */
-    public function capture(string $reference): CaptureOutcome
+    public function capture(CaptureRequest $request): CaptureOutcome
     {
         return CaptureOutcome::unsupported();
     }

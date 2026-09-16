@@ -642,6 +642,12 @@ Whatever system owns that event calls this with the reference it is settling.
 The argument is the **provider's** order reference, as `orders.provider_reference`
 holds it and as the receipt shows the buyer. Not a local row id.
 
+The command reads the local order first, and for one provider that is not a
+convenience: a pre-authorized order there carries no line items until the
+settling call supplies them, and re-reading it from the provider returns the same
+empty list — so `order_lines` is the only place they still exist. That is why an
+unreadable row stops the command rather than being pushed past.
+
 Exit **0** on a capture, **1** on anything else. The refusals, in the order they
 are checked:
 
@@ -651,6 +657,8 @@ are checked:
 | `Order … was recorded as capture, not as an authorization` | The money was already taken at checkout. Nothing was called. |
 | `The local order record could not be read; asking the provider anyway` | **Not a refusal.** A database fault must not let a hold lapse; the provider is the authority on what it holds. |
 | `… does not support authorize-and-capture` | Configuration, not a retry. The order should never have been authorized — `config:validate` reports the same thing. |
+| `The local record for … could not be read` | The order's lines live in `order_lines` and one provider cannot settle without them, so this stops rather than guessing. The authorization is untouched; fix the database and retry. |
+| `No products exist in the order` | That provider's answer to a settle call missing its lines. The order stays partial **and the funds stay held**. |
 | `order_unauthorized` | The provider's own code. The order never authorized, or the authorization is already settled. |
 
 **Authorizations expire.** Most processors hold funds for a few days, and the

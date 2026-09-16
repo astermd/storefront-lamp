@@ -6,6 +6,7 @@ namespace AsterMD\Storefront\Tests\Payment;
 
 use AsterMD\Storefront\Payment\AdapterCapabilities;
 use AsterMD\Storefront\Payment\CaptureOutcome;
+use AsterMD\Storefront\Payment\CaptureRequest;
 use AsterMD\Storefront\Payment\OrderEnvelope;
 use AsterMD\Storefront\Payment\OrderSearch;
 use AsterMD\Storefront\Payment\OrderSearchResult;
@@ -73,9 +74,9 @@ final class RedeclaredAdapter implements PaymentAdapter
         return $this->inner->searchOrders($search);
     }
 
-    public function capture(string $reference): CaptureOutcome
+    public function capture(CaptureRequest $request): CaptureOutcome
     {
-        return $this->inner->capture($reference);
+        return $this->inner->capture($request);
     }
 
     /** @return array{ok: bool, detail: string} */

@@ -8,6 +8,7 @@ namespace AsterMD\Storefront\Payment\Vrio;
 
 use AsterMD\Storefront\Payment\AdapterCapabilities;
 use AsterMD\Storefront\Payment\CaptureOutcome;
+use AsterMD\Storefront\Payment\CaptureRequest;
 use AsterMD\Storefront\Payment\OrderEnvelope;
 use AsterMD\Storefront\Payment\OrderSearch;
 use AsterMD\Storefront\Payment\OrderSearchResult;
@@ -291,12 +292,14 @@ final class VrioAdapter implements PaymentAdapter
     /**
      * Settle an order this adapter authorized: `POST /orders/{id}/capture`.
      *
-     * **An empty body, deliberately.** The provider captures the most recent
-     * successful authorization on the order and needs nothing else; naming an
-     * amount here would let a partial capture be requested by a caller that has
-     * no figure to offer -- what is being settled is the authorization the
-     * provider holds, and this storefront's own total was reconciled against it
-     * at placement ({@see VrioOutcome}).
+     * **An empty body, deliberately.** This provider captures the most recent
+     * successful authorization on the order and needs nothing else, so
+     * {@see CaptureRequest::$lines} is ignored here -- it is carried for the
+     * other shipped adapter, which cannot settle without it. Naming an amount
+     * would let a partial capture be requested by a caller that has no figure to
+     * offer; what is being settled is the authorization the provider holds, and
+     * this storefront's own total was reconciled against it at placement
+     * ({@see VrioOutcome}).
      *
      * **A refusal is typed.** Capturing an order that never authorized answers
      * `success: false` with `data.error.code` and `validation_code` both
@@ -315,9 +318,9 @@ final class VrioAdapter implements PaymentAdapter
      * log rather than shown to anyone -- which makes it more likely to be
      * pasted into a ticket, not less.
      */
-    public function capture(string $reference): CaptureOutcome
+    public function capture(CaptureRequest $request): CaptureOutcome
     {
-        $reference = trim($reference);
+        $reference = trim($request->reference);
 
         if ($reference === '') {
             // Never reaches the wire: the provider's route would be

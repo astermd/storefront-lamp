@@ -51,17 +51,31 @@ Two things it forced, both general rather than provider-specific:
   provider without one has never heard of. This adapter declares none, and the
   mechanism still earns its place through the other one.
 
-**Three capabilities are declared false, each for a stated reason.**
-`supportsPromotions`, because the client exposes no discount-quote endpoint and
-`[14.4]` says the storefront should hide the control rather than offer a box that
-can only reject. `supportsOrderSearch`, because `orderQuery` exists but its
-projection is unrecorded and `[21.9a]`'s sweep turns findings into alerts about
-money. `supportsAuthorizeCapture`, and that one is the interesting one: the
-authorize half **is** implemented and `POST /order/preauth/` is sent, but the
-call that settles a pre-authorized order is neither exposed by the client nor
-recorded. Declaring it true would let a deployment hold a buyer's funds with no
-proven way to release them, and the hold expires on the acquirer's clock. Turning
-it on is that flag and `capture()`, nothing else.
+**Pre-auth works on this provider too, and settling it is `/order/import/`
+again** — with the lines and no card. There is no endpoint named "capture".
+`/order/preauth/` answers `"Card is preauthorized"`; the settling call takes the
+order to `orderStatus: "COMPLETE"`.
+
+That forced the one interface change. `PaymentAdapter::capture()` now takes a
+`CaptureRequest` rather than a bare reference, because **a pre-authorized order
+at this provider carries no line items until the settling call supplies them**,
+and re-reading the order returns the same empty list. `order_lines` is the only
+place they still exist. Settling without them is refused with "No products exist
+in the order" and leaves the order partial *with the funds still held* — an error
+that leaves money reserved. The other adapter ignores the lines.
+
+It also reversed a rule in `bin/console payment:capture`: an unreadable local row
+used to be waved through, on the reasoning that a hold must not lapse because a
+SELECT failed. That assumed every provider can settle from the reference alone.
+For the one that cannot, going on without the lines reaches the same outcome more
+slowly and reports it as a cart problem, so it is now a stated failure.
+
+**Two capabilities are still declared false**, each for a stated reason rather
+than as a stub: `supportsPromotions`, because the client exposes no
+discount-quote endpoint and `[14.4]` prefers hiding the control to offering a box
+that can only reject; and `supportsOrderSearch`, because `orderQuery` works but
+the fields `[21.9a]`'s sweep would have to map have not been established across a
+real window, and that sweep turns its findings into alerts about money.
 
 **This provider takes every parameter in the query string**, including the card
 number, the security code and the account password. `CheckoutChampWireLog`
@@ -69,13 +83,30 @@ therefore holds credentials as well as cardholder data while it is on, and the
 declared PCI posture says so — so `config:validate` puts it in front of an
 operator before they go live rather than after.
 
-Recorded against the live sandbox: the refusal envelope in four variants, which
-are the fixtures under `tests/fixtures/checkoutchamp-*.json`. Not recorded: the
-success envelope, because no order has been placed through this adapter. Every
-unverified assumption is arranged to fail as a stated decline — a success with no
-`orderId` is treated as one, since an order the storefront cannot name can be
-neither reconciled nor captured. `docs/INTEGRATION-NOTES.md` items 19–23 carry
-the list.
+**Recorded against the live sandbox, end to end, through the shipped adapter:** a
+charge, a decline, and a pre-authorization settled by a later capture. The
+fixtures under `tests/fixtures/checkoutchamp-*.json` are those responses.
+
+Three of the recordings corrected an assumption this adapter was first written
+on:
+
+- **`leads/import` is not only a lead.** It creates a PARTIAL order and answers
+  the `orderId` every later call is keyed on — so the reference exists before a
+  card is presented, which is what lets a refused placement still carry one
+  (`[13.26]`) even though the refusal envelope has no order id in it.
+- **`result` is the only discriminator.** All four combinations of
+  `result` and `message`-type occur, including `SUCCESS` with a plain string
+  (`"Card is preauthorized"`) and `ERROR` with a field map. The first draft read
+  the type as the verdict and would have declined every successful
+  pre-authorization.
+- **A PARTIAL order is reused by the next attempt**, so a decline and the retry
+  that succeeds share one `orderId`. `orders.provider_reference` is therefore not
+  unique, and `OrderRepository::findByReference()` now orders by `id DESC`:
+  without that, SQLite answers the lowest rowid — the declined attempt — and
+  `payment:capture` would read a row saying the order was already captured and
+  refuse to settle an authorization that is really outstanding.
+
+`docs/INTEGRATION-NOTES.md` items 19–25 carry the full list.
 
 **No new configuration.** The campaign this provider needs on every order is a
 variant's `provider.offer_id` in the catalog, and its `provider.product_id` is
@@ -90,8 +121,13 @@ does not offer half of it.
 the provider shows against the order in its dashboard so an operator reconciling
 one by hand sees where it came from rather than only a campaign number.
 
-- `core/Payment/CheckoutChamp/` (new, seven classes), `composer.json`
+- `core/Payment/CheckoutChamp/` (new, seven classes),
+  `core/Payment/CaptureRequest.php` (new), `composer.json`
   (`astermd/checkoutchamp-client`)
+- `core/Payment/PaymentAdapter.php`, `NullPaymentAdapter.php`,
+  `core/Payment/Vrio/VrioAdapter.php`,
+  `core/Observability/InstrumentedPaymentAdapter.php`,
+  `core/Console/CaptureOrderCommand.php`, `core/Repository/OrderRepository.php`
 - `core/Payment/AdapterCapabilities.php`, `core/Payment/Vrio/VrioAdapter.php`,
   `core/Console/ValidateCommand.php`, `core/Bootstrap/AppFactory.php`,
   `bin/console`
@@ -316,7 +352,7 @@ The cache was NOT fully cleared. Whatever it was holding is still being served.
 
 ### Tests
 
-`vendor/bin/phpunit` is green at **2192 tests / 7395 assertions**, up from
+`vendor/bin/phpunit` is green at **2202 tests / 7432 assertions**, up from
 2044 / 7102, and at the same figures on a clone with no synced catalog. Every field type that draws an element is covered by name, so a
 partial added later without the hook fails rather than silently ignoring it.
 The two `cache:clear` permission cases skip as root, where the refusal they

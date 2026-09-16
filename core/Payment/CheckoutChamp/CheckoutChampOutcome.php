@@ -15,36 +15,38 @@ use AsterMD\Storefront\Support\CardScrubber;
 /**
  * Capability 5: the provider's response envelope → an outcome (`[13.24]`).
  *
- * **The envelope is two keys and `message` changes type between them.** A
- * refusal is `{"result": "ERROR", "message": "<sentence>"}` — recorded, four
- * variants: "No products exist in the order", "Customer not found", "First and
- * last name are required fields.", "No orders matching those parameters could
- * be found". A success is `{"result": "SUCCESS", "message": {...}}` with the
- * data nested inside. So `message` is a string exactly when the call failed,
- * and that is load-bearing: {@see self::reason()} reads it only in the string
- * case, because `(string)` on the success array would produce the word
- * "Array" and show it to a buyer.
+ * **`result` is the only discriminator, and `message` is not one.** The obvious
+ * reading -- string means failure, object means success -- is wrong in both
+ * directions, and all four combinations are recorded:
  *
- * **`result` is the decision, and unlike the other adapter's `success` flag it
- * can be trusted** — it is the provider's own field rather than something the
- * client derived from the absence of an error key. What it cannot do alone is
- * survive a body that never decoded: a proxy's HTML error page decodes to null
- * and has no `result` at all, which is why the check is for the literal
- * `SUCCESS` rather than for the absence of `ERROR`.
+ * | `result`  | `message` | recorded example |
+ * |-----------|-----------|------------------|
+ * | `SUCCESS` | object    | a billed order, with `orderId`, `orderStatus`, `totalAmount` |
+ * | `SUCCESS` | string    | `"Card is preauthorized"` |
+ * | `ERROR`   | string    | `"Transaction Declined: Card Declined"` |
+ * | `ERROR`   | object    | `{"shipAddress1": "is a required field", ...}` |
  *
- * **An order reference is still required on a success.** The recorded provider
- * for the other adapter creates an order and then fails the card, so `[13.26]`
- * is written around a reference surviving a decline; this provider is not known
- * to do that, and no reference is read from a refusal for that reason. What
- * stays the same is that a success without one cannot be recorded, reconciled
- * or captured, so it is a decline rather than a placement.
+ * So the verdict is read from `result` alone, and `message` is inspected for
+ * its type before anything is taken out of it. Casting the object form would
+ * render the word "Array" to a buyer; requiring the object form would throw
+ * away the pre-authorization's answer entirely.
  *
- * **Unverified**: no order has been placed through this adapter, so the success
- * shape below — where the order id, the customer id and the charged total sit
- * inside `message` — is the provider's documented one rather than a recording.
- * The refusal shape is recorded. `docs/INTEGRATION-NOTES.md` says which is
- * which; a success path that is wrong fails as a missing reference, which is a
- * decline and not a charge nobody recorded.
+ * `result` is the provider's own field rather than something the client derived
+ * from the absence of an error key, so it can be trusted where the other
+ * adapter's `success` flag cannot. What it cannot do alone is survive a body
+ * that never decoded -- a proxy's HTML error page has no `result` at all --
+ * which is why the check is for the literal `SUCCESS` rather than for the
+ * absence of `ERROR`.
+ *
+ * **The order reference is minted by the lead call, not by the billing call.**
+ * `POST /leads/import/` creates a PARTIAL order and answers its `orderId`;
+ * everything afterwards is keyed on that. The adapter therefore already holds
+ * the reference before it presents a card, which is what lets a *refused*
+ * placement still carry one (`[13.26]`) even though the refusal envelope has no
+ * order id in it at all.
+ *
+ * A pre-authorization answers `SUCCESS` with no `orderId` and no total, so it is
+ * read as "the card was accepted" and the reference comes from the caller.
  */
 final class CheckoutChampOutcome
 {
@@ -57,33 +59,35 @@ final class CheckoutChampOutcome
      * @param array<string, mixed> $envelope           the `response` node of the client's `getInArray()`
      * @param int|null             $expectedTotalCents the total the storefront displayed, for reconciliation
      */
+    /**
+     * @param array<string, mixed> $envelope   the `response` node of the client's `getInArray()`
+     * @param string               $reference  the order id the lead call minted, since the billing
+     *                                         call does not always answer one and a refusal never does
+     */
     public static function from(
         array $envelope,
+        string $reference,
         ?int $expectedTotalCents = null,
         SettlementMode $settlement = SettlementMode::Capture,
     ): PlacementOutcome {
         // A transport failure arrives as a key, not an exception.
         if (isset($envelope['curlError'])) {
-            return PlacementOutcome::declined(null, self::GENERIC_DECLINE, 'transport_error');
+            return PlacementOutcome::declined($reference, self::GENERIC_DECLINE, 'transport_error');
         }
 
+        // The reference is carried onto the decline (`[13.26]`): the provider
+        // created the order at the lead call and it is still there, so a retry
+        // that forgot it would leave an operator two partial orders and no way
+        // to tell which one the buyer saw.
         if (($envelope['result'] ?? null) !== self::RESULT_SUCCESS) {
-            return PlacementOutcome::declined(null, self::reason($envelope), 'rejected');
+            return PlacementOutcome::declined($reference, self::reason($envelope), 'rejected');
         }
 
         $message = is_array($envelope['message'] ?? null) ? $envelope['message'] : [];
-        $reference = self::identifier($message['orderId'] ?? null);
-
-        // A success with nothing to file the order under cannot be recorded,
-        // reconciled or captured, so it is treated as a decline rather than as
-        // a placement nobody can find again.
-        if ($reference === null) {
-            return PlacementOutcome::declined(null, self::GENERIC_DECLINE, 'no_reference');
-        }
 
         return PlacementOutcome::placed(
             $reference,
-            self::identifier($message['orderStatus'] ?? null),
+            self::text($message['orderStatus'] ?? null),
             self::reconcile($message, $expectedTotalCents),
             self::reusableCredential($message),
             $settlement,
@@ -91,16 +95,32 @@ final class CheckoutChampOutcome
     }
 
     /**
-     * The session this provider will bill an order against, or null when the
-     * lead call did not answer one.
+     * Whether a settle call took the money.
      *
-     * Separate from {@see self::from()} because it reads a *different* call's
-     * response: `POST /leads/import/` runs first and its only job is to hand
-     * back this identifier.
+     * The same envelope rules as a placement, read for a different question. A
+     * settled order answers `SUCCESS` with `orderStatus: "COMPLETE"`; a settle
+     * call missing its lines answers `ERROR` with "No products exist in the
+     * order" and leaves the order PARTIAL with the funds still held.
      *
      * @param array<string, mixed> $envelope
      */
-    public static function sessionFrom(array $envelope): ?string
+    public static function capturedFrom(array $envelope): bool
+    {
+        return !isset($envelope['curlError']) && ($envelope['result'] ?? null) === self::RESULT_SUCCESS;
+    }
+
+    /**
+     * The order the lead call created, or null when it created none.
+     *
+     * Separate from {@see self::from()} because it reads a *different* call's
+     * response. `POST /leads/import/` creates a PARTIAL order and answers its
+     * `orderId`, which every later call is keyed on -- so this runs before a
+     * card has been presented to anything, and a failure here costs the buyer a
+     * decline and nothing else.
+     *
+     * @param array<string, mixed> $envelope
+     */
+    public static function referenceFrom(array $envelope): ?string
     {
         if (isset($envelope['curlError']) || ($envelope['result'] ?? null) !== self::RESULT_SUCCESS) {
             return null;
@@ -108,7 +128,7 @@ final class CheckoutChampOutcome
 
         $message = is_array($envelope['message'] ?? null) ? $envelope['message'] : [];
 
-        return self::identifier($message['sessionId'] ?? null);
+        return self::text($message['orderId'] ?? null);
     }
 
     /**
@@ -130,6 +150,11 @@ final class CheckoutChampOutcome
             return (string) CardScrubber::scrub(trim($message));
         }
 
+        // The field-map form -- `{"shipAddress1": "is a required field"}` -- is
+        // a fault in what this storefront sent, not something a buyer can act
+        // on, so it is deliberately not rendered. It reaches the operator log
+        // through the adapter, where it is the only useful thing about the
+        // failure.
         return self::GENERIC_DECLINE;
     }
 
@@ -175,7 +200,7 @@ final class CheckoutChampOutcome
      */
     private static function reusableCredential(array $message): ?PaymentCredential
     {
-        $customerId = self::identifier($message['customerId'] ?? null);
+        $customerId = self::text($message['customerId'] ?? null);
 
         if ($customerId === null) {
             return null;
@@ -185,7 +210,7 @@ final class CheckoutChampOutcome
     }
 
     /** One of the provider's identifiers as a non-empty string, or null when it sent none. */
-    private static function identifier(mixed $value): ?string
+    private static function text(mixed $value): ?string
     {
         if (is_int($value)) {
             return (string) $value;

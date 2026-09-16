@@ -14,10 +14,20 @@ use AsterMD\Storefront\Payment\PaymentCredential;
  * Capability 4: a neutral order envelope → this provider's two request bodies.
  *
  * **Placement here is two calls, not one, and that is the provider's shape
- * rather than a choice.** `POST /leads/import/` creates the customer and
- * answers a `sessionId`; `POST /order/import/` (or `/order/preauth/`) bills
- * that session. Calling the second without the first answers
- * `"Customer not found"`, which is how the sequence was established.
+ * rather than a choice.** `POST /leads/import/` creates the customer *and a
+ * PARTIAL order*, answering the `orderId` everything afterwards is keyed on;
+ * `POST /order/import/` (or `/order/preauth/`) bills it. Calling the second
+ * without the first answers `"Customer not found"`.
+ *
+ * **The order reference is minted by the lead call**, not by the billing call.
+ * That is worth stating because it is the opposite of the other provider, where
+ * the reference arrives with the charge -- and it means a placement that is
+ * refused at the billing step still has a reference, which `[13.26]` requires
+ * be recorded.
+ *
+ * **The billing call needs the shipping address again.** The lead call already
+ * carried it, and omitting it on the order answers a field map:
+ * `{"shipAddress1": "is a required field", ...}`. Sent on both, therefore.
  *
  * That difference from the other adapter is absorbed entirely here and in
  * {@see CheckoutChampAdapter}. Nothing above `[14.1]`'s boundary learns that
@@ -74,7 +84,7 @@ final class CheckoutChampPayload
     {
         $buyer = $order->buyer;
 
-        $body = [
+        $body = self::shipping($order) + [
             'campaignId' => (string) self::campaignFor($order),
             'firstName' => $buyer->firstName,
             'lastName' => $buyer->lastName,
@@ -136,10 +146,23 @@ final class CheckoutChampPayload
      */
     public static function campaignFor(OrderEnvelope $order): ?string
     {
+        return self::campaignOf($order->chargeableLines());
+    }
+
+    /**
+     * The same rule over a bare line list, for the settle call -- which has the
+     * lines the order was placed with and no envelope around them.
+     *
+     * @param list<OrderLine> $lines
+     */
+    public static function campaignOf(array $lines): ?string
+    {
         $campaigns = [];
 
-        foreach ($order->chargeableLines() as $line) {
-            $campaigns[(string) $line->providerOffer] = true;
+        foreach ($lines as $line) {
+            if ($line->isChargeable()) {
+                $campaigns[(string) $line->providerOffer] = true;
+            }
         }
 
         return count($campaigns) === 1 ? (string) array_key_first($campaigns) : null;
@@ -156,12 +179,56 @@ final class CheckoutChampPayload
     public static function forOrder(
         OrderEnvelope $order,
         PaymentCredential $credential,
-        string $sessionId,
+        string $reference,
     ): array {
         return [
             'campaignId' => (string) self::campaignFor($order),
-            'sessionId' => $sessionId,
-        ] + self::lines($order) + self::paymentFor($credential);
+            'orderId' => $reference,
+        ] + self::shipping($order) + self::lines($order) + self::paymentFor($credential);
+    }
+
+    /**
+     * `POST /order/import/` again, this time to **settle** an order that was
+     * pre-authorized -- with the lines and without a card.
+     *
+     * **The lines are not optional and cannot be recovered from the provider.**
+     * A pre-authorized order carries an empty `items` array until this call
+     * supplies them, so `orderId` alone is answered "No products exist in the
+     * order" and the order stays partial with the funds still held. Re-reading
+     * the order first would return that same empty projection, which is why
+     * {@see \AsterMD\Storefront\Payment\CaptureRequest} carries them from the
+     * storefront's own record instead.
+     *
+     * No card, no shipping: both were taken at the pre-authorization, and the
+     * settle call is accepted without either.
+     *
+     * @param list<\AsterMD\Storefront\Payment\OrderLine> $lines
+     *
+     * @return array<string, mixed>
+     */
+    public static function forCapture(string $reference, array $lines, string $campaignId): array
+    {
+        return ['campaignId' => $campaignId, 'orderId' => $reference] + self::numbered($lines);
+    }
+
+    /**
+     * The shipping block, which both the lead call and the billing call want.
+     *
+     * @return array<string, string>
+     */
+    private static function shipping(OrderEnvelope $order): array
+    {
+        $buyer = $order->buyer;
+
+        return [
+            'shipFirstName' => $buyer->firstName,
+            'shipLastName' => $buyer->lastName,
+            'shipAddress1' => $buyer->addressLine,
+            'shipCity' => $buyer->city,
+            'shipState' => $buyer->territory,
+            'shipPostalCode' => $buyer->postalCode,
+            'shipCountry' => $buyer->country,
+        ];
     }
 
     /**
@@ -176,10 +243,19 @@ final class CheckoutChampPayload
      */
     public static function lines(OrderEnvelope $order): array
     {
+        return self::numbered($order->chargeableLines());
+    }
+
+    /**
+     * @param  list<OrderLine>     $lines already filtered to the chargeable ones
+     * @return array<string, mixed>
+     */
+    private static function numbered(array $lines): array
+    {
         $params = [];
         $position = 0;
 
-        foreach ($order->chargeableLines() as $line) {
+        foreach ($lines as $line) {
             ++$position;
             $params['product' . $position . '_id'] = (string) $line->providerItem;
             $params['product' . $position . '_qty'] = $line->quantity;

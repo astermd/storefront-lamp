@@ -248,6 +248,25 @@ final class OrderRepositoryTest extends TestCase
         self::assertSame('authorize', $repository->findByReference('34660')['settlement']);
     }
 
+    public function testTwoRowsSharingAReferenceReadBackAsTheMostRecentOne(): void
+    {
+        // `provider_reference` is not unique and cannot be: one shipped provider
+        // reuses a PARTIAL order for a repeat attempt, so a decline and the
+        // retry that succeeds carry the same reference. Without an ordering the
+        // engine returns the lowest rowid — the decline — and `payment:capture`
+        // would refuse to settle an authorization that is really outstanding.
+        $pdo = $this->tempPdo();
+        $repository = $this->repository($pdo, withSession: true);
+
+        $repository->insert(['status' => 'declined'] + $this->order(), [], []);
+        $repository->insert(['status' => 'placed', 'settlement' => 'authorize'] + $this->order(), [], []);
+
+        $order = $repository->findByReference('34660');
+
+        self::assertSame('placed', $order['status']);
+        self::assertSame('authorize', $order['settlement']);
+    }
+
     private function order(): array
     {
         return [

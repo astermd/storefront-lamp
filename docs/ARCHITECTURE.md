@@ -904,11 +904,24 @@ campaign in a way a configured one could not: a cart whose lines carry two diffe
 campaigns has no correct single answer, and is refused before the wire rather than placed
 under one that does not offer half of it.
 
-It declares `supportsPromotions`, `supportsOrderSearch` and `supportsAuthorizeCapture` all
-**false**, and each for a stated reason rather than as a stub — see
-[`INTEGRATION-NOTES.md`](INTEGRATION-NOTES.md) items 19–23. The authorize half of
-authorize-and-capture *is* implemented; the capability stays off because the settle call is
-not recorded, and an authorization nobody can capture expires on the acquirer's clock.
+It declares `supportsAuthorizeCapture` **true** — both halves are recorded: `/order/preauth/`
+holds the funds and `/order/import/`, with the lines and no card, settles them. It declares
+`supportsPromotions` and `supportsOrderSearch` **false**, each for a stated reason rather
+than as a stub; see [`INTEGRATION-NOTES.md`](INTEGRATION-NOTES.md) items 19–25.
+
+Settling is why `PaymentAdapter::capture()` takes a {@see CaptureRequest} rather than a bare
+reference. A pre-authorized order at this provider carries **no line items** until the
+settling call supplies them, and re-reading it returns the same empty projection — so
+`order_lines` is the only place they still exist, and the request carries them across. The
+other adapter ignores them. A narrower signature plus a per-provider escape hatch would have
+put a provider's shape back above the boundary.
+
+That also changed a rule in `bin/console payment:capture`: an unreadable local row used to be
+waved through on the reasoning that a hold must not lapse because a SELECT failed. That
+assumed every provider can settle from the reference alone. For the one that cannot,
+proceeding without the lines produces a refusal that leaves the order partial *and the funds
+still held* — the same outcome as not trying, reached more slowly — so it is now a stated
+failure.
 
 **This provider takes every parameter in the query string**, including the card and the
 account password. `CheckoutChampWireLog` therefore holds credentials as well as cardholder

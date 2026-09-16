@@ -97,13 +97,14 @@ interface PaymentAdapter
      * somebody's card. An exception here is a capture whose result nobody
      * recorded, and the reserved funds expire silently a few days later.
      *
-     * The reference is the one {@see PlacementOutcome::$reference} handed back
-     * at placement -- the provider's own order identifier, as
-     * `orders.provider_reference` spells it. Nothing else about the order is
-     * passed, because nothing else is the storefront's to restate: what is
-     * being settled is the authorization the provider holds.
+     * {@see CaptureRequest} carries the provider's own order identifier -- as
+     * `orders.provider_reference` spells it -- and the lines the order was
+     * placed with. One shipped provider needs only the first; the other cannot
+     * settle without the second, and cannot recover it by re-reading the order
+     * either. The request carries both so that difference stays inside the
+     * adapters.
      */
-    public function capture(string $reference): CaptureOutcome;
+    public function capture(CaptureRequest $request): CaptureOutcome;
 
     /**
      * Whether the credentials this adapter was built with reach the provider.

@@ -11,6 +11,7 @@ use AsterMD\Storefront\Payment\OrderEnvelope;
 use AsterMD\Storefront\Payment\OrderLine;
 use AsterMD\Storefront\Payment\PaymentCredential;
 use AsterMD\Storefront\Payment\CaptureOutcome;
+use AsterMD\Storefront\Payment\CaptureRequest;
 use AsterMD\Storefront\Payment\PlacementOutcome;
 use AsterMD\Storefront\Payment\SettlementMode;
 use AsterMD\Storefront\Payment\Vrio\VrioAdapter;
@@ -85,10 +86,13 @@ final class VrioAdapterTest extends TestCase
 
     public function testACaptureSettlesTheOrderAtTheProvider(): void
     {
+        // This provider settles from the reference alone: the authorization it
+        // holds already knows what it is for, so the lines a CaptureRequest may
+        // carry for the other adapter are ignored here.
         $transport = new FakeVrioTransport();
         $transport->queue(200, json_encode(['order_id' => 36727], JSON_THROW_ON_ERROR));
 
-        $outcome = $this->adapter($transport)->capture('36727');
+        $outcome = $this->adapter($transport)->capture(new CaptureRequest('36727'));
 
         self::assertTrue($outcome->isCaptured());
         self::assertSame('36727', $outcome->reference);
@@ -104,7 +108,7 @@ final class VrioAdapterTest extends TestCase
         $transport->queueFixture('vrio-capture-unauthorized.json');
         $log = new CapturedLog();
 
-        $outcome = $this->adapter($transport, $log)->capture('36727');
+        $outcome = $this->adapter($transport, $log)->capture(new CaptureRequest('36727'));
 
         self::assertSame(CaptureOutcome::FAILED, $outcome->state);
         self::assertSame('order_unauthorized', $outcome->reason);
@@ -119,7 +123,7 @@ final class VrioAdapterTest extends TestCase
         $transport = new FakeVrioTransport();
         $transport->queue(0, '', 'Could not resolve host');
 
-        $outcome = $this->adapter($transport)->capture('36727');
+        $outcome = $this->adapter($transport)->capture(new CaptureRequest('36727'));
 
         self::assertSame(CaptureOutcome::FAILED, $outcome->state);
         self::assertSame('transport_error', $outcome->reason);
@@ -130,7 +134,7 @@ final class VrioAdapterTest extends TestCase
         // `/orders//capture` is a different endpoint entirely.
         $transport = new FakeVrioTransport();
 
-        $outcome = $this->adapter($transport)->capture('   ');
+        $outcome = $this->adapter($transport)->capture(new CaptureRequest('   '));
 
         self::assertSame('missing_reference', $outcome->reason);
         self::assertSame([], $transport->requests);

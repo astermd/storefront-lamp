@@ -8,6 +8,7 @@ namespace AsterMD\Storefront\Observability;
 
 use AsterMD\Storefront\Payment\AdapterCapabilities;
 use AsterMD\Storefront\Payment\CaptureOutcome;
+use AsterMD\Storefront\Payment\CaptureRequest;
 use AsterMD\Storefront\Payment\OrderEnvelope;
 use AsterMD\Storefront\Payment\OrderSearch;
 use AsterMD\Storefront\Payment\OrderSearchResult;
@@ -122,16 +123,16 @@ final class InstrumentedPaymentAdapter implements PaymentAdapter
      * the same `[20.6]` terms as the placement above: a failure reason on this
      * path is the provider's own free text.
      */
-    public function capture(string $reference): CaptureOutcome
+    public function capture(CaptureRequest $request): CaptureOutcome
     {
         return $this->timer->measure(
             Boundary::ProviderCapture,
-            fn (): CaptureOutcome => $this->inner->capture($reference),
+            fn (): CaptureOutcome => $this->inner->capture($request),
             static fn (CaptureOutcome $outcome): array => [
                 'outcome' => $outcome->state,
                 'reference' => $outcome->reference,
             ],
-            ['reference' => $reference],
+            ['reference' => $request->reference, 'lines' => count($request->lines)],
         );
     }
 

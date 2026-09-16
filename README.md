@@ -426,8 +426,8 @@ accident either.
 opens with several hundred words explaining why. The short version, honestly stated:
 
 **The provider integration cannot currently tell anybody apart.** Measured against the
-live provider on 2026-08-25: twenty calls across nine identities, all three checks, and
-not one returned `valid: true`. The `crosscheck` check scored exactly **0** against its
+live provider across twenty calls, nine identities and all three checks, not one
+returned `valid: true`. The `crosscheck` check scored exactly **0** against its
 configured threshold of 0.75 — for a real, deliverable identity with a valid phone and a
 real originating address, and for a fabricated one, identically.
 

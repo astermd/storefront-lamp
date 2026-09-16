@@ -6,6 +6,7 @@ namespace AsterMD\Storefront\Tests\Payment\CheckoutChamp;
 
 use AsterMD\Storefront\Payment\Buyer;
 use AsterMD\Storefront\Payment\CaptureOutcome;
+use AsterMD\Storefront\Payment\CaptureRequest;
 use AsterMD\Storefront\Payment\CheckoutChamp\CheckoutChampAdapter;
 use AsterMD\Storefront\Payment\CheckoutChamp\CheckoutChampApiFactory;
 use AsterMD\Storefront\Payment\CheckoutChamp\CheckoutChampCredentials;
@@ -69,11 +70,17 @@ final class CheckoutChampAdapterTest extends TestCase
         return PaymentCredential::card('4111111100084444', '12', '2030', '123');
     }
 
+    /** The lead call mints the reference; the billing call reports what it did with it. */
     private function transportThatPlaces(): FakeCheckoutChampTransport
     {
         $transport = new FakeCheckoutChampTransport();
-        $transport->queueSuccess(['sessionId' => 'sess_abc']);
-        $transport->queueSuccess(['orderId' => '881234', 'customerId' => '5501', 'totalAmount' => '120.00']);
+        $transport->queueSuccess(['orderId' => 'D6C8C390A7', 'orderStatus' => 'PARTIAL']);
+        $transport->queueSuccess([
+            'orderId' => 'D6C8C390A7',
+            'orderStatus' => 'COMPLETE',
+            'customerId' => '19241',
+            'totalAmount' => '120.00',
+        ]);
 
         return $transport;
     }
@@ -88,19 +95,51 @@ final class CheckoutChampAdapterTest extends TestCase
         $outcome = $this->adapter($transport)->place($this->envelope(), $this->card());
 
         self::assertTrue($outcome->isPlaced());
-        self::assertSame('881234', $outcome->reference);
+        self::assertSame('D6C8C390A7', $outcome->reference);
         self::assertCount(2, $transport->requests);
         self::assertStringContainsString('/leads/import/', $transport->path(0));
         self::assertStringContainsString('/order/import/', $transport->path(1));
     }
 
-    public function testTheSessionFromTheLeadCallIsWhatTheOrderIsBilledAgainst(): void
+    public function testTheOrderIdFromTheLeadCallIsWhatTheBillingCallNames(): void
     {
+        // The reference is minted by the lead call, not by the charge — the
+        // opposite of the other provider — which is what lets a refused
+        // placement still carry one.
         $transport = $this->transportThatPlaces();
 
         $this->adapter($transport)->place($this->envelope(), $this->card());
 
-        self::assertSame('sess_abc', $transport->params(1)['sessionId'] ?? null);
+        self::assertSame('D6C8C390A7', $transport->params(1)['orderId'] ?? null);
+    }
+
+    public function testTheBillingCallRepeatsTheShippingAddress(): void
+    {
+        // Omitting it is answered with a field map: {"shipAddress1": "is a
+        // required field", ...}. The lead call already carried it; the provider
+        // wants it on both.
+        $transport = $this->transportThatPlaces();
+
+        $this->adapter($transport)->place($this->envelope(), $this->card());
+
+        foreach (['shipAddress1', 'shipCity', 'shipState', 'shipPostalCode', 'shipCountry'] as $field) {
+            self::assertArrayHasKey($field, $transport->params(1));
+        }
+    }
+
+    public function testARefusedChargeStillReportsTheReferenceTheLeadCallCreated(): void
+    {
+        // [13.26]: the partial order exists at the provider whatever the card
+        // does, and losing its id would leave an operator two of them.
+        $transport = new FakeCheckoutChampTransport();
+        $transport->queueSuccess(['orderId' => 'D6C8C390A7', 'orderStatus' => 'PARTIAL']);
+        $transport->queueFixture('checkoutchamp-order-declined.json');
+
+        $outcome = $this->adapter($transport)->place($this->envelope(), $this->card());
+
+        self::assertSame(PlacementOutcome::DECLINED, $outcome->state);
+        self::assertSame('D6C8C390A7', $outcome->reference);
+        self::assertSame('Transaction Declined: Card Declined', $outcome->reason);
     }
 
     public function testTheCartBecomesOneBasedNumberedParameters(): void
@@ -301,15 +340,75 @@ final class CheckoutChampAdapterTest extends TestCase
         self::assertFalse($result->ok);
     }
 
-    public function testCaptureIsDeclaredUnsupportedRatherThanGuessedAt(): void
+    public function testTheAdapterDeclaresItCanAuthorizeAndCapture(): void
     {
-        // The authorize half is implemented; the settle call is not recorded.
-        // Declaring true would let a deployment hold funds it has no proven way
-        // to release, and the hold expires on the acquirer's clock.
-        $adapter = $this->adapter(new FakeCheckoutChampTransport());
+        self::assertTrue($this->adapter(new FakeCheckoutChampTransport())->capabilities()->supportsAuthorizeCapture);
+    }
 
-        self::assertFalse($adapter->capabilities()->supportsAuthorizeCapture);
-        self::assertSame(CaptureOutcome::UNSUPPORTED, $adapter->capture('881234')->state);
+    public function testACaptureResendsTheLinesWithoutACard(): void
+    {
+        // The lines are the whole difficulty: a pre-authorized order carries an
+        // empty item list until this call supplies them. The card is not
+        // resent — it was taken at the authorization.
+        $transport = new FakeCheckoutChampTransport();
+        $transport->queueFixture('checkoutchamp-capture-approved.json');
+
+        $outcome = $this->adapter($transport)->capture(new CaptureRequest('FF2BE54DD5', [
+            new OrderLine('nad-500', 'NAD+ (500mg)', '459', '15271', 12000, 1),
+        ]));
+
+        self::assertTrue($outcome->isCaptured());
+
+        $params = $transport->params(0);
+        self::assertSame('FF2BE54DD5', $params['orderId']);
+        self::assertSame('459', $params['campaignId']);
+        self::assertSame('15271', $params['product1_id']);
+        self::assertArrayNotHasKey('cardNumber', $params);
+    }
+
+    public function testACaptureWithNoLinesIsRefusedBeforeTheWire(): void
+    {
+        // The provider's own answer for this is "No products exist in the
+        // order", which leaves the order partial with the funds still held —
+        // a refusal that reads like a cart problem and costs a round trip.
+        $transport = new FakeCheckoutChampTransport();
+        $log = new CapturedLog();
+
+        $outcome = $this->adapter($transport, $log)->capture(new CaptureRequest('FF2BE54DD5'));
+
+        self::assertSame(CaptureOutcome::FAILED, $outcome->state);
+        self::assertSame('lines_unusable', $outcome->reason);
+        self::assertSame([], $transport->requests);
+        self::assertSame('payment.capture_lines_unusable', $log->lastError()['event'] ?? null);
+    }
+
+    public function testARefusedCaptureIsNotReportedAsSettled(): void
+    {
+        // The dangerous case: the provider reports an error but the funds stay
+        // reserved, so reading this as a capture would report money taken that
+        // was not.
+        $transport = new FakeCheckoutChampTransport();
+        $transport->queueFixture('checkoutchamp-capture-without-lines.json');
+
+        $outcome = $this->adapter($transport)->capture(new CaptureRequest('FF2BE54DD5', [
+            new OrderLine('nad-500', 'NAD+ (500mg)', '459', '15271', 12000, 1),
+        ]));
+
+        self::assertSame(CaptureOutcome::FAILED, $outcome->state);
+        self::assertSame('No products exist in the order', $outcome->reason);
+    }
+
+    public function testACaptureThatCannotReachTheProviderFailsRatherThanThrows(): void
+    {
+        $transport = new FakeCheckoutChampTransport();
+        $transport->queue(0, '', 'Could not resolve host');
+
+        $outcome = $this->adapter($transport)->capture(new CaptureRequest('FF2BE54DD5', [
+            new OrderLine('nad-500', 'NAD+ (500mg)', '459', '15271', 12000, 1),
+        ]));
+
+        self::assertSame(CaptureOutcome::FAILED, $outcome->state);
+        self::assertSame('transport_error', $outcome->reason);
     }
 
     public function testThisAdapterNeedsNoDeploymentKeyOfItsOwn(): void

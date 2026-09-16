@@ -8,6 +8,7 @@ namespace AsterMD\Storefront\Payment\CheckoutChamp;
 
 use AsterMD\Storefront\Payment\AdapterCapabilities;
 use AsterMD\Storefront\Payment\CaptureOutcome;
+use AsterMD\Storefront\Payment\CaptureRequest;
 use AsterMD\Storefront\Payment\OrderEnvelope;
 use AsterMD\Storefront\Payment\OrderSearch;
 use AsterMD\Storefront\Payment\OrderSearchResult;
@@ -29,11 +30,16 @@ use AsterMD\Storefront\Support\OperatorLog;
  * this class — which is the whole claim `[14.2]` and `[14.3]` make.
  *
  * **Placement is two calls, because the provider has no single one.**
- * `POST /leads/import/` creates the customer and answers a `sessionId`;
- * `POST /order/import/` bills it. Calling the second alone answers "Customer
- * not found". The cost is a second round trip inside a request the buyer is
- * waiting on, and the risk is a lead created for an order that then fails —
- * which is a CRM row rather than a charge, and the provider's own model.
+ * `POST /leads/import/` creates the customer *and a PARTIAL order*, answering
+ * the `orderId` everything afterwards is keyed on; `POST /order/import/` bills
+ * it. Calling the second alone answers "Customer not found". The cost is a
+ * second round trip inside a request the buyer is waiting on, and the risk is a
+ * partial order for a purchase that then fails -- which is an unbilled row
+ * rather than a charge, and the provider's own model.
+ *
+ * One consequence is worth having: **the reference exists before the card is
+ * presented**, so a refused placement still carries one (`[13.26]`) even though
+ * the refusal envelope has no order id in it at all.
  *
  * **There is no idempotency here either.** The client offers no request key and
  * the provider deduplicates nothing, so a duplicate submit is caught before the
@@ -84,17 +90,12 @@ final class CheckoutChampAdapter implements PaymentAdapter
      * *no sweep*, which the sweep is explicitly built to distinguish from a
      * clean bill of health.
      *
-     * **`supportsAuthorizeCapture` is false, and this is the interesting one.**
-     * The authorize half is implemented and reachable — the provider offers
-     * `POST /order/preauth/` and {@see self::place()} sends it. What is missing
-     * is the settle half: the client exposes no capture method, and how a
-     * pre-authorized order is converted into a billed one is not recorded.
-     * Declaring true would let a deployment hold a buyer's funds with no proven
-     * way to release them, and an authorization nobody can capture expires
-     * silently on the acquirer's clock a few days later. So the capability
-     * stays off until capture is recorded, `CheckoutService` refuses an
-     * authorize order before the wire, and `config:validate` says so. Turning
-     * it on is this flag and {@see self::capture()}, nothing else.
+     * **`supportsAuthorizeCapture` is true**, and both halves are recorded:
+     * `POST /order/preauth/` holds the funds and answers
+     * `"Card is preauthorized"`, and `POST /order/import/` with the lines and no
+     * card settles it to `orderStatus: "COMPLETE"`. The settle call without its
+     * lines is refused and leaves the order PARTIAL with the funds still held,
+     * which is why {@see CaptureRequest} carries them.
      */
     public function capabilities(): AdapterCapabilities
     {
@@ -108,7 +109,7 @@ final class CheckoutChampAdapter implements PaymentAdapter
             routingHintKeys: ['offer_id', 'product_id'],
             pciPosture: 'Reduced scope via stored-customer reuse: the card is collected by the storefront once, at checkout, and is never held afterwards — later charges name the customer the provider already holds. NOTE that this provider authenticates and takes every parameter in the QUERY STRING, including the card number and security code, so anything on the egress path that records request URLs (a forward proxy, an egress gateway, an APM agent, a TLS-inspecting appliance) records cardholder data and this deployment\'s provider password in clear text. Audit that path before going live; it is a larger obligation than the collection surface itself.',
             supportsOrderSearch: false,
-            supportsAuthorizeCapture: false,
+            supportsAuthorizeCapture: true,
             requiredDeploymentKeys: [],
         );
     }
@@ -155,13 +156,13 @@ final class CheckoutChampAdapter implements PaymentAdapter
             return PlacementOutcome::declined(null, CheckoutChampOutcome::GENERIC_DECLINE, 'campaign_unresolved');
         }
 
-        $sessionId = $this->openSession($order);
+        $reference = $this->openOrder($order);
 
-        if ($sessionId === null) {
+        if ($reference === null) {
             return PlacementOutcome::declined(null, CheckoutChampOutcome::GENERIC_DECLINE, 'lead_not_created');
         }
 
-        $body = CheckoutChampPayload::forOrder($order, $credential, $sessionId);
+        $body = CheckoutChampPayload::forOrder($order, $credential, $reference);
         $authorize = $order->settlement->isAuthorize();
 
         try {
@@ -178,6 +179,7 @@ final class CheckoutChampAdapter implements PaymentAdapter
 
         $outcome = CheckoutChampOutcome::from(
             is_array($envelope) ? $envelope : [],
+            $reference,
             $order->totalCents,
             $order->settlement,
         );
@@ -207,14 +209,14 @@ final class CheckoutChampAdapter implements PaymentAdapter
     }
 
     /**
-     * The first of the two calls: create the customer, and read back the
-     * session an order is billed against.
+     * The first of the two calls: create the customer and the partial order,
+     * and read back the reference everything afterwards is keyed on.
      *
      * A failure here is logged and answered as null rather than thrown, so the
      * caller turns it into a decline like any other — the buyer sees a reason
      * and keeps their cart, and no card has been presented to anything.
      */
-    private function openSession(OrderEnvelope $order): ?string
+    private function openOrder(OrderEnvelope $order): ?string
     {
         try {
             $envelope = $this->apiFactory->create($this->credentials)
@@ -226,16 +228,16 @@ final class CheckoutChampAdapter implements PaymentAdapter
             return null;
         }
 
-        $sessionId = CheckoutChampOutcome::sessionFrom(is_array($envelope) ? $envelope : []);
+        $reference = CheckoutChampOutcome::referenceFrom(is_array($envelope) ? $envelope : []);
 
-        if ($sessionId === null) {
+        if ($reference === null) {
             $this->log->error('payment.lead_not_created', [
                 'anchor' => $order->anchorSlug,
                 'response' => CardScrubber::scrub($envelope),
             ]);
         }
 
-        return $sessionId;
+        return $reference;
     }
 
     /**
@@ -266,26 +268,114 @@ final class CheckoutChampAdapter implements PaymentAdapter
     }
 
     /**
-     * Not implemented, and declared so.
+     * Settle an order this adapter pre-authorized: `POST /order/import/` again,
+     * with the lines and without a card.
      *
-     * The provider pre-authorizes through `POST /order/preauth/` — which
-     * {@see self::place()} sends — but the call that settles a pre-authorized
-     * order is not exposed by the client and is not recorded. An implementation
-     * written from documentation would be a guess about the one operation that
-     * moves money on an order a buyer has already left.
+     * **The lines are the whole difficulty, and they cannot be fetched.** A
+     * pre-authorized order carries an *empty* `items` array until this call
+     * supplies them, so `orderId` alone is answered "No products exist in the
+     * order" and the order stays PARTIAL with the funds still held -- a silent
+     * failure, since the call reports an error but the money stays reserved.
+     * Re-reading the order first would return that same empty projection, which
+     * is why {@see CaptureRequest} carries the lines from the storefront's own
+     * record.
      *
-     * `supportsAuthorizeCapture` is false because of this, so nothing reaches
-     * here in normal operation: `CheckoutService` refuses an authorize order
-     * before the wire, and `config:validate` reports the combination. This
-     * answers `unsupported` rather than `failed` for the reason
-     * {@see \AsterMD\Storefront\Payment\NullPaymentAdapter::capture()} does — a
-     * failed capture invites a retry that could never succeed.
+     * The campaign comes from those lines, exactly as it does at placement.
+     *
+     * **Nothing throws.** This runs with no buyer in front of it, against money
+     * already reserved on somebody's card, so an unrecorded result is a hold
+     * that expires a few days later with nobody the wiser.
      */
-    public function capture(string $reference): CaptureOutcome
+    public function capture(CaptureRequest $request): CaptureOutcome
     {
-        $this->log->error('payment.capture_unimplemented', ['reference' => $reference]);
+        $reference = trim($request->reference);
 
-        return CaptureOutcome::unsupported();
+        if ($reference === '') {
+            $this->log->error('payment.capture_without_reference', []);
+
+            return CaptureOutcome::failed(null, 'missing_reference');
+        }
+
+        $lines = $request->chargeableLines();
+        $campaignId = CheckoutChampPayload::campaignOf($lines);
+
+        // Refused before the wire, because the provider's own answer for this
+        // is "No products exist in the order" -- which describes a storefront
+        // bookkeeping gap as a cart problem, against an order whose funds are
+        // held.
+        if ($lines === [] || $campaignId === null) {
+            $this->log->error('payment.capture_lines_unusable', [
+                'reference' => $reference,
+                'lines' => count($request->lines),
+                'chargeable' => count($lines),
+            ]);
+
+            return CaptureOutcome::failed($reference, 'lines_unusable');
+        }
+
+        try {
+            $envelope = $this->apiFactory->create($this->credentials)
+                ->importOrder(CheckoutChampPayload::forCapture($reference, $lines, $campaignId))
+                ->getInArray()['response'];
+        } catch (\Throwable $e) {
+            $this->log->error('payment.capture_threw', [
+                'reference' => $reference,
+                'exception' => $e::class,
+                'status' => $e->getCode(),
+            ]);
+
+            return CaptureOutcome::failed($reference, 'exception');
+        }
+
+        if (!is_array($envelope) || isset($envelope['curlError'])) {
+            $this->log->error('payment.capture_unreachable', ['reference' => $reference]);
+
+            return CaptureOutcome::failed($reference, 'transport_error');
+        }
+
+        if (!CheckoutChampOutcome::capturedFrom($envelope)) {
+            $reason = self::captureFailureReason($envelope);
+
+            // Error level, not warning: money is reserved on somebody's card and
+            // the hold expires on the acquirer's clock, so an unsettled capture
+            // has a deadline nothing here can extend.
+            $this->log->error('payment.capture_refused', ['reference' => $reference, 'reason' => $reason]);
+
+            return CaptureOutcome::failed($reference, $reason);
+        }
+
+        $this->log->info('payment.captured', ['reference' => $reference]);
+
+        return CaptureOutcome::captured($reference);
+    }
+
+    /**
+     * The provider's own reason for a refused capture, scrubbed.
+     *
+     * The field-map form is flattened rather than dropped: on this path it is
+     * the only useful thing about the failure, and there is no buyer to protect
+     * from it.
+     *
+     * @param array<string, mixed> $envelope
+     */
+    private static function captureFailureReason(array $envelope): string
+    {
+        $message = $envelope['message'] ?? null;
+
+        if (is_string($message) && trim($message) !== '') {
+            return (string) CardScrubber::scrub(trim($message));
+        }
+
+        if (is_array($message) && $message !== []) {
+            $parts = [];
+            foreach ($message as $field => $problem) {
+                $parts[] = sprintf('%s %s', (string) $field, is_scalar($problem) ? (string) $problem : 'is invalid');
+            }
+
+            return (string) CardScrubber::scrub(implode('; ', $parts));
+        }
+
+        return 'rejected';
     }
 
     /**

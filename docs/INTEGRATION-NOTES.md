@@ -484,14 +484,19 @@ the provider's own model rather than a choice this storefront made.
 
 ### 20. The envelope is two keys, and `message` changes type between them
 
-A refusal is `{"result": "ERROR", "message": "<one sentence>"}`. A success is
-`{"result": "SUCCESS", "message": {...}}` with the data nested inside. So
-`message` is a **string exactly when the call failed**, and reading it as a
-reason without checking the type renders the word `Array` to a buyer on the
-success path.
+Every combination of `result` and `message` type occurs, so **`result` is the
+only discriminator** — the obvious reading, string means failure, is wrong in
+both directions:
 
-Four refusals taken verbatim from the live sandbox, and they are the fixtures
-under `tests/fixtures/checkoutchamp-*.json`:
+| `result`  | `message` | recorded example |
+|---|---|---|
+| `SUCCESS` | object | a billed order: `orderId`, `orderStatus: "COMPLETE"`, `totalAmount` |
+| `SUCCESS` | string | `"Card is preauthorized"` |
+| `ERROR`   | string | `"Transaction Declined: Card Declined"` |
+| `ERROR`   | object | `{"shipAddress1": "is a required field", ...}` |
+
+Refusals taken verbatim from the live sandbox, and they are the fixtures under
+`tests/fixtures/checkoutchamp-*.json`:
 
 | Call | `message` |
 |---|---|
@@ -564,24 +569,79 @@ fault described as a cart problem, which is the worst possible place to debug on
 459 came to look absent from an account that has it — pass `campaignId` to ask
 about one.
 
-### 23. What is not recorded, and what happens if it is wrong
+### 23. The full flow, and the two calls that are not what their names suggest
 
-**No order has been placed through this adapter.** The refusal envelope above is
-recorded; the success envelope — where `orderId`, `customerId` and `totalAmount`
-sit inside `message` — is the provider's documented shape.
+Placement, recorded end to end:
 
-Two deliberate consequences, so a wrong guess cannot become a charge nobody
-recorded:
+```
+POST /leads/import/    -> {"result":"SUCCESS","message":{ "orderId":"D6C8C390A7",
+                                                          "orderStatus":"PARTIAL", ... }}
+POST /order/import/    -> {"result":"SUCCESS","message":{ "orderId":"D6C8C390A7",
+                                                          "orderStatus":"COMPLETE",
+                                                          "totalAmount":"0.30",
+                                                          "customerId":19241, ... }}
+```
 
-- A success carrying no `orderId` is treated as a **decline**, not a placement.
-  An order the storefront cannot name can be neither reconciled nor captured,
-  and a buyer sent to a receipt for one is worse off than a buyer who retries.
-- `supportsOrderSearch` and `supportsAuthorizeCapture` are both declared
-  **false**. `orderQuery` exists and `/order/preauth/` works, but the reverse
-  sweep turns its findings into alerts about money and the capture half of
-  authorize-and-capture is not recorded at all. An authorization nobody can
-  capture expires on the acquirer's clock a few days later, so the capability
-  stays off until the settle call is recorded.
+**`leads/import` is not only a lead.** It creates a PARTIAL order and answers the
+`orderId` every later call is keyed on. The reference therefore exists *before a
+card is presented*, which is what lets a refused placement still carry one
+(`[13.26]`) even though the refusal envelope contains no order id at all.
+
+**`order/import` is also the capture.** There is no endpoint named for it:
+
+```
+POST /order/preauth/   -> {"result":"SUCCESS","message":"Card is preauthorized"}
+POST /order/import/    -> {"result":"SUCCESS","message":{ "orderStatus":"COMPLETE", ... }}
+```
+
+and the settling call carries the **lines and no card**. Both matter:
+
+- **Without the lines it is refused** — `"No products exist in the order"` — and
+  the order stays PARTIAL *with the funds still held*. An error that leaves money
+  reserved is the worst shape a failure can take here.
+- **The lines cannot be recovered from the provider.** A pre-authorized order's
+  `items` is an empty stub (`productId: null`) until the settling call supplies
+  them, so re-reading the order first returns nothing usable. `order_lines` is the
+  only place they still exist, which is why
+  `Payment\CaptureRequest` carries them and why an unreadable local row is a
+  stated failure rather than something to push past.
+
+Shipping is required on `order/import` as well as on the lead call; omitting it
+answers the field map in item 20.
+
+### 24. A PARTIAL order is reused, so a reference is not unique across attempts
+
+Recorded: a decline leaves its PARTIAL order in place, and the **next lead call
+reuses it** rather than creating a second one. Two attempts then share one
+`orderId` — a decline and the retry that succeeds.
+
+Varying the IP address produced distinct orders while varying only the name,
+email and telephone did not, so the address appears to be at least part of what
+the provider matches on. That has not been characterised further and should not
+be relied on.
+
+**The consequence is local, not remote.** `orders.provider_reference` is not
+unique and cannot be made so. `OrderRepository::findByReference()` therefore
+orders by `id DESC` and answers the newest row: without that, SQLite returns the
+lowest rowid — the declined attempt — and `bin/console payment:capture` reads a
+row saying the order was already captured and refuses to settle an authorization
+that is really outstanding.
+
+The reuse is not itself a problem: it is why a retry after a decline produces no
+orphan order at the provider.
+
+### 25. What is still not recorded
+
+Two things, both declared `false` on the adapter rather than guessed at:
+
+- **`supportsOrderSearch`.** `orderQuery` works and its projection is rich, but
+  `[21.9a]`'s reverse sweep turns its findings into alerts about money, and the
+  fields it would have to map — which status counts as charged, which as test —
+  have not been established across a real window. Declaring false produces *no
+  sweep*, which the sweep is explicitly built to distinguish from a clean bill of
+  health.
+- **`supportsPromotions`.** The client exposes no discount-quote endpoint, so
+  `[14.4]` hides the control rather than offering a box that can only reject.
 
 ---
 

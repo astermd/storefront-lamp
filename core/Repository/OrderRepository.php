@@ -187,7 +187,20 @@ final class OrderRepository
      */
     public function findByReference(string $reference): ?array
     {
-        $statement = $this->pdo()->prepare('SELECT * FROM orders WHERE provider_reference = ?');
+        // **Most recent wins, and the ordering is load-bearing.**
+        // `provider_reference` is not unique and cannot be: one shipped provider
+        // reuses a PARTIAL order for a repeat attempt rather than creating a
+        // second one, so a decline and the retry that succeeds carry the *same*
+        // reference and produce two rows.
+        //
+        // Without an ORDER BY the engine decides, and on SQLite it decides
+        // lowest rowid — the declined attempt. `bin/console payment:capture`
+        // would then read a row saying the order was captured, and refuse to
+        // settle an authorization that is really outstanding.
+        //
+        // The newest row is the one that stands: it is the attempt whose outcome
+        // the provider is currently holding.
+        $statement = $this->pdo()->prepare('SELECT * FROM orders WHERE provider_reference = ? ORDER BY id DESC');
         $statement->execute([$reference]);
         $row = $statement->fetch();
 

@@ -13,6 +13,7 @@ use AsterMD\Storefront\Payment\Vrio\VrioCredentials;
 use AsterMD\Storefront\Repository\OrderRepository;
 use AsterMD\Storefront\Repository\SessionRepository;
 use AsterMD\Storefront\Tests\Support\CapturedLog;
+use AsterMD\Storefront\Tests\Support\RecordingCaptureAdapter;
 use AsterMD\Storefront\Tests\Support\FakeVrioTransport;
 use AsterMD\Storefront\Tests\Support\TempDatabase;
 use AsterMD\Storefront\Tests\Support\UnreadableOrdersPdo;
@@ -53,7 +54,8 @@ final class CaptureOrderCommandTest extends TestCase
         );
     }
 
-    private function seedOrder(string $reference, string $settlement): void
+    /** @param list<array<string, mixed>> $lines */
+    private function seedOrder(string $reference, string $settlement, array $lines = []): void
     {
         (new SessionRepository(fn (): \PDO => $this->pdo))->insert(self::SESSION, [], null);
         (new OrderRepository(fn (): \PDO => $this->pdo))->insert(
@@ -66,7 +68,7 @@ final class CaptureOrderCommandTest extends TestCase
                 'status' => 'placed',
                 'settlement' => $settlement,
             ],
-            [],
+            $lines,
             [],
         );
     }
@@ -114,19 +116,49 @@ final class CaptureOrderCommandTest extends TestCase
         self::assertSame([], $transport->requests);
     }
 
-    public function testADatabaseFaultDoesNotStopACaptureTheProviderCouldStillHonour(): void
+    public function testADatabaseFaultIsAStatedFailureRatherThanAHopefulCapture(): void
     {
-        // The deliberate asymmetry. A hold expires on the acquirer's clock, and
-        // letting somebody's reserved funds lapse because a local SELECT failed
-        // would be the worse outcome by a wide margin -- the provider is the
-        // authority on what it holds.
+        // This rule was the other way round until the second provider landed,
+        // on the reasoning that a hold must not lapse because a local SELECT
+        // failed. That assumed every provider can settle from the reference
+        // alone. One cannot: a pre-authorized order there carries no line items
+        // until the settling call supplies them, and re-reading it from the
+        // provider returns the same empty list -- so `order_lines` is the only
+        // place they still exist.
+        //
+        // Going on without them buys nothing. The provider refuses, the order
+        // stays partial and the funds stay held, which is the same outcome as
+        // not trying, reached more slowly and reported as a cart problem. A
+        // stated failure an operator can act on is strictly better.
         $transport = new FakeVrioTransport();
         $transport->queue(200, json_encode(['order_id' => 36727], JSON_THROW_ON_ERROR));
 
         $tester = new CommandTester($this->command($transport, UnreadableOrdersPdo::alongside($this->pdo)));
 
+        self::assertSame(1, $tester->execute(['reference' => '36727']));
+        self::assertStringContainsString('could not be read', $tester->getDisplay());
+        self::assertStringContainsString('the authorization is untouched', $tester->getDisplay());
+        self::assertSame([], $transport->requests, 'nothing was sent on a guess');
+    }
+
+    public function testTheOrdersOwnLinesAreHandedToTheAdapter(): void
+    {
+        // The reason the local row is load-bearing rather than advisory: for one
+        // provider these lines are the only thing that can settle the order.
+        $this->seedOrder('36727', 'authorize', [
+            ['slug' => 'nad-500', 'name' => 'NAD+ (500mg)', 'kind' => 'rx', 'provider_offer' => '459', 'provider_item' => '15271', 'unit_price_cents' => 12000, 'quantity' => 2],
+        ]);
+        $transport = new FakeVrioTransport();
+        $transport->queue(200, json_encode(['order_id' => 36727], JSON_THROW_ON_ERROR));
+        $adapter = new RecordingCaptureAdapter();
+
+        $tester = new CommandTester($this->command($transport, adapter: $adapter));
+
         self::assertSame(0, $tester->execute(['reference' => '36727']));
-        self::assertStringContainsString('could not be read; asking the provider anyway', $tester->getDisplay());
+        self::assertCount(1, $adapter->seen?->lines ?? []);
+        self::assertSame('459', $adapter->seen?->lines[0]->providerOffer);
+        self::assertSame('15271', $adapter->seen?->lines[0]->providerItem);
+        self::assertSame(2, $adapter->seen?->lines[0]->quantity);
     }
 
     public function testARefusalFromTheProviderCarriesItsOwnCodeAndExitsOne(): void
@@ -157,3 +189,4 @@ final class CaptureOrderCommandTest extends TestCase
         self::assertSame([], $transport->requests);
     }
 }
+
