@@ -32,6 +32,7 @@ final class NullPaymentAdapter implements PaymentAdapter
             routingHintKeys: [],
             pciPosture: 'No provider configured; no card data is transmitted or held.',
             supportsOrderSearch: false,
+            supportsAuthorizeCapture: false,
         );
     }
 
@@ -57,6 +58,16 @@ final class NullPaymentAdapter implements PaymentAdapter
     public function quotePromotion(OrderEnvelope $order, string $code): PromotionQuote
     {
         return PromotionQuote::rejected($code, 'unsupported');
+    }
+
+    /**
+     * There is no provider holding an authorization, so there is nothing to
+     * settle -- and `unsupported` rather than `failed` says so, because a
+     * failed capture invites a retry that would never succeed.
+     */
+    public function capture(string $reference): CaptureOutcome
+    {
+        return CaptureOutcome::unsupported();
     }
 
     /** @return array{ok: bool, detail: string} */

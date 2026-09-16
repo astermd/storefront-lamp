@@ -30,6 +30,7 @@ use AsterMD\Storefront\Console\FormsRecordCommand;
 use AsterMD\Storefront\Console\MediaPruneCommand;
 use AsterMD\Storefront\Console\MigrateCommand;
 use AsterMD\Storefront\Console\PingCommand;
+use AsterMD\Storefront\Console\CaptureOrderCommand;
 use AsterMD\Storefront\Console\ProviderPingCommand;
 use AsterMD\Storefront\Console\PruneCommand;
 use AsterMD\Storefront\Console\ReconcileCommand;
@@ -173,6 +174,12 @@ $application->addCommand(new ReconcileCommand(new ForwardReconciliation(
     ),
     $operatorLog,
 )));
+
+// The settle half of authorize-and-capture. Not a scheduled job and not
+// registered with them: nothing in this codebase decides when an authorization
+// settles -- that event is outside the storefront -- so this is what the system
+// that does owns it calls, with the reference it is settling.
+$application->addCommand(new CaptureOrderCommand($resolveAdapter, new OrderRepository($connect)));
 
 // `[21.9a]`'s reverse sweep: orders the provider holds that no local row does.
 // The adapter is resolved lazily inside the command for the same reason

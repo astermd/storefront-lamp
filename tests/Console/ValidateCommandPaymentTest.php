@@ -93,6 +93,99 @@ final class ValidateCommandPaymentTest extends TestCase
         self::assertStringNotContainsString('ERROR', $tester->getDisplay());
     }
 
+    public function testAnAbsentSettlementKeyIsNotAFinding(): void
+    {
+        // `config/payment.php` ships the default, but a deployment's own copy
+        // may predate it — and what that deployment has always done is charge.
+        // Reporting the absence would fail every upgrade.
+        $tester = new CommandTester($this->command());
+
+        self::assertSame(0, $tester->execute([]));
+        self::assertStringNotContainsString('settlement', $tester->getDisplay());
+    }
+
+    public function testAMisspelledSettlementIsAnErrorRatherThanASilentFallback(): void
+    {
+        // SettlementPolicy falls back to capture so a typo cannot take a
+        // storefront down, which means a deployment that wrote the British
+        // spelling would keep charging with nothing on the page to show for it.
+        // This pass is the only thing that can say so.
+        $this->writePayment(settlement: 'authorise');
+
+        $tester = new CommandTester($this->command());
+
+        self::assertSame(2, $tester->execute([]));
+        self::assertStringContainsString('payment.settlement is "authorise"', $tester->getDisplay());
+    }
+
+    public function testASettlementThatIsNotEvenAStringIsReportedWithoutBecomingTheWordArray(): void
+    {
+        $this->writePayment(settlement: ['authorize']);
+
+        $tester = new CommandTester($this->command());
+
+        self::assertSame(2, $tester->execute([]));
+        self::assertStringContainsString('payment.settlement is (array)', $tester->getDisplay());
+    }
+
+    public function testAMisspelledProductSettlementNamesTheProduct(): void
+    {
+        // The override file is keyed by EMR product id, so a bare "settlement is
+        // invalid" would send an operator reading all of it.
+        $this->writeCatalog(settlement: 'preauth');
+
+        $tester = new CommandTester($this->command());
+
+        self::assertSame(2, $tester->execute([]));
+        self::assertStringContainsString('product tirzepatide sets settlement to "preauth"', $tester->getDisplay());
+    }
+
+    public function testAWellSpelledSettlementOnASupportingProviderPasses(): void
+    {
+        $this->writePayment(settlement: 'authorize');
+
+        $tester = new CommandTester($this->command());
+
+        self::assertSame(0, $tester->execute([]));
+    }
+
+    public function testAProviderThatCannotAuthorizeIsAnErrorWhenTheDeploymentAsksItTo(): void
+    {
+        $this->writePayment(settlement: 'authorize');
+
+        $tester = new CommandTester($this->command(
+            fn (): PaymentAdapter => new RedeclaredAdapter($this->vrioAdapter(), null, true, supportsAuthorizeCapture: false),
+        ));
+
+        self::assertSame(2, $tester->execute([]));
+        self::assertStringContainsString('does not support authorize-and-capture', $tester->getDisplay());
+    }
+
+    public function testOneProductAskingToHoldFundsIsEnoughToFailAnUnsupportingProvider(): void
+    {
+        // The check is on the effective configuration, not the global key: one
+        // product marked authorize makes a cart authorize, so a deployment
+        // defaulting to capture with one such product is exactly as broken.
+        $this->writeCatalog(settlement: 'authorize');
+
+        $tester = new CommandTester($this->command(
+            fn (): PaymentAdapter => new RedeclaredAdapter($this->vrioAdapter(), null, true, supportsAuthorizeCapture: false),
+        ));
+
+        self::assertSame(2, $tester->execute([]));
+        self::assertStringContainsString('does not support authorize-and-capture', $tester->getDisplay());
+    }
+
+    public function testAProviderThatCannotAuthorizeIsFineWhileNothingAsksItTo(): void
+    {
+        $tester = new CommandTester($this->command(
+            fn (): PaymentAdapter => new RedeclaredAdapter($this->vrioAdapter(), null, true, supportsAuthorizeCapture: false),
+        ));
+
+        self::assertSame(0, $tester->execute([]));
+        self::assertStringNotContainsString('authorize-and-capture', $tester->getDisplay());
+    }
+
     public function testAnUnresolvedAdapterIsAnError(): void
     {
         // A storefront that cannot resolve a provider cannot take money, which
@@ -372,6 +465,9 @@ final class ValidateCommandPaymentTest extends TestCase
     }
 
     /** @param (\Closure(): PaymentAdapter)|null $adapter */
+    /** Marks "this case does not write the key at all", which is a different shape from writing null. */
+    private const string UNSET = "\0unset";
+
     private function command(?\Closure $adapter = null): ValidateCommand
     {
         $config = Config::load($this->configDir);
@@ -414,7 +510,7 @@ final class ValidateCommandPaymentTest extends TestCase
         return static fn (): PaymentAdapter => new RedeclaredAdapter($inner, $strategy, true);
     }
 
-    private function writeCatalog(bool $withUnmappedExtra = false): void
+    private function writeCatalog(bool $withUnmappedExtra = false, mixed $settlement = self::UNSET): void
     {
         $products = [
             'tirzepatide' => [
@@ -427,6 +523,10 @@ final class ValidateCommandPaymentTest extends TestCase
                 ],
             ],
         ];
+
+        if ($settlement !== self::UNSET) {
+            $products['tirzepatide']['settlement'] = $settlement;
+        }
 
         if ($withUnmappedExtra) {
             $products['pill-organizer'] = [
@@ -468,16 +568,21 @@ final class ValidateCommandPaymentTest extends TestCase
         );
     }
 
-    private function writePayment(?int $shippingProfileId = 1): void
+    private function writePayment(?int $shippingProfileId = 1, mixed $settlement = self::UNSET): void
     {
-        file_put_contents(
-            $this->configDir . '/payment.php',
-            '<?php return ' . var_export([
-                'adapter' => null,
-                'shipping_profile_id' => $shippingProfileId,
-                'currency' => 'USD',
-            ], true) . ';',
-        );
+        $payment = [
+            'adapter' => null,
+            'shipping_profile_id' => $shippingProfileId,
+            'currency' => 'USD',
+        ];
+
+        // Written only when a case asks for it, so the default cases exercise
+        // the shape a deployment whose payment.php predates settlement has.
+        if ($settlement !== self::UNSET) {
+            $payment['settlement'] = $settlement;
+        }
+
+        file_put_contents($this->configDir . '/payment.php', '<?php return ' . var_export($payment, true) . ';');
     }
 
     /** @param array<string, array<string, mixed>> $upsells */

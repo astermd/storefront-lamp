@@ -7,6 +7,8 @@ namespace AsterMD\Storefront\Tests\Payment;
 use AsterMD\Storefront\Bootstrap\AppFactory;
 use AsterMD\Storefront\Payment\PaymentAdapter;
 use AsterMD\Storefront\Payment\RefusingTransport;
+use AsterMD\Storefront\Support\Config;
+use AsterMD\Storefront\Tests\Support\ConfigVariant;
 use AsterMD\VrioClient\Http\Request;
 use PHPUnit\Framework\TestCase;
 
@@ -22,6 +24,29 @@ use PHPUnit\Framework\TestCase;
  */
 final class RefusingTransportTest extends TestCase
 {
+    use ConfigVariant;
+
+    /**
+     * A channel on a provider that has an adapter, so the fence has something
+     * to be asserted against.
+     *
+     * Placeholders throughout; nothing here reaches a network, which is the
+     * whole point of the case.
+     */
+    private const array VRIO_CHANNEL = [
+        'channel' => ['id' => 'refusing-transport-test-channel', 'name' => 'Refusing Transport Test'],
+        'payment_processor' => [
+            'provider_category' => 'vrio',
+            'name' => 'Refusing Transport Test Processor',
+            'config' => [
+                'api_endpoint' => 'https://api.vrio.app',
+                'api_key' => 'not-a-real-key',
+                'campaign_id' => '147',
+                'connection_id' => '1',
+            ],
+        ],
+    ];
+
     public function testTheTransportRefusesToSend(): void
     {
         $this->expectException(\RuntimeException::class);
@@ -43,16 +68,16 @@ final class RefusingTransportTest extends TestCase
     {
         $root = dirname(__DIR__, 2);
 
-        // A deployment that has never synced a channel resolves no provider at
-        // all — the registry answers with a null adapter, which reaches nothing
-        // and so needs no fence. Skipping is the honest outcome rather than
-        // asserting vacuously: a fresh clone ships no `channel.generated.php`,
-        // and the suite it ships with must pass on it.
-        if (!is_file($root . '/config/channel.generated.php')) {
-            self::markTestSkipped('needs a synced channel for a provider adapter to resolve');
-        }
-
-        $adapter = AppFactory::create($root)->getContainer()?->get(PaymentAdapter::class);
+        // The channel is supplied rather than read. What must be proved is that
+        // the test environment fences a *resolvable* provider, and which
+        // provider the deployment happens to have synced is not this case's
+        // subject — a fresh clone has synced none, and a clone synced to a
+        // channel whose processor has no adapter resolves the null one. Both
+        // would have made this pass by reaching nothing, which is exactly the
+        // vacuous assertion the fence exists to avoid.
+        $adapter = AppFactory::create($root, [
+            Config::class => $this->configWith(['channel.generated' => self::VRIO_CHANNEL]),
+        ])->getContainer()?->get(PaymentAdapter::class);
 
         self::assertNotNull($adapter);
 

@@ -11,6 +11,7 @@ use AsterMD\Storefront\Checkout\CheckoutEventReporter;
 use AsterMD\Storefront\Checkout\IdempotencyKey;
 use AsterMD\Storefront\Checkout\OrderRecorder;
 use AsterMD\Storefront\Checkout\PostChargeGuard;
+use AsterMD\Storefront\Checkout\SettlementPolicy;
 use AsterMD\Storefront\Funnel\FlowDefinition;
 use AsterMD\Storefront\Funnel\FurthestStep;
 use AsterMD\Storefront\Journey\JourneyState;
@@ -148,6 +149,7 @@ final class UpsellService
         private readonly FlowDefinition $flow,
         private readonly Config $config,
         private readonly OperatorLog $log,
+        private readonly SettlementPolicy $settlement,
         ?\Closure $clock = null,
     ) {
         $this->clock = $clock ?? static fn (): string => gmdate('c');
@@ -833,6 +835,14 @@ final class UpsellService
             clientIp: $context?->clientIp,
             userAgent: $context?->userAgent,
             idempotencyKey: $key,
+            // An upsell is its own provider order, so it settles on its own
+            // terms rather than inheriting the original order's. That is the
+            // right reading of the per-product rule: what decides whether funds
+            // are held is what was bought, and a post-purchase add-on is a
+            // different product from the one on the receipt. A deployment that
+            // authorizes everything still authorizes this, because the
+            // deployment default is one of the modes being compared.
+            settlement: $this->settlement->forSlug($upsell->slug),
             anchorSlug: $upsell->slug,
         );
     }

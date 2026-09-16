@@ -771,7 +771,7 @@ carries `providerCategory`, `supportsPromotions` (false hides the promo control 
 `discountScope`, `credentialStrategy`, `collectionSurface`, `requiredConfigKeys` (what
 `config:validate` checks before a deployment goes live), `routingHintKeys`, `pciPosture`
 (what it reports to an operator), and `supportsRefund` / `supportsRecurring` /
-`supportsOrderSearch`.
+`supportsOrderSearch` / `supportsAuthorizeCapture`.
 
 Two of those pairings are decisions rather than fields. `collectionSurface` travels with
 `credentialStrategy` because they are one decision: tokenization only reduces PCI scope when
@@ -779,7 +779,15 @@ the card is collected in a surface the storefront does not control, so an adapte
 tokenization must also declare where its fields live. And `supportsOrderSearch` is declared
 *and* gets a method, unlike refund and recurring which are declared with no method at all — a
 declared slot with no caller is honest, a method nobody implements is not, and order search
-has a caller in the reverse reconciliation sweep.
+has a caller in the reverse reconciliation sweep. `supportsAuthorizeCapture` gets
+`capture()` by the same test — its caller is `bin/console payment:capture`.
+
+`supportsAuthorizeCapture` is also the one capability whose absence **stops a checkout**
+rather than adapting a page. Every other declaration here degrades: no promotions hides the
+promo control, no order search produces no sweep. An adapter handed an order that must
+authorize and cannot has no degraded form — charging instead would take money the deployment
+said to hold — so `CheckoutService` refuses the order before the claim is marked sent and
+before anything reaches a provider.
 
 `place()` and `searchOrders()` **must never throw for a provider-side outcome.** A refused
 card, a missing reference, a malformed response and a network failure are all a
@@ -787,6 +795,37 @@ card, a missing reference, a malformed response and a network failure are all a
 reason and retry, not hit an error page. For search, a failure is explicitly *not* an empty
 result, because a sweep that read an outage as "no orders were lost" is the silent failure
 reconciliation exists to end.
+
+### Settlement: whether the money moves
+
+An order either takes the money at checkout or reserves it for something outside this
+storefront to settle later. `Payment\SettlementMode` is the neutral name for what one
+provider spells `action: "process"` versus `action: "authorize"` and another spells
+`/order/import/` versus `/order/preauth/`; `OrderEnvelope` carries the resolved mode, and
+translating it into a provider's verb is the adapter's job.
+
+The decision is made **once**, in `Checkout\SettlementPolicy`, over two layers.
+`payment.settlement` is the deployment default — a commercial arrangement with one provider.
+A per-product `settlement` key in `config/products.overrides.php` is a clinical or fulfilment
+fact about one product; like `geo_blocks` it is override-layer only, because the EMR channel
+payload has no such concept and `theme:sync` therefore neither writes it nor can overwrite it.
+
+A cart is one order, so a cart resolves to one action and **authorize wins**: capturing a
+product a deployment marked hold-until-event is a charge nobody asked for, while authorizing
+one marked charge-now defers a charge by a step that has to happen anyway, and only the first
+needs a refund to undo. The same rule folds a journey's placed orders into one receipt
+wording, since a checkout and an upsell settle independently.
+
+An authorized order is **placed**, not a fourth `PlacementOutcome` state: the order exists,
+the funnel advances, the EMR is told, the buyer gets a receipt, and only the debit is
+outstanding. A fourth state would have been read as "not placed" by every existing `match`.
+`orders.settlement` is a column for the matching reason — a fourth `status` value would have
+made every query reading `status = 'placed'` stop counting authorized orders, including both
+reconciliation sweeps.
+
+**What decides when an authorization settles is deliberately not here.** A prescriber
+approving a treatment is not a checkout concern, so there is no scheduler and no sweep;
+`bin/console payment:capture <reference>` is the seam the system that owns that event calls.
 
 ### The registry
 
@@ -821,6 +860,13 @@ pairing itself — a card id whose customer does not own it is refused — which
 card ids are sequential, so that enforcement is the only thing between a guessed id and a
 charge. The pair is therefore minted from the provider's own response and never accepted from
 a request.
+
+It declares `supportsAuthorizeCapture`, and its authorize branch is the **minimum** change
+from the capture rule rather than a re-derivation: a null `status_type_id` means "never
+charged" for a capture and is exactly the intended result for an authorize, so that one
+branch inverts and everything else recorded stays load-bearing. The `status_type_id` an
+approved authorize returns is unrecorded — see item 17 of
+[`INTEGRATION-NOTES.md`](INTEGRATION-NOTES.md), which says so rather than implying otherwise.
 
 `VrioWireLog` decorates the provider's own default transport rather than replacing it, so
 behaviour is identical whether the debug switch is on or off; a switch that changed what the

@@ -15,6 +15,7 @@ use AsterMD\Storefront\Checkout\NullOrderRecorder;
 use AsterMD\Storefront\Checkout\OrderBumps;
 use AsterMD\Storefront\Checkout\OrderRecorder;
 use AsterMD\Storefront\Checkout\PostChargeGuard;
+use AsterMD\Storefront\Checkout\SettlementPolicy;
 use AsterMD\Storefront\Checkout\Totals;
 use AsterMD\Storefront\Checkout\BuyerDetails;
 use AsterMD\Storefront\Domain\Cart;
@@ -35,6 +36,7 @@ use AsterMD\Storefront\Payment\AdapterCapabilities;
 use AsterMD\Storefront\Payment\OrderEnvelope;
 use AsterMD\Storefront\Payment\PaymentCredential;
 use AsterMD\Storefront\Payment\PlacementOutcome;
+use AsterMD\Storefront\Payment\SettlementMode;
 use AsterMD\Storefront\Payment\Vrio\VrioAdapter;
 use AsterMD\Storefront\Payment\Vrio\VrioApiFactory;
 use AsterMD\Storefront\Payment\Vrio\VrioCredentials;
@@ -142,6 +144,42 @@ final class CheckoutServiceTest extends TestCase
 
         self::assertSame(12000, $result->totals->subtotalCents);
         self::assertTrue($this->cartStore->cart()->isEmpty());
+    }
+
+    public function testAnAuthorizeDeploymentSendsTheAuthorizeActionAndTellsTheReceiptSo(): void
+    {
+        $result = $this->serviceThatPlaces(settlement: SettlementMode::Authorize)
+            ->submit($this->buyer(), $this->card(), ['terms' => 'on']);
+
+        self::assertTrue($result->outcome->isPlaced());
+        self::assertTrue($result->outcome->isAuthorizedOnly());
+        self::assertSame('authorize', $this->transport->body(0)['action']);
+    }
+
+    public function testACaptureDeploymentIsUnchangedAndStillCharges(): void
+    {
+        // The shipped default, pinned: everything above is opt-in, and a
+        // deployment that says nothing must keep taking the money at checkout.
+        $result = $this->serviceThatPlaces()->submit($this->buyer(), $this->card(), ['terms' => 'on']);
+
+        self::assertTrue($result->outcome->isPlaced());
+        self::assertFalse($result->outcome->isAuthorizedOnly());
+        self::assertSame('process', $this->transport->body(0)['action']);
+    }
+
+    public function testAProviderThatCannotAuthorizeIsNeverAskedToChargeInstead(): void
+    {
+        // The failure this whole mechanism exists to make impossible. A
+        // deployment configured to hold funds, against an adapter that cannot,
+        // must stop before the wire -- charging would take money the deployment
+        // said to hold, and there is no degraded form of that.
+        $result = $this->serviceThatPlaces(settlement: SettlementMode::Authorize, supportsAuthorizeCapture: false)
+            ->submit($this->buyer(), $this->card(), ['terms' => 'on']);
+
+        self::assertFalse($result->outcome->isPlaced());
+        self::assertSame('settlement_unsupported', $result->outcome->rawStatus);
+        self::assertSame([], $this->transport->requests, 'the provider was never called');
+        self::assertFalse($this->cartStore->cart()->isEmpty(), 'the buyer keeps their cart');
     }
 
     public function testASuccessfulPlacementDropsThePromotionSoItCannotReachTheUpsellFlow(): void
@@ -1251,6 +1289,8 @@ final class CheckoutServiceTest extends TestCase
         ?CheckoutEventReporter $events = null,
         ?OrderRecorder $orders = null,
         array $upsells = self::UPSELLS,
+        SettlementMode $settlement = SettlementMode::Capture,
+        ?bool $supportsAuthorizeCapture = null,
     ): CheckoutService {
         return $this->service(
             'vrio-order-approved.json',
@@ -1264,6 +1304,8 @@ final class CheckoutServiceTest extends TestCase
             $events,
             $orders,
             $upsells,
+            $settlement,
+            $supportsAuthorizeCapture,
         );
     }
 
@@ -1433,6 +1475,8 @@ final class CheckoutServiceTest extends TestCase
         ?CheckoutEventReporter $events = null,
         ?OrderRecorder $orders = null,
         array $upsells = self::UPSELLS,
+        SettlementMode $settlement = SettlementMode::Capture,
+        ?bool $supportsAuthorizeCapture = null,
     ): CheckoutService {
         if ($sessionUuid !== self::SESSION_UUID) {
             $this->boot($sessionUuid);
@@ -1457,9 +1501,9 @@ final class CheckoutServiceTest extends TestCase
             journeys: $this->journeys,
             rules: new CartRules($catalog),
             catalog: $catalog,
-            adapter: $strategy === null && $promotions
+            adapter: $strategy === null && $promotions && $supportsAuthorizeCapture === null
                 ? $adapter
-                : new RedeclaredAdapter($adapter, $strategy, $promotions),
+                : new RedeclaredAdapter($adapter, $strategy, $promotions, $supportsAuthorizeCapture),
             consents: Consents::fromConfig((array) require dirname(__DIR__, 2) . '/config/consent.php'),
             bumps: OrderBumps::fromConfig(['max_on_page' => 3, 'bumps' => []], $catalog, $this->log->log),
             verification: new NullVerificationGateway(),
@@ -1479,6 +1523,7 @@ final class CheckoutServiceTest extends TestCase
             flow: FlowDefinition::fromConfig($config),
             config: $config,
             log: $this->log->log,
+            settlement: new SettlementPolicy($catalog, $settlement, $this->log->log),
             postCharge: new PostChargeGuard($this->log->log),
             upsells: Upsells::fromConfig(['upsells' => $upsells], $catalog, $this->log->log),
             clock: $clock,

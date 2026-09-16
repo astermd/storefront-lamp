@@ -499,6 +499,7 @@ $ bin/console list
   forms:record         Capture a teleform metadata record and definition to disk
   media:prune          List (or, with --force, delete) orphaned files in public/assets/media
   ops:status           Report the monitored counts that represent money or clinical risk
+  payment:capture      Capture an order that was authorized at checkout rather than charged
   provider:ping        Resolve the configured payment adapter and print a connectivity summary
   provider:reconcile   Report orders the payment provider took that are not recorded locally
   theme:sync           Sync the generated catalog and channel config from the configured EMR channel
@@ -571,6 +572,15 @@ Warnings are informational; a warning does not fail the run. `note:` lines are
 purely descriptive. The PCI posture line is printed on every run and is a
 statement of the deployment's payment architecture, not a finding.
 
+Among the errors it can raise is the one that catches a settlement
+misconfiguration before a buyer does: a `payment.settlement` or per-product
+`settlement` value that is neither `capture` nor `authorize` (the runtime falls
+back to the shipped default so a typo cannot take a storefront down — which is
+exactly why nothing on the page would show for it), and a provider that does not
+support authorize-and-capture while the effective configuration asks it to. That
+second check reads the catalog as well as the key, because **one** product marked
+`authorize` is enough to make a cart authorize.
+
 ### `emr:ping` / `provider:ping`
 
 Connectivity checks. These are the correct way to ask "is the integration up" —
@@ -594,6 +604,42 @@ Both exited **0**. Both return **1** when the call fails or the adapter cannot
 be resolved. `emr:ping` proves that credentials work, the channel resolves and
 the catalog is readable; `provider:ping` proves the payment adapter is
 configured and the provider answers.
+
+### `payment:capture`
+
+Takes the money on an order that was authorized rather than charged. Only
+relevant on a deployment that has set `payment.settlement` to `authorize`, or
+that has marked a product `'settlement' => 'authorize'` in
+`config/products.overrides.php`.
+
+```
+$ bin/console payment:capture 36727
+Captured order 36727.
+```
+
+**This is a seam, not a schedule.** Nothing in this codebase decides *when* an
+authorization settles — that is a clinical or fulfilment event outside the
+storefront — so there is no cron entry for it in §6 and no `--apply` flag.
+Whatever system owns that event calls this with the reference it is settling.
+
+The argument is the **provider's** order reference, as `orders.provider_reference`
+holds it and as the receipt shows the buyer. Not a local row id.
+
+Exit **0** on a capture, **1** on anything else. The refusals, in the order they
+are checked:
+
+| Message | What it means |
+|---|---|
+| `No local order is recorded against reference …` | Almost always a mistyped reference. Nothing was called. |
+| `Order … was recorded as capture, not as an authorization` | The money was already taken at checkout. Nothing was called. |
+| `The local order record could not be read; asking the provider anyway` | **Not a refusal.** A database fault must not let a hold lapse; the provider is the authority on what it holds. |
+| `… does not support authorize-and-capture` | Configuration, not a retry. The order should never have been authorized — `config:validate` reports the same thing. |
+| `order_unauthorized` | The provider's own code. The order never authorized, or the authorization is already settled. |
+
+**Authorizations expire.** Most processors hold funds for a few days, and the
+window is the acquirer's, not this storefront's. A capture that is left too late
+fails and needs a fresh authorization, which means a fresh order — so a failed
+capture is worth alerting on rather than retrying quietly.
 
 ### `theme:sync`
 

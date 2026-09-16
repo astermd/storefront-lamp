@@ -22,6 +22,29 @@ return [
 
     'currency' => 'USD',
 
+    // Whether an order takes the money at checkout or only reserves it.
+    //
+    //   'capture'   — create and charge in one call. The shipped default, and
+    //                 what this storefront did before the setting existed.
+    //   'authorize' — reserve the funds and stop. Something outside this
+    //                 storefront decides when they are settled; until then the
+    //                 order exists, the buyer has a receipt saying so, and
+    //                 `bin/console payment:capture <reference>` is what takes
+    //                 the money.
+    //
+    // A single product can override this upwards in
+    // `config/products.overrides.php` ('settlement' => 'authorize'). It cannot
+    // override it downwards: a cart is one order, and a cart holding anything
+    // marked 'authorize' authorizes as a whole. Capturing a product a
+    // deployment marked hold-until-event is a charge nobody asked for, and only
+    // that direction needs a refund to undo.
+    //
+    // The provider has to be able to honour it. An adapter that does not
+    // declare authorize-and-capture support refuses an authorize order before
+    // the call rather than charging it; `bin/console config:validate` reports
+    // that combination as an error so it is found before a buyer does.
+    'settlement' => $env['PAYMENT_SETTLEMENT'] ?? 'capture',
+
     'rate_limits' => [
         // Per client address, per fixed window. Deliberately generous: this
         // stops a stuck retry loop and a double-click storm, not a determined

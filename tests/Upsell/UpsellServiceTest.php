@@ -9,6 +9,7 @@ use AsterMD\Storefront\Checkout\ConsentRecord;
 use AsterMD\Storefront\Checkout\IdempotencyKey;
 use AsterMD\Storefront\Checkout\OrderRecorder;
 use AsterMD\Storefront\Checkout\PostChargeGuard;
+use AsterMD\Storefront\Checkout\SettlementPolicy;
 use AsterMD\Storefront\Checkout\Totals;
 use AsterMD\Storefront\Funnel\FlowDefinition;
 use AsterMD\Storefront\Journey\JourneyState;
@@ -16,6 +17,7 @@ use AsterMD\Storefront\Journey\JourneyStore;
 use AsterMD\Storefront\Payment\OrderEnvelope;
 use AsterMD\Storefront\Payment\PaymentCredential;
 use AsterMD\Storefront\Payment\PlacementOutcome;
+use AsterMD\Storefront\Payment\SettlementMode;
 use AsterMD\Storefront\Payment\Vrio\VrioAdapter;
 use AsterMD\Storefront\Payment\Vrio\VrioApiFactory;
 use AsterMD\Storefront\Payment\Vrio\VrioCredentials;
@@ -779,14 +781,44 @@ final class UpsellServiceTest extends TestCase
      * accepts without rendering is testing a POST that arrived with no GET
      * before it, which is its own case rather than the ordinary one.
      */
+    public function testAnUpsellSettlesOnItsOwnProductsTermsRatherThanTheOriginalOrders(): void
+    {
+        // A post-purchase add-on is its own provider order and a different
+        // product from the one on the receipt, so what decides whether its
+        // funds are held is what was bought here. The checkout that came before
+        // it has no say -- and does not need one, because the receipt takes the
+        // cautious wording whenever any placed order is only holding funds.
+        $this->queuePlacement('34790');
+        $policy = new SettlementPolicy(
+            new FakeCatalog(['wellness-pack' => ['slug' => 'wellness-pack', 'settlement' => 'authorize']]),
+            SettlementMode::Capture,
+            $this->log->log,
+        );
+
+        $result = $this->offered(settlement: $policy)->accept();
+
+        self::assertTrue($result->outcome?->isPlaced());
+        self::assertSame('authorize', $this->transport->body(0)['action']);
+    }
+
+    public function testAnUpsellOnACaptureDeploymentStillChargesImmediately(): void
+    {
+        $this->queuePlacement('34790');
+
+        $this->offered()->accept();
+
+        self::assertSame('process', $this->transport->body(0)['action']);
+    }
+
     private function offered(
         int $rateLimit = 8,
         ?OrderRecorder $orders = null,
         ?CheckoutEventReporter $events = null,
         ?CheckoutAttemptRepository $attempts = null,
         ?\Closure $clock = null,
+        ?SettlementPolicy $settlement = null,
     ): UpsellService {
-        $service = $this->service($rateLimit, $orders, $events, $attempts, $clock);
+        $service = $this->service($rateLimit, $orders, $events, $attempts, $clock, $settlement);
         $service->view();
 
         return $service;
@@ -798,8 +830,9 @@ final class UpsellServiceTest extends TestCase
         ?CheckoutEventReporter $events = null,
         ?CheckoutAttemptRepository $attempts = null,
         ?\Closure $clock = null,
+        ?SettlementPolicy $settlement = null,
     ): UpsellService {
-        return $this->build($this->journeys, $rateLimit, $orders, $events, $attempts, $clock);
+        return $this->build($this->journeys, $rateLimit, $orders, $events, $attempts, $clock, $settlement);
     }
 
     /** A store that never loaded a session, which is what a visitor who typed the URL looks like. */
@@ -808,6 +841,7 @@ final class UpsellServiceTest extends TestCase
         return $this->build(
             new JourneyStore(new SessionRepository(fn (): \PDO => $this->pdo)),
             8,
+            null,
             null,
             null,
             null,
@@ -822,6 +856,7 @@ final class UpsellServiceTest extends TestCase
         ?CheckoutEventReporter $events,
         ?CheckoutAttemptRepository $attempts,
         ?\Closure $clock,
+        ?SettlementPolicy $settlement = null,
     ): UpsellService {
         $config = Config::load(dirname(__DIR__, 2) . '/config', $_ENV);
 
@@ -846,6 +881,7 @@ final class UpsellServiceTest extends TestCase
             flow: FlowDefinition::fromConfig($config),
             config: $config,
             log: $this->log->log,
+            settlement: $settlement ?? new SettlementPolicy(new FakeCatalog([]), SettlementMode::Capture, $this->log->log),
             clock: $clock,
         );
     }

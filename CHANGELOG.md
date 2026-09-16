@@ -8,13 +8,154 @@ names exactly which ones changed.
 
 ## [Unreleased — 0.0.3]
 
-Renders the three authoring hooks the form builder writes and the storefront
-read none of — a field's own class and id, and the form's own stylesheet — and
-stops `cache:clear` claiming to have cleared a cache it could not touch, which
-is what made the first of those look unfixed after it was fixed.
+Adds authorize-and-capture, so a deployment can hold a buyer's funds instead of
+taking them and settle later. Stops `theme:sync` carrying one channel's payment
+credentials into another channel's config file. Renders the three authoring hooks the form builder
+writes and the storefront read none of — a field's own class and id, and the
+form's own stylesheet — and stops `cache:clear` claiming to have cleared a cache
+it could not touch, which is what made the first of those look unfixed after it
+was fixed.
 
-No configuration change. `composer.json` and `package.json` still say 0.0.2 —
-bump them together with the tag when this is released.
+**One new configuration key and one new migration**, both inert until a
+deployment opts in: `payment.settlement` defaults to `capture`, which is exactly
+what every deployment did before, and `0006_settlement.php` adds one column with
+that same default. `composer.json` and `package.json` still say 0.0.2 — bump them
+together with the tag when this is released.
+
+### `theme:sync` no longer carries one channel's credentials into another's file
+
+`config/channel.generated.php` was written with merge-keep-extra semantics so a
+hand-added operational key survived a re-sync. The merge cannot see *who wrote*
+an existing key, so it treated the previous provider's own credentials exactly
+like an operator's hand-addition and kept them.
+
+Point a deployment at a channel on a different payment processor and re-sync,
+and the result was a `payment_processor.config` holding the new provider's
+username and password **beside the previous provider's live API key**, plus its
+campaign and connection ids. Two providers' secrets in one file — in the block
+`AdapterRegistry`'s chosen adapter reads its credentials from — and a set of
+routing hints meaning nothing to the provider now configured.
+
+Two rules now, both about not letting one channel's data outlive it:
+
+- **A different `channel.id` replaces the file wholesale.** It is describing a
+  different deployment target and nothing in the old file describes it.
+- **`payment_processor` is replaced on every sync.** It is generated data end to
+  end: every key in it is one provider's own vocabulary, written by the EMR, and
+  nothing in this codebase reads a hand-added key from it —
+  `payment.shipping_profile_id` comes from `config/payment.php`, the wire-log
+  switch from `app.debug.wire_log`. Merging it could only ever preserve a key the
+  configured provider has no use for. This also **heals a file that was already
+  polluted**: a plain re-sync now cleans it.
+
+Hand-added keys elsewhere in the tree still survive a re-sync of the same
+channel, which is what the merge was for.
+
+- `core/Console/SyncCommand.php`, `config/channel.generated.example.php`
+
+### Two tests stopped asserting whatever the last sync contained
+
+Both resolved the payment adapter from the shipped configuration, so both
+silently depended on the synced channel being one with an adapter. Pointing a
+deployment at a channel on another processor turned each into a
+`ReflectionException` about `NullPaymentAdapter::$inner` — which reads as a
+broken test rather than as a test whose premise had moved.
+
+`tests/Support/WireLogTest.php` asserts that no provider transcript is written
+unless the switch is on; `tests/Payment/RefusingTransportTest.php` asserts the
+suite cannot reach a live provider. Neither claim is about which provider a
+deployment synced, so both now supply the channel they need through
+`tests/Support/ConfigVariant.php`. `RefusingTransportTest` also dropped a skip
+that let a fresh clone pass it by reaching nothing — the vacuous pass the fence
+exists to prevent.
+
+Fixing them exposed a real half-seam: `AppFactory`'s `AdapterRegistry` binding
+read a closed-over `$config` while the category came from the container, so a
+`Config::class` override moved the provider and left its credentials behind. The
+registry then built the named adapter from another provider's config block, the
+credential mapper threw, and the caught failure surfaced as "no provider
+configured". Both now read from the container.
+
+- `core/Bootstrap/AppFactory.php`, `tests/Support/WireLogTest.php`,
+  `tests/Payment/RefusingTransportTest.php`, `tests/Console/SyncCommandTest.php`
+
+### Settlement: hold the funds, or take them
+
+A storefront could only ever charge in full at checkout. It can now authorize
+instead — reserve the money on the card and leave it there — with
+`bin/console payment:capture <reference>` taking it once whatever the deployment
+is waiting on has happened.
+
+**What decides *when* an authorization settles is deliberately outside this
+storefront.** A prescriber approving a treatment is not a checkout concern, and
+a storefront that scheduled its own captures would be guessing at a decision it
+cannot see. So there is no scheduler and no sweep here; the command is the seam
+the system that owns that event calls.
+
+**Two configuration layers, because they answer different questions.**
+`payment.settlement` in `config/payment.php` (or `PAYMENT_SETTLEMENT`) is the
+deployment default — a commercial arrangement with one provider. A per-product
+`'settlement' => 'authorize'` in `config/products.overrides.php` is a clinical
+or fulfilment fact about one product and varies inside one deployment. Like
+`geo_blocks`, the per-product key is override-layer only: the EMR channel
+payload has no concept of settlement, so `theme:sync` neither writes it nor can
+overwrite it, and a re-sync cannot silently start charging a product marked to
+hold.
+
+**A cart is one order (`[13.19]`), so a cart resolves to one action — and
+authorize wins.** Adding a hold-until-event product changes how the *other*
+products in that cart settle. That is intended: capturing a product a deployment
+marked hold-until-event is a charge nobody asked for, while authorizing one
+marked charge-now defers a charge by a step that has to happen anyway. Only the
+first needs a refund to undo. A product marked `capture` therefore cannot pull
+an authorize deployment back to charging; it only declines to ask for a hold.
+
+**An authorized order is *placed*, not a fourth state.** The order exists at the
+provider, the funnel advances, the EMR is told, the buyer gets a receipt — only
+the debit is outstanding. A fourth `PlacementOutcome` state would have been read
+as "not placed" by every existing `match` and would have stranded buyers whose
+cards were validly reserved, so settlement hangs off a placed outcome beside the
+charge discrepancy. `orders.settlement` is a column for the same reason: a
+fourth `status` value would have made every query reading `status = 'placed'`
+stop counting authorized orders, including both reconciliation sweeps.
+
+**A provider that cannot authorize is never asked to charge instead.**
+`AdapterCapabilities::$supportsAuthorizeCapture` is the one capability whose
+absence stops a checkout rather than adapting a page — everything else here
+degrades, and this has no degraded form. An order resolving to authorize against
+an adapter that declares false is refused before the wire, the idempotency claim
+goes back, and `config:validate` reports the same disagreement as an error so it
+is found before a buyer finds it.
+
+**The receipt says which one happened.** The thank-you page carried a flat "Your
+card has been charged" — true then, and a lie on an authorize deployment, where
+a buyer would go looking for a debit that is not on their statement and may never
+be. The wording is resolved from the placed order rows, so a journey that
+captured a checkout and authorized an upsell takes the cautious sentence.
+
+Established on the wire: `action: "authorize"` is accepted on the same
+required fields as `action: "process"`, and `POST /orders/{id}/capture` answers a
+typed `order_unauthorized` refusal on an order that never authorized. What could
+**not** be recorded is the `status_type_id` an *approved* authorize returns —
+the sandbox merchant's acquiring gateway was rejecting every charge, `process`
+included — and `docs/INTEGRATION-NOTES.md` says so rather than implying the
+mapping is verified. `date_auto_capture` is deliberately not sent.
+
+- `core/Payment/SettlementMode.php` and `core/Payment/CaptureOutcome.php` (new),
+  `core/Checkout/SettlementPolicy.php` (new),
+  `core/Console/CaptureOrderCommand.php` (new),
+  `database/migrations/0006_settlement.php` (new)
+- `core/Payment/PaymentAdapter.php`, `AdapterCapabilities.php`,
+  `OrderEnvelope.php`, `PlacementOutcome.php`, `NullPaymentAdapter.php`,
+  `core/Payment/Vrio/VrioPayload.php`, `VrioOutcome.php`, `VrioAdapter.php`
+- `core/Checkout/CheckoutService.php`, `DatabaseOrderRecorder.php`,
+  `core/Upsell/UpsellService.php`, `core/Completion/Receipt.php`,
+  `ReceiptViewModel.php`, `core/Repository/OrderRepository.php`
+- `core/Observability/Boundary.php`, `InstrumentedPaymentAdapter.php`,
+  `core/Console/ValidateCommand.php`, `core/Bootstrap/AppFactory.php`,
+  `bin/console`
+- `theme/templates/pages/thank-you.twig`, `config/payment.php`,
+  `config/products.overrides.php`, `.env.example`
 
 ### A field's authored class and id are rendered
 
@@ -101,8 +242,8 @@ The cache was NOT fully cleared. Whatever it was holding is still being served.
 
 ### Tests
 
-`vendor/bin/phpunit` is green at **2081 tests / 7158 assertions**, up from
-2044 / 7102. Every field type that draws an element is covered by name, so a
+`vendor/bin/phpunit` is green at **2148 tests / 7301 assertions**, up from
+2044 / 7102, and at the same figures on a clone with no synced catalog. Every field type that draws an element is covered by name, so a
 partial added later without the hook fails rather than silently ignoring it.
 The two `cache:clear` permission cases skip as root, where the refusal they
 arrange cannot happen.

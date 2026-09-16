@@ -69,6 +69,7 @@ use AsterMD\Storefront\Checkout\EmrCheckoutEventReporter;
 use AsterMD\Storefront\Checkout\OrderBumps;
 use AsterMD\Storefront\Checkout\OrderRecorder;
 use AsterMD\Storefront\Checkout\PostChargeGuard;
+use AsterMD\Storefront\Checkout\SettlementPolicy;
 use AsterMD\Storefront\Emr\EmrVerificationGateway;
 use AsterMD\Storefront\Emr\NullVerificationGateway;
 use AsterMD\Storefront\Emr\VerificationGateway;
@@ -645,7 +646,17 @@ final class AppFactory
             (array) $c->get(Config::class)->get('payment.rate_limits', []),
             $c->get(OperatorLog::class),
         ));
-        $container->set(AdapterRegistry::class, static function (Container $c) use ($config, $rootDir): AdapterRegistry {
+        $container->set(AdapterRegistry::class, static function (Container $c) use ($rootDir): AdapterRegistry {
+            // Read from the container rather than from the `$config` captured
+            // above, because `Config::class` is a documented override point and
+            // the category and the credentials have to come from the same
+            // place. Split between the two, a test that varied the channel
+            // moved the category and left the credentials behind -- the
+            // registry then built the named adapter from another provider's
+            // config block, the credential mapper threw, and the resulting
+            // `NullPaymentAdapter` looked like a provider that had not been
+            // configured at all.
+            $config = $c->get(Config::class);
             $registry = new AdapterRegistry($c->get(OperatorLog::class));
 
             // Registered as a factory rather than an instance: a deployment
@@ -741,6 +752,14 @@ final class AppFactory
             (string) $c->get(Config::class)->get('payment.currency', 'USD'),
             $config->get('app.session.analytics') === true,
         )));
+        // The settlement decision, resolved once and shared by the checkout
+        // charge and the upsell charge so the two cannot disagree about whether
+        // this deployment takes money or holds it.
+        $container->set(SettlementPolicy::class, static fn (Container $c): SettlementPolicy => new SettlementPolicy(
+            $c->get(ProductCatalog::class),
+            SettlementPolicy::modeFromConfig($c->get(Config::class)->get('payment.settlement')),
+            $c->get(OperatorLog::class),
+        ));
         $container->set(CheckoutService::class, static fn (Container $c): CheckoutService => new CheckoutService(
             $c->get(CartStore::class),
             $c->get(JourneyStore::class),
@@ -760,6 +779,7 @@ final class AppFactory
             $c->get(OperatorLog::class),
             $c->get(PostChargeGuard::class),
             $c->get(Upsells::class),
+            $c->get(SettlementPolicy::class),
         ));
         $container->set(CheckoutController::class, static fn (Container $c): CheckoutController => new CheckoutController(
             $c->get(CheckoutService::class),
@@ -781,6 +801,7 @@ final class AppFactory
             $c->get(FlowDefinition::class),
             $c->get(Config::class),
             $c->get(OperatorLog::class),
+            $c->get(SettlementPolicy::class),
         ));
         $container->set(UpsellController::class, static fn (Container $c): UpsellController => new UpsellController(
             $c->get(UpsellService::class),

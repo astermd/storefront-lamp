@@ -6,6 +6,8 @@ declare(strict_types=1);
 
 namespace AsterMD\Storefront\Repository;
 
+use AsterMD\Storefront\Payment\SettlementMode;
+
 /**
  * The `orders`, `order_lines` and `order_consents` tables: the storefront's
  * own record of what was bought, for how much, and what the buyer agreed to.
@@ -78,7 +80,7 @@ final class OrderRepository
      * accumulated anywhere, so an upsell that failed to be marked would be
      * counted as part of the total the buyer agreed to on a form.
      *
-     * @param array{session_uuid?: ?string, provider_reference: string, anchor_slug: string, amount_cents: int, currency: string, status: string, buyer_email?: ?string, buyer_name?: ?string, buyer_territory?: ?string, discount_cents?: int, promotion_code?: ?string, payment_method?: ?string, card_last_four?: ?string, idempotency_key?: ?string, provider_category?: ?string, placed_at?: ?string, is_upsell?: bool} $order
+     * @param array{session_uuid?: ?string, provider_reference: string, anchor_slug: string, amount_cents: int, currency: string, status: string, buyer_email?: ?string, buyer_name?: ?string, buyer_territory?: ?string, discount_cents?: int, promotion_code?: ?string, payment_method?: ?string, card_last_four?: ?string, idempotency_key?: ?string, provider_category?: ?string, placed_at?: ?string, is_upsell?: bool, settlement?: string} $order
      * @param list<array{slug: string, name: string, kind?: string, provider_offer?: ?string, provider_item?: ?string, unit_price_cents: int, quantity: int, sent_to_provider?: bool}>                                                                                                                                            $lines
      * @param list<array{key: string, granted: bool, copy_version: string, copy_shown: string, at: string}>                                                                                                                                                                                                                     $consents in {@see \AsterMD\Storefront\Checkout\ConsentRecord::toArray()}'s shape
      */
@@ -94,8 +96,8 @@ final class OrderRepository
                     session_uuid, provider_reference, anchor_slug, amount_cents, currency, status,
                     buyer_email, buyer_name, buyer_territory, discount_cents, promotion_code,
                     payment_method, card_last_four, idempotency_key, provider_category, placed_at,
-                    is_upsell, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                    is_upsell, settlement, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
             )->execute([
                 $order['session_uuid'] ?? null,
                 (string) $order['provider_reference'],
@@ -114,6 +116,11 @@ final class OrderRepository
                 $order['provider_category'] ?? null,
                 $order['placed_at'] ?? $now,
                 ($order['is_upsell'] ?? false) === true ? 1 : 0,
+                // Defaulted here as well as in the schema, so a caller that
+                // omits it records the behaviour the storefront has always had
+                // rather than leaning on a column default a future engine might
+                // not apply the same way.
+                (string) ($order['settlement'] ?? SettlementMode::Capture->value),
                 $now,
                 $now,
             ]);
@@ -176,7 +183,7 @@ final class OrderRepository
      * buyer sees on the receipt, what appears in the provider's dashboard, and
      * what a support call arrives quoting.
      *
-     * @return array{id: int, session_uuid: ?string, provider_reference: string, anchor_slug: string, amount_cents: int, currency: string, status: string, treatment_reference: ?string, buyer_email: ?string, buyer_name: ?string, buyer_territory: ?string, discount_cents: int, promotion_code: ?string, payment_method: ?string, card_last_four: ?string, idempotency_key: ?string, provider_category: ?string, placed_at: ?string, is_upsell: bool, created_at: string, updated_at: string, lines: list<array{slug: string, name: string, kind: string, provider_offer: ?string, provider_item: ?string, unit_price_cents: int, quantity: int, sent_to_provider: bool}>, consents: list<array{key: string, granted: bool, copy_version: string, copy_shown: string, at: string}>}|null
+     * @return array{id: int, session_uuid: ?string, provider_reference: string, anchor_slug: string, amount_cents: int, currency: string, status: string, treatment_reference: ?string, buyer_email: ?string, buyer_name: ?string, buyer_territory: ?string, discount_cents: int, promotion_code: ?string, payment_method: ?string, card_last_four: ?string, idempotency_key: ?string, provider_category: ?string, placed_at: ?string, is_upsell: bool, settlement: string, created_at: string, updated_at: string, lines: list<array{slug: string, name: string, kind: string, provider_offer: ?string, provider_item: ?string, unit_price_cents: int, quantity: int, sent_to_provider: bool}>, consents: list<array{key: string, granted: bool, copy_version: string, copy_shown: string, at: string}>}|null
      */
     public function findByReference(string $reference): ?array
     {
@@ -210,6 +217,9 @@ final class OrderRepository
             'provider_category' => self::nullableString($row['provider_category'] ?? null),
             'placed_at' => self::nullableString($row['placed_at'] ?? null),
             'is_upsell' => (int) ($row['is_upsell'] ?? 0) === 1,
+            // A row written before 0006 has no column to read, and every one of
+            // those was charged in full -- the storefront had no other mode.
+            'settlement' => (string) ($row['settlement'] ?? SettlementMode::Capture->value),
             'created_at' => (string) $row['created_at'],
             'updated_at' => (string) $row['updated_at'],
             'lines' => $this->linesFor($id),

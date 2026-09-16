@@ -224,6 +224,30 @@ final class OrderRepositoryTest extends TestCase
     }
 
     /** @return array<string, mixed> */
+    public function testAnOrderWithNoSettlementNamedIsRecordedAsCaptured(): void
+    {
+        // Every row written before settlement existed was charged in full, and
+        // a caller that omits it is saying nothing new. A null here would leave
+        // a reconciler unable to tell "charged" from "we do not know".
+        $pdo = $this->tempPdo();
+        $repository = $this->repository($pdo, withSession: true);
+        $repository->insert($this->order(), [], []);
+
+        self::assertSame('capture', $repository->findByReference('34660')['settlement']);
+    }
+
+    public function testAnAuthorizedOrderKeepsThatOnTheRow(): void
+    {
+        // The column exists so a later capture can tell which orders still owe
+        // money; if it did not round-trip, `payment:capture` would refuse every
+        // order it was handed.
+        $pdo = $this->tempPdo();
+        $repository = $this->repository($pdo, withSession: true);
+        $repository->insert(['settlement' => 'authorize'] + $this->order(), [], []);
+
+        self::assertSame('authorize', $repository->findByReference('34660')['settlement']);
+    }
+
     private function order(): array
     {
         return [

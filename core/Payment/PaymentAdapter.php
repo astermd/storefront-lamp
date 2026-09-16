@@ -18,6 +18,14 @@ namespace AsterMD\Storefront\Payment;
  * {@see AdapterCapabilities} and deliberately have no methods this revision --
  * a declared slot with no caller is honest; a method nobody implements is not.
  *
+ * Authorize-and-capture is declared on `$supportsAuthorizeCapture` **and** gets
+ * {@see self::capture()}, by that same test: it has a caller in
+ * {@see \AsterMD\Storefront\Console\CaptureOrderCommand}. The event that
+ * decides *when* an authorization settles is outside this storefront
+ * deliberately -- it is a clinical or fulfilment decision, not a checkout one --
+ * so what lives here is the ability to settle on demand, and the command is the
+ * seam that event drives.
+ *
  * Order search is the other side of that same rule: it is declared on
  * {@see AdapterCapabilities::$supportsOrderSearch} **and** gets a method,
  * because it has a caller. `[21.9a]`'s reverse sweep has to ask a provider
@@ -73,6 +81,29 @@ interface PaymentAdapter
      * partitions its orders.
      */
     public function searchOrders(OrderSearch $search): OrderSearchResult;
+
+    /**
+     * Settle an order this adapter previously authorized (`[14.1]` capability 4,
+     * second half).
+     *
+     * Only meaningful when {@see AdapterCapabilities::$supportsAuthorizeCapture}
+     * is true; an adapter that declares it false answers
+     * {@see CaptureOutcome::unsupported()} rather than throwing, on the same
+     * terms as {@see self::searchOrders()}.
+     *
+     * **Must never throw**, for a reason stronger than the one on `place()`.
+     * This runs with no buyer in front of it, from a command an operator or an
+     * external system triggers, against money that is already reserved on
+     * somebody's card. An exception here is a capture whose result nobody
+     * recorded, and the reserved funds expire silently a few days later.
+     *
+     * The reference is the one {@see PlacementOutcome::$reference} handed back
+     * at placement -- the provider's own order identifier, as
+     * `orders.provider_reference` spells it. Nothing else about the order is
+     * passed, because nothing else is the storefront's to restate: what is
+     * being settled is the authorization the provider holds.
+     */
+    public function capture(string $reference): CaptureOutcome;
 
     /**
      * Whether the credentials this adapter was built with reach the provider.

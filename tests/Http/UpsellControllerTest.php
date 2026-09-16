@@ -7,12 +7,14 @@ namespace AsterMD\Storefront\Tests\Http;
 use AsterMD\Storefront\Checkout\NullCheckoutEventReporter;
 use AsterMD\Storefront\Checkout\NullOrderRecorder;
 use AsterMD\Storefront\Checkout\PostChargeGuard;
+use AsterMD\Storefront\Checkout\SettlementPolicy;
 use AsterMD\Storefront\Funnel\FlowDefinition;
 use AsterMD\Storefront\Http\Controller\UpsellController;
 use AsterMD\Storefront\Journey\CartStore;
 use AsterMD\Storefront\Journey\JourneyState;
 use AsterMD\Storefront\Journey\JourneyStore;
 use AsterMD\Storefront\Payment\PaymentCredential;
+use AsterMD\Storefront\Payment\SettlementMode;
 use AsterMD\Storefront\Payment\Vrio\VrioAdapter;
 use AsterMD\Storefront\Payment\Vrio\VrioApiFactory;
 use AsterMD\Storefront\Payment\Vrio\VrioCredentials;
@@ -317,6 +319,7 @@ final class UpsellControllerTest extends TestCase
             flow: FlowDefinition::fromConfig($config),
             config: $config,
             log: $this->log->log,
+            settlement: new SettlementPolicy(new FakeCatalog([]), SettlementMode::Capture, $this->log->log),
         );
 
         return new UpsellController($service, $this->carts, FlowDefinition::fromConfig($config));

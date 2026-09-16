@@ -263,6 +263,7 @@ bin/console theme:sync            # dry run — prints the diff, writes nothing
 bin/console theme:sync --apply    # writes products.generated.php and channel.generated.php
 bin/console config:validate       # structural validation of the merged catalog
 bin/console config:validate --live   # also resolves every rx/otc product against the EMR
+bin/console payment:capture <ref> # settle an order that was authorized rather than charged
 bin/console cache:clear           # wipe storage/cache (do this after deploying template changes)
 bin/console media:prune           # orphaned files under public/assets/media (--force to delete)
 ```

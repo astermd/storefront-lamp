@@ -16,6 +16,9 @@ use Symfony\Component\Console\Tester\CommandTester;
 
 final class SyncCommandTest extends TestCase
 {
+    /** The channel id the fixture payload carries, so a case can say whether it is re-syncing or switching. */
+    private const string CHANNEL_ID = '6a1c2a565f315cee0e41c395';
+
     private string $appConfigDir;
 
     private string $syncConfigDir;
@@ -212,13 +215,17 @@ final class SyncCommandTest extends TestCase
         }
     }
 
-    public function testMergeNotReplaceSurvivesHandAddedKeyAlongsideRefreshedPayload(): void
+    public function testAHandAddedKeyOutsideTheProcessorBlockSurvivesARepeatSync(): void
     {
+        // Merge-keep-extra still applies to the file as a whole, so an
+        // operator's own key survives a re-sync of the same channel.
         file_put_contents(
             $this->syncConfigDir . '/channel.generated.php',
-            "<?php return ['channel' => ['id' => 'old-id', 'name' => 'Old Name'], "
-            . "'payment_processor' => ['provider_category' => 'stale', 'name' => 'Stale', "
-            . "'config' => ['debug_log' => true, 'api_key' => 'stale-key']]];",
+            '<?php return ' . var_export([
+                'channel' => ['id' => self::CHANNEL_ID, 'name' => 'Whatever Was Here Before'],
+                'operator_notes' => ['owner' => 'ops@example.test'],
+                'payment_processor' => ['provider_category' => 'vrio', 'name' => 'Previous', 'config' => []],
+            ], true) . ';',
         );
 
         $fake = $this->fakeClient();
@@ -230,9 +237,114 @@ final class SyncCommandTest extends TestCase
         /** @var array<string, mixed> $channel */
         $channel = require $this->syncConfigDir . '/channel.generated.php';
 
-        self::assertTrue($channel['payment_processor']['config']['debug_log']);
+        self::assertSame('ops@example.test', $channel['operator_notes']['owner']);
         self::assertSame('vrio', $channel['payment_processor']['provider_category']);
         self::assertSame('REDACTED', $channel['payment_processor']['config']['api_key']);
+    }
+
+    public function testTheProcessorBlockIsReplacedRatherThanMergedOnEverySync(): void
+    {
+        // The block is generated end to end — every key in it is one provider's
+        // own vocabulary — and nothing in this codebase reads a hand-added key
+        // from it. Merging could therefore only ever keep a key the configured
+        // provider has no use for, or a credential belonging to one this
+        // deployment no longer talks to. This is also what heals a file that was
+        // already polluted before the rule existed: a plain re-sync cleans it.
+        $this->writeExistingChannel(self::CHANNEL_ID, 'vrio', [
+            'api_key' => 'a-previous-live-jwt',
+            'pharmacy' => 'pharmacy_hub',
+            'dashboard_url' => 'https://example.test',
+            'debug_log' => true,
+        ]);
+
+        $fake = $this->fakeClient();
+        $command = new SyncCommand(new ClientFactory($this->config(), $this->rootDir), $this->syncConfigDir, $this->mediaDir, $fake);
+        $tester = new CommandTester($command);
+
+        self::assertSame(0, $tester->execute(['--apply' => true]));
+
+        /** @var array<string, mixed> $channel */
+        $channel = require $this->syncConfigDir . '/channel.generated.php';
+        $config = $channel['payment_processor']['config'];
+
+        self::assertSame('REDACTED', $config['api_key'], 'the payload\'s own key, not the one on disk');
+        self::assertArrayNotHasKey('pharmacy', $config);
+        self::assertArrayNotHasKey('dashboard_url', $config);
+        self::assertArrayNotHasKey('debug_log', $config);
+    }
+
+    public function testPointingAtADifferentChannelKeepsNothingFromTheOldOne(): void
+    {
+        // Switching `.env` to a channel on a different processor left the
+        // previous channel's live `api_key` in the file, beside the new
+        // provider's own username and password — two providers' credentials in
+        // one gitignored-because-it-holds-credentials file, plus routing hints
+        // meaning nothing to the provider now configured.
+        //
+        // The merge cannot tell an operator's hand-addition from the previous
+        // provider's own key, so identity decides instead: a different channel
+        // is a different deployment target and nothing in the file survives.
+        $this->writeExistingChannel('a-different-channel', 'vrio', [
+            'api_key' => 'previous-channel-live-jwt',
+            'campaign_id' => 'previous-channel-campaign',
+            'debug_log' => true,
+        ]);
+
+        $fake = $this->fakeClient();
+        $command = new SyncCommand(new ClientFactory($this->config(), $this->rootDir), $this->syncConfigDir, $this->mediaDir, $fake);
+        $tester = new CommandTester($command);
+
+        self::assertSame(0, $tester->execute(['--apply' => true]));
+
+        /** @var array<string, mixed> $channel */
+        $channel = require $this->syncConfigDir . '/channel.generated.php';
+        $config = $channel['payment_processor']['config'];
+
+        self::assertSame(self::CHANNEL_ID, $channel['channel']['id']);
+        self::assertSame('REDACTED', $config['api_key'], 'the new channel\'s own key, not the old one');
+        self::assertNotSame('previous-channel-campaign', $config['campaign_id'] ?? null, 'no routing hint outlives its channel');
+        self::assertArrayNotHasKey('debug_log', $config, 'a hand-added key does not outlive the channel it was added for');
+    }
+
+    public function testChangingProviderOnOneChannelReplacesTheProcessorBlockOnly(): void
+    {
+        // The narrower case: same channel, its payment processor swapped. The
+        // channel stanza is still describing the same thing, so it merges — but
+        // the processor block belongs to a provider that is no longer
+        // configured, and every key in it is that provider's vocabulary.
+        $this->writeExistingChannel(self::CHANNEL_ID, 'checkout_champ', [
+            'api_username' => 'sc_qa',
+            'api_password' => 'a-live-password',
+        ]);
+
+        $fake = $this->fakeClient();
+        $command = new SyncCommand(new ClientFactory($this->config(), $this->rootDir), $this->syncConfigDir, $this->mediaDir, $fake);
+        $tester = new CommandTester($command);
+
+        self::assertSame(0, $tester->execute(['--apply' => true]));
+
+        /** @var array<string, mixed> $channel */
+        $channel = require $this->syncConfigDir . '/channel.generated.php';
+
+        self::assertSame('vrio', $channel['payment_processor']['provider_category']);
+        self::assertArrayNotHasKey('api_username', $channel['payment_processor']['config']);
+        self::assertArrayNotHasKey('api_password', $channel['payment_processor']['config']);
+    }
+
+    /** @param array<string, mixed> $config */
+    private function writeExistingChannel(string $channelId, string $providerCategory, array $config): void
+    {
+        file_put_contents(
+            $this->syncConfigDir . '/channel.generated.php',
+            '<?php return ' . var_export([
+                'channel' => ['id' => $channelId, 'name' => 'Whatever Was Here Before'],
+                'payment_processor' => [
+                    'provider_category' => $providerCategory,
+                    'name' => 'Previous',
+                    'config' => $config,
+                ],
+            ], true) . ';',
+        );
     }
 
     public function testMissingChannelIdExitsOne(): void

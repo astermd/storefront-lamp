@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace AsterMD\Storefront\Tests\Payment;
 
 use AsterMD\Storefront\Payment\AdapterCapabilities;
+use AsterMD\Storefront\Payment\CaptureOutcome;
 use AsterMD\Storefront\Payment\OrderEnvelope;
 use AsterMD\Storefront\Payment\OrderSearch;
 use AsterMD\Storefront\Payment\OrderSearchResult;
@@ -20,6 +21,12 @@ use AsterMD\Storefront\Payment\PromotionQuote;
  * that use it is that the *storefront* adapts to what an adapter declares
  * (`[14.4]`, `[15.14]`) — so the placement behind the declaration has to stay
  * the real one, or the test would be proving something about a stub.
+ *
+ * `$supportsAuthorizeCapture` is nullable where the other two are not, because
+ * inheriting is its common case: almost every test wants the shipped adapter's
+ * own answer, and only the cases about a provider that cannot hold funds set
+ * it. A non-nullable bool would have made every existing construction site
+ * state an opinion it does not have.
  */
 final class RedeclaredAdapter implements PaymentAdapter
 {
@@ -27,6 +34,7 @@ final class RedeclaredAdapter implements PaymentAdapter
         private readonly PaymentAdapter $inner,
         private readonly ?string $credentialStrategy,
         private readonly bool $supportsPromotions,
+        private readonly ?bool $supportsAuthorizeCapture = null,
     ) {
     }
 
@@ -46,6 +54,7 @@ final class RedeclaredAdapter implements PaymentAdapter
             supportsRefund: $inner->supportsRefund,
             supportsRecurring: $inner->supportsRecurring,
             supportsOrderSearch: $inner->supportsOrderSearch,
+            supportsAuthorizeCapture: $this->supportsAuthorizeCapture ?? $inner->supportsAuthorizeCapture,
         );
     }
 
@@ -62,6 +71,11 @@ final class RedeclaredAdapter implements PaymentAdapter
     public function searchOrders(OrderSearch $search): OrderSearchResult
     {
         return $this->inner->searchOrders($search);
+    }
+
+    public function capture(string $reference): CaptureOutcome
+    {
+        return $this->inner->capture($reference);
     }
 
     /** @return array{ok: bool, detail: string} */

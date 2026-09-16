@@ -1,0 +1,11 @@
+{
+    "success": false,
+    "message": "Order has not been authorized.",
+    "data": {
+        "error": {
+            "code": "order_unauthorized",
+            "message": "Order has not been authorized."
+        }
+    },
+    "validation_code": "order_unauthorized"
+}

@@ -403,6 +403,67 @@ integer cents.
 Conversion happens once, at the adapter boundary, so nothing above it ever sees
 provider money encoding. Keep it there.
 
+### 17. `action: "authorize"` is accepted; the approved `status_type_id` is the one thing unrecorded
+
+**What the wire does.** `POST /orders` accepts
+`action: "authorize"` on exactly the same required fields as
+`action: "process"` — no extra parameter, no different endpoint, no second
+call. The authorize request built order 36727, reached the acquiring gateway
+and priced the transaction at `120.00`. Nothing else in the payload changed;
+`tests/Payment/Vrio/VrioPayloadTest.php` asserts that as a whole-payload diff so
+a future change that quietly varies a second field has to be stated.
+
+`POST /orders/{id}/capture` takes an **empty body** and captures the most recent
+successful authorization. Capturing an order that never authorized answers a
+typed refusal — `success: false`, `data.error.code` and `validation_code` both
+`order_unauthorized`, message "Order has not been authorized.", and **no
+transaction node**. That is a stated refusal rather than a transport error or a
+silent no-op, which is what lets a failed capture tell an operator which kind of
+failure they have.
+
+The order node carries `date_auto_capture`, and the provider will also settle on
+a campaign-level trigger. **Neither is used.** Both would put the decision of
+when money moves inside a payload written at checkout, before the event that
+decides it has happened.
+
+**What could not be recorded, and why it matters.** The `status_type_id` an
+*approved* authorize returns on this account is **unverified**. The sandbox
+merchant's acquiring gateway was answering `Error 0:Invalid API Key provided`
+with `gateway_response_code: "500"` for every charge at the time — a control run
+with `action: "process"`, the path production uses today, failed identically —
+so an approved authorize could not be taken. A *declined* one was, and it is
+shape-identical to a declined capture: reference at
+`data.error.transaction.order_id`, `success: false`, `response_code: 200`,
+`status_type_id` null.
+
+That gap is why `core/Payment/Vrio/VrioOutcome.php`'s authorize branch is
+the **minimum** change from the capture rule rather than a re-derivation. Item
+11 above — a null status means never charged — inverts under authorize, because
+an order with nothing charged against it is exactly what that action asks for.
+Everything else recorded stays load-bearing: the envelope's `success` flag and
+the presence of a reference still decide, and terminal statuses are still
+terminal, since a cancelled or refunded order is not a live authorization
+waiting to be captured.
+
+**When the gateway credentials are fixed, re-run the probe and pin the real
+status.** If an approved authorize turns out to carry a status in the terminal
+list, this branch is wrong and every authorization will read as a decline.
+
+### 18. The live channel payload stopped carrying `campaign_id`
+
+`channels()->details()` returned a
+`payment_processor.config` with `integration_name`, `api_endpoint`, `api_key`
+and `connection_id` — and **no `campaign_id`**. The synced
+`config/channel.generated.php` still had it, and that file is what the
+application reads, so nothing was broken. A probe that fetched the channel fresh
+instead posted against campaign `0` and was refused with
+`Invalid campaign id : 0`.
+
+The lesson is narrow and worth keeping: **read the synced file, not a fresh
+channel fetch**, when reproducing what the application does. The two are not
+always the same, and `theme:sync`'s merge semantics are what preserve a key the
+payload has stopped sending.
+
 ---
 
 ## What to take from all of this

@@ -186,6 +186,7 @@ final class CheckoutService
         private readonly OperatorLog $log,
         private readonly PostChargeGuard $postCharge,
         private readonly Upsells $upsells,
+        private readonly SettlementPolicy $settlement,
         ?\Closure $clock = null,
     ) {
         $this->clock = $clock ?? static fn (): string => gmdate('c');
@@ -436,7 +437,43 @@ final class CheckoutService
             userAgent: $context?->userAgent,
             idempotencyKey: $key,
             anchorSlug: self::anchorSlug($cart),
+            // Resolved from the cart that is about to be charged rather than
+            // from the one the page was rendered against: a bump accepted on
+            // the checkout page is a line like any other, and a bump that
+            // holds funds has to make the order it joined hold them too.
+            settlement: $this->settlement->forSlugs(...array_map(
+                static fn (CartLine $line): string => $line->slug,
+                $cart->lines(),
+            )),
         );
+
+        // 6b. The provider has to be able to honour the settlement mode this
+        //     order resolved to. An adapter that cannot authorize has no
+        //     degraded form to fall back on: charging instead would take money
+        //     the deployment said to hold, which is the one failure this whole
+        //     mechanism exists to make impossible. So the order stops here,
+        //     before the claim is marked sent and before anything reaches a
+        //     provider.
+        //
+        //     The buyer is told the item cannot be bought right now rather than
+        //     anything about settlement, because nothing about this is theirs
+        //     to fix — it is a deployment whose configuration and whose payment
+        //     provider disagree, and `bin/console config:validate` reports the
+        //     same disagreement without waiting for a buyer to find it.
+        if ($envelope->settlement->isAuthorize() && !$this->adapter->capabilities()->supportsAuthorizeCapture) {
+            $this->releaseQuietly($key, $claimedAt);
+            $this->log->error('checkout.settlement_unsupported', [
+                'provider' => $this->adapter->capabilities()->providerCategory,
+                'settlement' => $envelope->settlement->value,
+                'anchor' => $envelope->anchorSlug,
+            ]);
+
+            return new CheckoutResult(
+                outcome: PlacementOutcome::declined(null, self::UNAVAILABLE_LINE, 'settlement_unsupported'),
+                totals: $totals,
+                notice: self::UNAVAILABLE_LINE,
+            );
+        }
 
         // 7. Written before the call rather than after it, because the width
         //    of one network round trip is all it takes: a request that dies

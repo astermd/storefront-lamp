@@ -86,6 +86,13 @@ final class DatabaseOrderRecorder implements OrderRecorder
                     'idempotency_key' => $order->idempotencyKey,
                     'provider_category' => $providerCategory,
                     'is_upsell' => $isUpsell,
+                    // Taken from the outcome rather than the envelope, because
+                    // the envelope says what was asked for and the outcome says
+                    // what the provider did. They agree today and the row has to
+                    // keep agreeing with the provider if they ever stop: this
+                    // column is what an operator reads to decide whether money is
+                    // still owed on an order.
+                    'settlement' => $outcome->settlement->value,
                 ],
                 array_map(self::line(...), $order->lines),
                 array_map(static fn (ConsentRecord $c): array => $c->toArray(), $consents),

@@ -29,6 +29,15 @@ namespace AsterMD\Storefront\Payment;
  * found nothing". Those look identical at the call site and mean opposite
  * things, and a deployment whose adapter cannot answer must produce no sweep
  * rather than a clean bill of health.
+ *
+ * `$supportsAuthorizeCapture` is the one capability whose absence must stop a
+ * checkout rather than adapt a page. Everything else here degrades: a provider
+ * with no promotions hides the promo control, a provider with no order search
+ * produces no sweep. An adapter handed an authorize envelope it cannot honour
+ * has no degraded form -- charging instead is taking money the deployment
+ * said to hold, and that is the failure this whole flag exists to make
+ * impossible. It defaults to false so an adapter written before this existed
+ * refuses rather than silently captures.
  */
 final class AdapterCapabilities
 {
@@ -62,6 +71,7 @@ final class AdapterCapabilities
         public readonly bool $supportsRefund = false,
         public readonly bool $supportsRecurring = false,
         public readonly bool $supportsOrderSearch = false,
+        public readonly bool $supportsAuthorizeCapture = false,
     ) {
     }
 

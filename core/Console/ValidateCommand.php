@@ -8,9 +8,11 @@ namespace AsterMD\Storefront\Console;
 
 use AsterMD\Storefront\Catalog\CatalogProvider;
 use AsterMD\Storefront\Catalog\CatalogValidator;
+use AsterMD\Storefront\Checkout\SettlementPolicy;
 use AsterMD\Sdk\Enum\IdentityCheck;
 use AsterMD\Storefront\Emr\ClientFactory;
 use AsterMD\Storefront\Payment\AdapterCapabilities;
+use AsterMD\Storefront\Payment\SettlementMode;
 use AsterMD\Storefront\Payment\NullPaymentAdapter;
 use AsterMD\Storefront\Payment\PaymentAdapter;
 use AsterMD\Storefront\Seo\MetaResolver;
@@ -776,6 +778,7 @@ final class ValidateCommand extends Command
             $errors[] = 'payment: payment.shipping_profile_id is not set — the provider refuses every order without one';
         }
 
+        $this->validateSettlement($catalog, $capabilities, $errors);
         $this->validateBumps($catalog, $errors);
         $this->validateUpsells($catalog, $errors);
 
@@ -783,6 +786,92 @@ final class ValidateCommand extends Command
         if ($unmapped > 0) {
             $warnings[] = sprintf('payment: %d catalog variants have no provider mapping and cannot be ordered', $unmapped);
         }
+    }
+
+    /** Marks "payment.settlement was never written", which is not the same finding as "it is unreadable". */
+    private const string SETTLEMENT_ABSENT = "\0settlement-absent";
+
+    /**
+     * The settlement mode a deployment configured, and whether its provider can
+     * honour it.
+     *
+     * Three findings, all errors rather than warnings, because each one has the
+     * same consequence in production: an order either charges a card the
+     * deployment meant to hold, or fails at checkout in front of a buyer.
+     * Neither is something to discover from a support ticket.
+     *
+     *  - **An unrecognised spelling.** `SettlementPolicy` falls back to the
+     *    shipped default so a typo cannot take a storefront down — which means
+     *    a deployment that wrote `authorise` would silently keep charging, with
+     *    nothing on the page to show for it. This is where that is caught.
+     *  - **A product asking for a mode the deployment cannot spell.** Same
+     *    reasoning, one layer down, and the message names the product because
+     *    the override file is keyed by EMR product id and a bare "settlement is
+     *    invalid" would send an operator reading all of it.
+     *  - **A provider that cannot authorize while something asks it to.** The
+     *    check is on the *effective* configuration, not just the global key:
+     *    one product marked `authorize` is enough to make a cart authorize, so
+     *    a deployment defaulting to `capture` with one such product is exactly
+     *    as broken as one defaulting to `authorize`, and only this pass can see
+     *    that before a buyer does.
+     *
+     * @param array<string, mixed> $catalog
+     * @param list<string>         $errors
+     */
+    private function validateSettlement(array $catalog, AdapterCapabilities $capabilities, array &$errors): void
+    {
+        // A sentinel rather than null, because an absent key and a null one
+        // have to be told apart here and `Config::get()` answers null for both.
+        // An absent key is not a fault: `config/payment.php` ships the default
+        // and a deployment whose copy predates it should inherit `capture`,
+        // which is what it has always done. Only a value that is *present* and
+        // unreadable is a finding.
+        $configured = $this->config?->get('payment.settlement', self::SETTLEMENT_ABSENT);
+        $default = $configured === self::SETTLEMENT_ABSENT
+            ? SettlementMode::Capture
+            : SettlementMode::parse($configured);
+
+        if ($default === null) {
+            $errors[] = sprintf(
+                'payment: payment.settlement is %s, which is neither "capture" nor "authorize" — the storefront falls back to capture and charges every order',
+                self::quoted($configured),
+            );
+        }
+
+        $wantsAuthorize = ($default ?? SettlementMode::Capture)->isAuthorize();
+
+        foreach ((array) ($catalog['products'] ?? []) as $slug => $product) {
+            if (!is_array($product) || !array_key_exists(SettlementPolicy::PRODUCT_KEY, $product)) {
+                continue;
+            }
+
+            $mode = SettlementMode::parse($product[SettlementPolicy::PRODUCT_KEY]);
+
+            if ($mode === null) {
+                $errors[] = sprintf(
+                    'payment: product %s sets settlement to %s, which is neither "capture" nor "authorize"',
+                    (string) $slug,
+                    self::quoted($product[SettlementPolicy::PRODUCT_KEY]),
+                );
+
+                continue;
+            }
+
+            $wantsAuthorize = $wantsAuthorize || $mode->isAuthorize();
+        }
+
+        if ($wantsAuthorize && !$capabilities->supportsAuthorizeCapture) {
+            $errors[] = sprintf(
+                'payment: settlement asks for an authorization but the %s adapter does not support authorize-and-capture, so every such order is refused at checkout',
+                $capabilities->providerCategory,
+            );
+        }
+    }
+
+    /** One configured value as it reads in a message, without letting a non-scalar become "Array". */
+    private static function quoted(mixed $value): string
+    {
+        return is_scalar($value) ? '"' . (string) $value . '"' : '(' . get_debug_type($value) . ')';
     }
 
     /**

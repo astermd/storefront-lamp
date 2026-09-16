@@ -37,6 +37,20 @@ namespace AsterMD\Storefront\Payment;
  * it. A decline carries none: a vault entry that refused one charge is not a
  * credential worth keeping, and a placement is the only event that proves the
  * provider now holds an instrument it will accept.
+ *
+ * `$settlement` is the sixth, and it says whether the money moved. It is **not
+ * a fourth state**, for the reason a fourth state is dangerous above: an
+ * authorized order is placed in every sense the rest of this codebase means by
+ * it -- the order exists at the provider, the funnel advances, the EMR is told,
+ * the buyer gets a receipt -- and only the debit is outstanding. Modelling it
+ * as a state would make every existing `match` on `$state` read it as "not
+ * placed" and quietly strand buyers whose cards were validly reserved. It
+ * hangs off a placed outcome beside the discrepancy for the same reason the
+ * discrepancy does: it qualifies a placement rather than replacing one.
+ *
+ * It defaults to {@see SettlementMode::Capture}, so an adapter or a test that
+ * has never heard of settlement reports what it always meant -- the money
+ * moved. An adapter that authorizes has to say so.
  */
 final class PlacementOutcome
 {
@@ -54,6 +68,7 @@ final class PlacementOutcome
         public readonly ?string $actionUrl,
         public readonly ?ChargeDiscrepancy $chargeDiscrepancy = null,
         public readonly ?PaymentCredential $reusableCredential = null,
+        public readonly SettlementMode $settlement = SettlementMode::Capture,
     ) {
     }
 
@@ -62,8 +77,9 @@ final class PlacementOutcome
         ?string $rawStatus = null,
         ?ChargeDiscrepancy $discrepancy = null,
         ?PaymentCredential $reusableCredential = null,
+        SettlementMode $settlement = SettlementMode::Capture,
     ): self {
-        return new self(self::PLACED, $reference, null, $rawStatus, null, $discrepancy, $reusableCredential);
+        return new self(self::PLACED, $reference, null, $rawStatus, null, $discrepancy, $reusableCredential, $settlement);
     }
 
     public static function declined(?string $reference, string $reason, ?string $rawStatus = null): self
@@ -104,5 +120,18 @@ final class PlacementOutcome
     public function hasChargeDiscrepancy(): bool
     {
         return $this->chargeDiscrepancy !== null;
+    }
+
+    /**
+     * Whether this placement reserved the money instead of taking it.
+     *
+     * Asked by anything that words itself in terms of a charge -- the receipt,
+     * the EMR event, the order row. A caller that only wants to know whether
+     * the funnel advances asks {@see self::isPlaced()} and gets the same answer
+     * either way, which is the point.
+     */
+    public function isAuthorizedOnly(): bool
+    {
+        return $this->isPlaced() && $this->settlement->isAuthorize();
     }
 }
