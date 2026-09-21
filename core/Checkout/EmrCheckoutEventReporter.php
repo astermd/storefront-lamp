@@ -77,6 +77,17 @@ final class EmrCheckoutEventReporter implements CheckoutEventReporter
      */
     private const string NO_SESSION = '';
 
+    /**
+     * What an import with no browser behind it is attributed to.
+     *
+     * A product token rather than a browser string, because that is what it
+     * is: a server telling the EMR that this order reached it from a sweep
+     * rather than from a buyer's device. The endpoint requires the header and
+     * the SDK refuses an empty one, so there has to be an answer, and naming a
+     * browser nobody used would be the wrong one.
+     */
+    private const string STOREFRONT_AGENT = 'AsterMD-Storefront';
+
     private ?AsterMDClient $client = null;
 
     /** @var \Closure(): ?string the visitor's own user agent, for the treatment sync's attribution */
@@ -259,8 +270,10 @@ final class EmrCheckoutEventReporter implements CheckoutEventReporter
             $response = $this->client()->treatments()->sync(
                 $sessionUuid,
                 $orderReferences,
+                $this->userAgentFor($orderReferences),
                 ($this->utmSource)(),
-                ($this->userAgent)(),
+                $payment?->toArray(),
+                $this->verificationBlock(),
             );
         } catch (\Throwable $e) {
             $this->log->warning('checkout.treatment_sync_failed', [
@@ -283,6 +296,56 @@ final class EmrCheckoutEventReporter implements CheckoutEventReporter
         foreach ($orderReferences as $reference) {
             $this->stampTreatmentReference($reference, $treatment ?? $reference);
         }
+    }
+
+    /**
+     * The `User-Agent` this import is attributed to.
+     *
+     * Required and non-empty: the SDK throws on an empty one, and that throw
+     * would be caught by the swallow around the call above and reported as a
+     * warning line -- the sync would stop happening and nothing would say why.
+     *
+     * Three answers, in order of how close each is to the buyer. The ambient
+     * request is the buyer's own device and is right whenever there is a
+     * request. The order row holds the same value, kept from the request that
+     * placed it, and is what the receipt batch and the reconciliation sweep
+     * read -- neither has a request of its own. The storefront's own token is
+     * the honest last answer: it says this import came from the server, which
+     * by then it did.
+     *
+     * @param list<string> $orderReferences
+     */
+    private function userAgentFor(array $orderReferences): string
+    {
+        $ambient = trim((string) (($this->userAgent)() ?? ''));
+
+        if ($ambient !== '') {
+            return $ambient;
+        }
+
+        foreach ($orderReferences as $reference) {
+            $stored = trim((string) ($this->orders->findByReference($reference)['user_agent'] ?? ''));
+
+            if ($stored !== '') {
+                return $stored;
+            }
+        }
+
+        return self::STOREFRONT_AGENT;
+    }
+
+    /**
+     * What this storefront has actually verified about the buyer.
+     *
+     * Nothing yet: identity verification ships off and no address has ever
+     * been verified here. Filled in where the checks exist; until then a block
+     * would assert things that did not happen.
+     *
+     * @return array{email: bool, address: bool}|null
+     */
+    private function verificationBlock(): ?array
+    {
+        return null;
     }
 
     public function upsellOffered(?string $sessionUuid, string $slug, string $name): void

@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "6987bea846b73d25631b6b05ebf0146a",
+    "content-hash": "2749815456aa3d3bc411c8adae2052de",
     "packages": [
         {
             "name": "astermd/checkoutchamp-client",
@@ -66,16 +66,16 @@
         },
         {
             "name": "astermd/sdk",
-            "version": "v0.0.2",
+            "version": "v0.0.3",
             "source": {
                 "type": "git",
                 "url": "https://github.com/astermd/sdk.git",
-                "reference": "11b1b8d2ae19674192c474743b05abc479ba726d"
+                "reference": "2205cf6dce7ebeccdc5a12dea8b0834998f0f622"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/astermd/sdk/zipball/11b1b8d2ae19674192c474743b05abc479ba726d",
-                "reference": "11b1b8d2ae19674192c474743b05abc479ba726d",
+                "url": "https://api.github.com/repos/astermd/sdk/zipball/2205cf6dce7ebeccdc5a12dea8b0834998f0f622",
+                "reference": "2205cf6dce7ebeccdc5a12dea8b0834998f0f622",
                 "shasum": ""
             },
             "require": {
@@ -123,9 +123,9 @@
             "support": {
                 "email": "info@astermd.com",
                 "issues": "https://github.com/astermd/sdk/issues",
-                "source": "https://github.com/astermd/sdk/tree/v0.0.2"
+                "source": "https://github.com/astermd/sdk/tree/v0.0.3"
             },
-            "time": "2026-09-08T09:22:48+00:00"
+            "time": "2026-09-21T10:01:40+00:00"
         },
         {
             "name": "astermd/vrio-client",

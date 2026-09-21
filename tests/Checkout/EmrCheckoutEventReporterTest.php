@@ -8,6 +8,7 @@ use AsterMD\Storefront\Checkout\EmrCheckoutEventReporter;
 use AsterMD\Storefront\Checkout\Promotion;
 use AsterMD\Storefront\Checkout\Totals;
 use AsterMD\Storefront\Emr\ClientFactory;
+use AsterMD\Storefront\Payment\PaymentDescriptor;
 use AsterMD\Storefront\Repository\EventRepository;
 use AsterMD\Storefront\Repository\OrderRepository;
 use AsterMD\Storefront\Repository\SessionRepository;
@@ -591,8 +592,66 @@ final class EmrCheckoutEventReporterTest extends TestCase
     // ---------------------------------------------------------------- fixtures
 
     /** @param array<string, array{0: int, 1: array<string, mixed>|string}> $overrides */
-    private function reporter(array $overrides = [], bool $reportToEmr = true): EmrCheckoutEventReporter
+    public function testTheSyncIsAttributedToTheBuyersOwnBrowser(): void
     {
+        $this->reporter()->treatmentsSynced(self::SESSION, ['34660']);
+
+        self::assertSame('Mozilla/5.0 (test)', $this->headerOf('/treatments/sync', 'User-Agent'));
+        self::assertSame(self::SESSION, $this->bodyOf('/treatments/sync')['session_id']);
+    }
+
+    public function testASyncWithNoRequestReplaysTheAgentStoredAgainstTheOrder(): void
+    {
+        // The reconciliation sweep runs from the console and has no request of
+        // its own, so the only buyer agent still in existence is the one the
+        // order was recorded with.
+        $this->recordOrder('34660', 'Mozilla/5.0 (Macintosh)');
+
+        $this->reporter(userAgent: null)->treatmentsSynced(self::SESSION, ['34660']);
+
+        self::assertSame('Mozilla/5.0 (Macintosh)', $this->headerOf('/treatments/sync', 'User-Agent'));
+    }
+
+    public function testASyncWithNeitherNamesTheStorefrontRatherThanSendingNothing(): void
+    {
+        // The SDK throws on an empty User-Agent, and this class swallows every
+        // throwable into a warning line -- so an empty header would not fail
+        // loudly, the sync would simply stop happening and nothing would say
+        // why.
+        $this->reporter(userAgent: null)->treatmentsSynced(self::SESSION, ['no-such-order']);
+
+        self::assertSame('AsterMD-Storefront', $this->headerOf('/treatments/sync', 'User-Agent'));
+    }
+
+    public function testThePaymentBlockRidesTheSyncWhenThereIsOne(): void
+    {
+        $this->reporter()->treatmentsSynced(
+            self::SESSION,
+            ['34660'],
+            new PaymentDescriptor(PaymentDescriptor::TYPE_CREDIT_CARD, true, true, 10850, null),
+        );
+
+        self::assertSame(
+            ['type' => 'credit_card', 'pre_auth' => true, 'pre_auth_qa' => true, 'pre_auth_amount' => 108.5],
+            $this->bodyOf('/treatments/sync')['payment'],
+        );
+    }
+
+    public function testASyncWithNoPaymentSendsNoPaymentKey(): void
+    {
+        // The receipt batch and the reconciliation sweep both run without a
+        // card, and an empty object would assert a payment method nothing
+        // observed.
+        $this->reporter()->treatmentsSynced(self::SESSION, ['34660']);
+
+        self::assertArrayNotHasKey('payment', $this->bodyOf('/treatments/sync'));
+    }
+
+    private function reporter(
+        array $overrides = [],
+        bool $reportToEmr = true,
+        ?string $userAgent = 'Mozilla/5.0 (test)',
+    ): EmrCheckoutEventReporter {
         $this->http = new FakeEmrHttpClient(self::TOKEN_ROUTE + $overrides + self::OK_ROUTES);
 
         return new EmrCheckoutEventReporter(
@@ -604,7 +663,7 @@ final class EmrCheckoutEventReporterTest extends TestCase
             'USD',
             $reportToEmr,
             $this->http,
-            static fn (): ?string => 'Mozilla/5.0 (test)',
+            static fn (): ?string => $userAgent,
         );
     }
 
@@ -642,6 +701,34 @@ final class EmrCheckoutEventReporterTest extends TestCase
         self::assertNotSame([], $matching, sprintf('no request was made to "%s"', $needle));
 
         return (array) json_decode((string) $matching[count($matching) - 1]->getBody(), true, 512, JSON_THROW_ON_ERROR);
+    }
+
+    /** The value of one header on the last request whose path contains $needle. */
+    private function headerOf(string $needle, string $header): string
+    {
+        $matching = array_values(array_filter(
+            $this->http->requests,
+            static fn ($request): bool => str_contains($request->getUri()->getPath(), $needle),
+        ));
+
+        self::assertNotSame([], $matching, sprintf('no request was made to "%s"', $needle));
+
+        return $matching[count($matching) - 1]->getHeaderLine($header);
+    }
+
+    /** An order row for the sync to read a stored user agent back off. */
+    private function recordOrder(string $reference, ?string $userAgent): void
+    {
+        (new SessionRepository(fn (): \PDO => $this->pdo))->insert(self::SESSION, [], null);
+        (new OrderRepository(fn (): \PDO => $this->pdo))->insert([
+            'session_uuid' => self::SESSION,
+            'provider_reference' => $reference,
+            'anchor_slug' => 'tirz-5mg',
+            'amount_cents' => 10850,
+            'currency' => 'USD',
+            'status' => 'placed',
+            'user_agent' => $userAgent,
+        ], [], []);
     }
 
     /** @return list<string> */
