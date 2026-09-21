@@ -8,6 +8,7 @@ namespace AsterMD\Storefront\Observability;
 
 use AsterMD\Storefront\Checkout\CheckoutEventReporter;
 use AsterMD\Storefront\Checkout\Totals;
+use AsterMD\Storefront\Payment\PaymentDescriptor;
 
 /**
  * `[20.9]` over the treatment sync and the §17 funnel events.
@@ -51,7 +52,7 @@ final class InstrumentedCheckoutEventReporter implements CheckoutEventReporter
         ], fn () => $this->inner->checkoutVisited($sessionUuid, $totals));
     }
 
-    public function orderPlaced(?string $sessionUuid, Totals $totals, string $paymentMethod, array $orderReferences): void
+    public function orderPlaced(?string $sessionUuid, Totals $totals, string $paymentMethod, array $orderReferences, ?PaymentDescriptor $payment = null): void
     {
         $this->report(Boundary::CheckoutEvent, 'order_placed', $sessionUuid, [
             'total_cents' => $totals->totalCents,
@@ -66,6 +67,7 @@ final class InstrumentedCheckoutEventReporter implements CheckoutEventReporter
         string $paymentMethod,
         ?string $reference,
         string $reason,
+        ?PaymentDescriptor $payment = null,
     ): void {
         // `$reason` is the provider's own sentence and is deliberately absent:
         // see the class docblock of {@see InstrumentedPaymentAdapter}. The
@@ -77,7 +79,7 @@ final class InstrumentedCheckoutEventReporter implements CheckoutEventReporter
         ], fn () => $this->inner->orderDeclined($sessionUuid, $totals, $paymentMethod, $reference, $reason));
     }
 
-    public function treatmentsSynced(?string $sessionUuid, array $orderReferences): void
+    public function treatmentsSynced(?string $sessionUuid, array $orderReferences, ?PaymentDescriptor $payment = null): void
     {
         $this->report(Boundary::TreatmentSync, 'treatments_synced', $sessionUuid, [
             'orders' => count($orderReferences),

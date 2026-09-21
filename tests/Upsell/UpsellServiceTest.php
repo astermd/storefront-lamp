@@ -16,6 +16,7 @@ use AsterMD\Storefront\Journey\JourneyState;
 use AsterMD\Storefront\Journey\JourneyStore;
 use AsterMD\Storefront\Payment\OrderEnvelope;
 use AsterMD\Storefront\Payment\PaymentCredential;
+use AsterMD\Storefront\Payment\PaymentDescriptor;
 use AsterMD\Storefront\Payment\PlacementOutcome;
 use AsterMD\Storefront\Payment\SettlementMode;
 use AsterMD\Storefront\Payment\Vrio\VrioAdapter;
@@ -1047,7 +1048,7 @@ final class RecordingUpsellReporter implements CheckoutEventReporter
     }
 
     /** @param list<string> $orderReferences */
-    public function orderPlaced(?string $sessionUuid, Totals $totals, string $paymentMethod, array $orderReferences): void
+    public function orderPlaced(?string $sessionUuid, Totals $totals, string $paymentMethod, array $orderReferences, ?PaymentDescriptor $payment = null): void
     {
     }
 
@@ -1057,11 +1058,12 @@ final class RecordingUpsellReporter implements CheckoutEventReporter
         string $paymentMethod,
         ?string $reference,
         string $reason,
+        ?PaymentDescriptor $payment = null,
     ): void {
     }
 
     /** @param list<string> $orderReferences */
-    public function treatmentsSynced(?string $sessionUuid, array $orderReferences): void
+    public function treatmentsSynced(?string $sessionUuid, array $orderReferences, ?PaymentDescriptor $payment = null): void
     {
     }
 
@@ -1160,7 +1162,7 @@ final class ThrowingUpsellReporter implements CheckoutEventReporter
     }
 
     /** @param list<string> $orderReferences */
-    public function orderPlaced(?string $sessionUuid, Totals $totals, string $paymentMethod, array $orderReferences): void
+    public function orderPlaced(?string $sessionUuid, Totals $totals, string $paymentMethod, array $orderReferences, ?PaymentDescriptor $payment = null): void
     {
         throw new \RuntimeException('reporting is down');
     }
@@ -1171,12 +1173,13 @@ final class ThrowingUpsellReporter implements CheckoutEventReporter
         string $paymentMethod,
         ?string $reference,
         string $reason,
+        ?PaymentDescriptor $payment = null,
     ): void {
         throw new \RuntimeException('reporting is down');
     }
 
     /** @param list<string> $orderReferences */
-    public function treatmentsSynced(?string $sessionUuid, array $orderReferences): void
+    public function treatmentsSynced(?string $sessionUuid, array $orderReferences, ?PaymentDescriptor $payment = null): void
     {
         throw new \RuntimeException('reporting is down');
     }

@@ -8,6 +8,7 @@ use AsterMD\Storefront\Checkout\CheckoutEventReporter;
 use AsterMD\Storefront\Checkout\Totals;
 use AsterMD\Storefront\Observability\BoundaryTimer;
 use AsterMD\Storefront\Observability\Instrumentation;
+use AsterMD\Storefront\Payment\PaymentDescriptor;
 use AsterMD\Storefront\Support\OperatorLog;
 use PHPUnit\Framework\TestCase;
 
@@ -205,7 +206,7 @@ final class InstrumentedCheckoutEventReporterTest extends TestCase
     public function testAnInnerFailurePassesThroughUnchangedAndIsStillRecorded(): void
     {
         $inner = new class extends RecordingCheckoutEventReporter {
-            public function orderPlaced(?string $sessionUuid, Totals $totals, string $paymentMethod, array $orderReferences): void
+            public function orderPlaced(?string $sessionUuid, Totals $totals, string $paymentMethod, array $orderReferences, ?PaymentDescriptor $payment = null): void
             {
                 throw new \RuntimeException('the EMR did not answer');
             }

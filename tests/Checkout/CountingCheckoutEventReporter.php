@@ -6,6 +6,7 @@ namespace AsterMD\Storefront\Tests\Checkout;
 
 use AsterMD\Storefront\Checkout\CheckoutEventReporter;
 use AsterMD\Storefront\Checkout\Totals;
+use AsterMD\Storefront\Payment\PaymentDescriptor;
 
 /**
  * A reporter that counts what reached the EMR, so a case can assert on the
@@ -31,7 +32,7 @@ final class CountingCheckoutEventReporter implements CheckoutEventReporter
     }
 
     /** @param list<string> $orderReferences */
-    public function orderPlaced(?string $sessionUuid, Totals $totals, string $paymentMethod, array $orderReferences): void
+    public function orderPlaced(?string $sessionUuid, Totals $totals, string $paymentMethod, array $orderReferences, ?PaymentDescriptor $payment = null): void
     {
         $this->placements[] = $orderReferences;
     }
@@ -42,12 +43,13 @@ final class CountingCheckoutEventReporter implements CheckoutEventReporter
         string $paymentMethod,
         ?string $reference,
         string $reason,
+        ?PaymentDescriptor $payment = null,
     ): void {
         $this->declines[] = ['reference' => $reference, 'reason' => $reason];
     }
 
     /** @param list<string> $orderReferences */
-    public function treatmentsSynced(?string $sessionUuid, array $orderReferences): void
+    public function treatmentsSynced(?string $sessionUuid, array $orderReferences, ?PaymentDescriptor $payment = null): void
     {
     }
 

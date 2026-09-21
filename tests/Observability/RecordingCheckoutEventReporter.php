@@ -6,6 +6,7 @@ namespace AsterMD\Storefront\Tests\Observability;
 
 use AsterMD\Storefront\Checkout\CheckoutEventReporter;
 use AsterMD\Storefront\Checkout\Totals;
+use AsterMD\Storefront\Payment\PaymentDescriptor;
 
 /**
  * A checkout event port that records what it was handed and does nothing else.
@@ -28,7 +29,7 @@ class RecordingCheckoutEventReporter implements CheckoutEventReporter
         $this->calls[] = ['checkoutVisited', $sessionUuid, $totals];
     }
 
-    public function orderPlaced(?string $sessionUuid, Totals $totals, string $paymentMethod, array $orderReferences): void
+    public function orderPlaced(?string $sessionUuid, Totals $totals, string $paymentMethod, array $orderReferences, ?PaymentDescriptor $payment = null): void
     {
         $this->calls[] = ['orderPlaced', $sessionUuid, $totals, $paymentMethod, $orderReferences];
     }
@@ -39,11 +40,12 @@ class RecordingCheckoutEventReporter implements CheckoutEventReporter
         string $paymentMethod,
         ?string $reference,
         string $reason,
+        ?PaymentDescriptor $payment = null,
     ): void {
         $this->calls[] = ['orderDeclined', $sessionUuid, $totals, $paymentMethod, $reference, $reason];
     }
 
-    public function treatmentsSynced(?string $sessionUuid, array $orderReferences): void
+    public function treatmentsSynced(?string $sessionUuid, array $orderReferences, ?PaymentDescriptor $payment = null): void
     {
         $this->calls[] = ['treatmentsSynced', $sessionUuid, $orderReferences];
     }

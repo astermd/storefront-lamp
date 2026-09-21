@@ -6,6 +6,8 @@ declare(strict_types=1);
 
 namespace AsterMD\Storefront\Checkout;
 
+use AsterMD\Storefront\Payment\PaymentDescriptor;
+
 /**
  * The reporter bound while nothing is reporting checkout events yet, and the
  * one every test binds — a test run must never reach the network.
@@ -22,7 +24,7 @@ final class NullCheckoutEventReporter implements CheckoutEventReporter
     }
 
     /** @param list<string> $orderReferences */
-    public function orderPlaced(?string $sessionUuid, Totals $totals, string $paymentMethod, array $orderReferences): void
+    public function orderPlaced(?string $sessionUuid, Totals $totals, string $paymentMethod, array $orderReferences, ?PaymentDescriptor $payment = null): void
     {
     }
 
@@ -32,11 +34,12 @@ final class NullCheckoutEventReporter implements CheckoutEventReporter
         string $paymentMethod,
         ?string $reference,
         string $reason,
+        ?PaymentDescriptor $payment = null,
     ): void {
     }
 
     /** @param list<string> $orderReferences */
-    public function treatmentsSynced(?string $sessionUuid, array $orderReferences): void
+    public function treatmentsSynced(?string $sessionUuid, array $orderReferences, ?PaymentDescriptor $payment = null): void
     {
     }
 

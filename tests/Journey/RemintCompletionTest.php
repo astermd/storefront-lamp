@@ -8,6 +8,7 @@ use AsterMD\Storefront\Bootstrap\AppFactory;
 use AsterMD\Storefront\Checkout\CheckoutEventReporter;
 use AsterMD\Storefront\Checkout\Totals;
 use AsterMD\Storefront\Emr\SessionGateway;
+use AsterMD\Storefront\Payment\PaymentDescriptor;
 use AsterMD\Storefront\Repository\OrderRepository;
 use AsterMD\Storefront\Repository\SessionRepository;
 use AsterMD\Storefront\Tests\Support\FakeSessionGateway;
@@ -239,7 +240,7 @@ final class CompletionRecorder implements CheckoutEventReporter
     {
     }
 
-    public function orderPlaced(?string $sessionUuid, Totals $totals, string $paymentMethod, array $orderReferences): void
+    public function orderPlaced(?string $sessionUuid, Totals $totals, string $paymentMethod, array $orderReferences, ?PaymentDescriptor $payment = null): void
     {
     }
 
@@ -249,10 +250,11 @@ final class CompletionRecorder implements CheckoutEventReporter
         string $paymentMethod,
         ?string $reference,
         string $reason,
+        ?PaymentDescriptor $payment = null,
     ): void {
     }
 
-    public function treatmentsSynced(?string $sessionUuid, array $orderReferences): void
+    public function treatmentsSynced(?string $sessionUuid, array $orderReferences, ?PaymentDescriptor $payment = null): void
     {
         $this->treatmentsSynced[] = ['session' => $sessionUuid, 'references' => $orderReferences];
     }

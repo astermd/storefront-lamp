@@ -9,6 +9,7 @@ namespace AsterMD\Storefront\Checkout;
 use AsterMD\Sdk\AsterMDClient;
 use AsterMD\Sdk\Enum\CheckoutEvent;
 use AsterMD\Storefront\Emr\ClientFactory;
+use AsterMD\Storefront\Payment\PaymentDescriptor;
 use AsterMD\Storefront\Repository\EventRepository;
 use AsterMD\Storefront\Repository\OrderRepository;
 use AsterMD\Storefront\Support\CardScrubber;
@@ -127,7 +128,7 @@ final class EmrCheckoutEventReporter implements CheckoutEventReporter
     }
 
     /** @param list<string> $orderReferences */
-    public function orderPlaced(?string $sessionUuid, Totals $totals, string $paymentMethod, array $orderReferences): void
+    public function orderPlaced(?string $sessionUuid, Totals $totals, string $paymentMethod, array $orderReferences, ?PaymentDescriptor $payment = null): void
     {
         $this->record($sessionUuid, 'checkout.order_placed', [
             'references' => implode(',', $orderReferences),
@@ -156,6 +157,7 @@ final class EmrCheckoutEventReporter implements CheckoutEventReporter
         string $paymentMethod,
         ?string $reference,
         string $reason,
+        ?PaymentDescriptor $payment = null,
     ): void {
         // The reason is the provider's own buyer-safe text and is recorded
         // because a decline the buyer retried past is otherwise unanswerable
@@ -247,7 +249,7 @@ final class EmrCheckoutEventReporter implements CheckoutEventReporter
      *
      * @param list<string> $orderReferences
      */
-    public function treatmentsSynced(?string $sessionUuid, array $orderReferences): void
+    public function treatmentsSynced(?string $sessionUuid, array $orderReferences, ?PaymentDescriptor $payment = null): void
     {
         if ($sessionUuid === null || !$this->reportToEmr || $orderReferences === []) {
             return;
