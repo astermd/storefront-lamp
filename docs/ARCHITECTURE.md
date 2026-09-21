@@ -904,10 +904,17 @@ campaign in a way a configured one could not: a cart whose lines carry two diffe
 campaigns has no correct single answer, and is refused before the wire rather than placed
 under one that does not offer half of it.
 
-It declares `supportsAuthorizeCapture` **true** — both halves are recorded: `/order/preauth/`
-holds the funds and `/order/import/`, with the lines and no card, settles them. It declares
+It declares `supportsAuthorizeCapture` **true**, and this provider has *two* mechanisms for
+it. `CheckoutChampAuthorizeMode` chooses: `qa` posts `/order/import/` with `forceQA: 1`,
+which reserves the **full order amount**, and settles with `/order/qa/`; `preauth` posts
+`/order/preauth/`, which validates the card and reserves **nothing**, and settles with
+`/order/import/` and the lines. The provider recommends the first and it is the default —
+an authorization that does not reserve the money is not doing the job it was asked to do.
+The setting is deployment-wide under `payment.checkout_champ.*`, never per product: it is a
+property of the merchant arrangement, and a cart cannot be half one and half the other.
+The capability is the same either way, so nothing above the boundary knows which is set. It declares
 `supportsPromotions` and `supportsOrderSearch` **false**, each for a stated reason rather
-than as a stub; see [`INTEGRATION-NOTES.md`](INTEGRATION-NOTES.md) items 19–25.
+than as a stub; see [`INTEGRATION-NOTES.md`](INTEGRATION-NOTES.md) items 19–26.
 
 Settling is why `PaymentAdapter::capture()` takes a {@see CaptureRequest} rather than a bare
 reference. A pre-authorized order at this provider carries **no line items** until the

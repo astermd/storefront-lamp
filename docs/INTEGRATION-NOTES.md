@@ -630,7 +630,54 @@ that is really outstanding.
 The reuse is not itself a problem: it is why a retry after a decline produces no
 orphan order at the provider.
 
-### 25. What is still not recorded
+### 25. Two authorization mechanisms, and only one reserves the money
+
+The provider offers two ways to authorize, and they are not two spellings of one
+thing.
+
+**The older one** validates the card and reserves nothing:
+
+```
+POST /order/preauth/   -> {"result":"SUCCESS","message":"Card is preauthorized"}
+POST /order/import/    -> settles, with the lines and no card
+```
+
+It charges a nominal amount and refunds it, so the order's value is never held.
+By the time the settling call runs the funds may be gone and it can decline.
+
+**The newer one** holds the full order amount, and the provider recommends it:
+
+```
+POST /order/import/  + forceQA: 1  -> orderStatus PENDING, reviewStatus PENDING
+POST /order/qa/      + action: APPROVE -> {"result":"SUCCESS","message":"Order QA Approved"}
+```
+
+A read afterwards shows `orderStatus: "COMPLETE"`, `reviewStatus: "APPROVED"`.
+The older mechanism's settled orders carry `reviewStatus: null`, which is how
+the two are told apart after the fact.
+
+Three things about the QA mechanism are easy to get wrong:
+
+- **It authorizes through the *billing* endpoint.** There is no separate
+  authorize call — `forceQA: 1` is what turns a sale into a hold, so the flag
+  rather than the endpoint carries the distinction. Sending it on a charge-now
+  order would put every sale into a review nobody is doing.
+- **The settle parameter is `action`, not `qaStatus`.** The client package's own
+  README documents `qaStatus`; the API answers it `"action is a required value"`.
+  The package's documentation and the live API disagree, and the API wins.
+- **The accepted verbs are `APPROVE` and `DECLINE`**, not `APPROVED`. Passing
+  the wrong one answers
+  `{"action": "Not a valid input. Must be in: 'APPROVE', 'DECLINE'"}`, which is
+  where that set comes from. `DECLINE` is deliberately not wired: it voids the
+  hold, and a call that throws a buyer's reserved funds away needs a caller that
+  has decided to, not a flag on a capture.
+
+Which mechanism runs is `payment.checkout_champ.authorize_mode`, deployment-wide
+and defaulting to `qa`. It is not per product, unlike
+`Payment\SettlementMode`: it is a property of how the deployment is set up with
+its provider, and a cart cannot be half one and half the other.
+
+### 26. What is still not recorded
 
 Two things, both declared `false` on the adapter rather than guessed at:
 

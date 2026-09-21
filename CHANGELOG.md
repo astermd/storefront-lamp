@@ -51,10 +51,33 @@ Two things it forced, both general rather than provider-specific:
   provider without one has never heard of. This adapter declares none, and the
   mechanism still earns its place through the other one.
 
-**Pre-auth works on this provider too, and settling it is `/order/import/`
-again** — with the lines and no card. There is no endpoint named "capture".
-`/order/preauth/` answers `"Card is preauthorized"`; the settling call takes the
-order to `orderStatus: "COMPLETE"`.
+**Pre-auth works on this provider too, and it has _two_ mechanisms for it**,
+chosen by `payment.checkout_champ.authorize_mode`
+(`PAYMENT_CC_AUTHORIZE_MODE`). They reserve different amounts of money, which is
+the whole reason both exist:
+
+- **`qa`** — the default, and what the provider recommends. `/order/import/`
+  with `forceQA: 1` puts the order in `PENDING` review with the **full order
+  amount held** on the card; `/order/qa/` with `action: "APPROVE"` releases it.
+  Because the money is genuinely reserved, a later capture is far less likely to
+  decline.
+- **`preauth`** — the older mechanism. `/order/preauth/` validates the card by
+  charging a nominal amount and refunding it, and **reserves nothing**; the
+  settling call is `/order/import/` with the lines and no card. By the time you
+  capture, the funds may be gone.
+
+Deployment-wide, never per product, and CheckoutChamp's alone — unlike
+`payment.settlement`, which a single product can escalate. It is a property of
+how the deployment is set up with its provider, and a cart cannot be half one and
+half the other. A settled order tells you which ran: the QA mechanism leaves
+`reviewStatus: "APPROVED"`, the older one leaves it null.
+
+Two traps recorded while wiring it. The settle parameter is **`action`, not
+`qaStatus`** — the client package's README documents the latter and the API
+answers it `"action is a required value"`. And the verbs are **`APPROVE` /
+`DECLINE`**, not `APPROVED`. `DECLINE` is deliberately not wired: it voids the
+hold, and a call that throws a buyer's reserved funds away needs a caller that
+has decided to, not a flag on a capture.
 
 That forced the one interface change. `PaymentAdapter::capture()` now takes a
 `CaptureRequest` rather than a bare reference, because **a pre-authorized order
@@ -84,7 +107,8 @@ declared PCI posture says so — so `config:validate` puts it in front of an
 operator before they go live rather than after.
 
 **Recorded against the live sandbox, end to end, through the shipped adapter:** a
-charge, a decline, and a pre-authorization settled by a later capture. The
+charge, a decline, and an authorization settled by a later capture under *both*
+mechanisms. The
 fixtures under `tests/fixtures/checkoutchamp-*.json` are those responses.
 
 Three of the recordings corrected an assumption this adapter was first written
@@ -106,9 +130,10 @@ on:
   `payment:capture` would read a row saying the order was already captured and
   refuse to settle an authorization that is really outstanding.
 
-`docs/INTEGRATION-NOTES.md` items 19–25 carry the full list.
+`docs/INTEGRATION-NOTES.md` items 19–26 carry the full list.
 
-**No new configuration.** The campaign this provider needs on every order is a
+New configuration: `payment.checkout_champ.authorize_mode` above, and nothing
+else. In particular the campaign this provider needs on every order is a
 variant's `provider.offer_id` in the catalog, and its `provider.product_id` is
 the campaign-scoped product id — which is how the EMR already maps them, so a
 second provider needed no new catalog field at all. The campaign therefore
@@ -121,7 +146,7 @@ does not offer half of it.
 the provider shows against the order in its dashboard so an operator reconciling
 one by hand sees where it came from rather than only a campaign number.
 
-- `core/Payment/CheckoutChamp/` (new, seven classes),
+- `core/Payment/CheckoutChamp/` (new, eight classes),
   `core/Payment/CaptureRequest.php` (new), `composer.json`
   (`astermd/checkoutchamp-client`)
 - `core/Payment/PaymentAdapter.php`, `NullPaymentAdapter.php`,
@@ -352,8 +377,8 @@ The cache was NOT fully cleared. Whatever it was holding is still being served.
 
 ### Tests
 
-`vendor/bin/phpunit` is green at **2202 tests / 7432 assertions**, up from
-2044 / 7102, and at the same figures on a clone with no synced catalog. Every field type that draws an element is covered by name, so a
+`vendor/bin/phpunit` is green at **2215 tests / 7524 assertions**, up from
+2044 / 7102, and at 2215 / 7465 on a clone with no synced catalog. Every field type that draws an element is covered by name, so a
 partial added later without the hook fails rather than silently ignoring it.
 The two `cache:clear` permission cases skip as root, where the refusal they
 arrange cannot happen.

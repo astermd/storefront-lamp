@@ -58,6 +58,7 @@ use AsterMD\Storefront\Payment\AdapterRegistry;
 use AsterMD\Storefront\Payment\PaymentAdapter;
 use AsterMD\Storefront\Payment\CheckoutChamp\CheckoutChampAdapter;
 use AsterMD\Storefront\Payment\CheckoutChamp\CheckoutChampApiFactory;
+use AsterMD\Storefront\Payment\CheckoutChamp\CheckoutChampAuthorizeMode;
 use AsterMD\Storefront\Payment\CheckoutChamp\CheckoutChampCredentials;
 use AsterMD\Storefront\Payment\Vrio\VrioAdapter;
 use AsterMD\Storefront\Payment\Vrio\VrioApiFactory;
@@ -138,6 +139,8 @@ $resolveAdapter = static function () use ($config, $rootDir): PaymentAdapter {
         new CheckoutChampApiFactory(),
         $log,
         rtrim((string) $config->get('app.url', ''), '/') . '/checkout/',
+        CheckoutChampAuthorizeMode::parse($config->get('payment.checkout_champ.authorize_mode'))
+            ?? CheckoutChampAuthorizeMode::Qa,
     ));
 
     return $registry->for((string) ($config->get('payment.adapter')

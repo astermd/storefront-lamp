@@ -9,6 +9,7 @@ namespace AsterMD\Storefront\Console;
 use AsterMD\Storefront\Catalog\CatalogProvider;
 use AsterMD\Storefront\Catalog\CatalogValidator;
 use AsterMD\Storefront\Checkout\SettlementPolicy;
+use AsterMD\Storefront\Payment\CheckoutChamp\CheckoutChampAuthorizeMode;
 use AsterMD\Sdk\Enum\IdentityCheck;
 use AsterMD\Storefront\Emr\ClientFactory;
 use AsterMD\Storefront\Payment\AdapterCapabilities;
@@ -819,6 +820,10 @@ final class ValidateCommand extends Command
      *    reasoning, one layer down, and the message names the product because
      *    the override file is keyed by EMR product id and a bare "settlement is
      *    invalid" would send an operator reading all of it.
+     *  - **An unrecognised authorize mechanism**, for the one provider that has
+     *    a choice of two. Reported only when that provider is the one
+     *    configured, since a deployment on the other adapter does not read the
+     *    key and should not be told about it.
      *  - **A provider that cannot authorize while something asks it to.** The
      *    check is on the *effective* configuration, not just the global key:
      *    one product marked `authorize` is enough to make a cart authorize, so
@@ -869,6 +874,20 @@ final class ValidateCommand extends Command
             }
 
             $wantsAuthorize = $wantsAuthorize || $mode->isAuthorize();
+        }
+
+        // Provider-scoped, and only a finding when the provider it belongs to is
+        // the one configured: a deployment on the other adapter has no business
+        // being told about a key it does not read.
+        $mode = $this->config?->get('payment.checkout_champ.authorize_mode', self::SETTLEMENT_ABSENT);
+        if ($capabilities->providerCategory === 'checkout_champ'
+            && $mode !== self::SETTLEMENT_ABSENT
+            && CheckoutChampAuthorizeMode::parse($mode) === null
+        ) {
+            $errors[] = sprintf(
+                'payment: payment.checkout_champ.authorize_mode is %s, which is neither "qa" nor "preauth" — the storefront falls back to "qa"',
+                self::quoted($mode),
+            );
         }
 
         if ($wantsAuthorize && !$capabilities->supportsAuthorizeCapture) {

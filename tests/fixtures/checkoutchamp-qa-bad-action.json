@@ -1,0 +1,6 @@
+{
+    "result": "ERROR",
+    "message": {
+        "action": "Not a valid input. Must be in: 'APPROVE', 'DECLINE'"
+    }
+}

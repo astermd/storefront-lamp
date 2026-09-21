@@ -68,11 +68,8 @@ use AsterMD\Storefront\Payment\PaymentCredential;
  */
 final class CheckoutChampPayload
 {
-    /** Create the order and bill it in one call against an existing session. */
-    public const string ACTION_IMPORT = 'import';
-
-    /** Reserve the funds against an existing session; a later capture settles it. */
-    public const string ACTION_PREAUTH = 'preauth';
+    /** The `/order/qa/` verb that settles a held order. The provider's other value is `DECLINE`. */
+    public const string QA_APPROVE = 'APPROVE';
 
     /**
      * `POST /leads/import/` — the customer and address, which must exist before
@@ -180,11 +177,44 @@ final class CheckoutChampPayload
         OrderEnvelope $order,
         PaymentCredential $credential,
         string $reference,
+        bool $holdForReview = false,
     ): array {
-        return [
+        $body = [
             'campaignId' => (string) self::campaignFor($order),
             'orderId' => $reference,
         ] + self::shipping($order) + self::lines($order) + self::paymentFor($credential);
+
+        // `forceQA` is how the QA mechanism authorizes: the same billing call,
+        // which instead of charging puts the order in PENDING review with the
+        // **full order amount held** on the card. `/order/qa/` releases it.
+        // Sent only when that mechanism is configured, because on a charge-now
+        // order it would hold every sale for a review nobody is doing.
+        if ($holdForReview) {
+            $body['forceQA'] = 1;
+        }
+
+        return $body;
+    }
+
+    /**
+     * `POST /order/qa/` — settle an order the QA mechanism is holding.
+     *
+     * The order id and a verb, and nothing else: the amount is already reserved
+     * against the order, so unlike the older mechanism's settle call there are
+     * no lines to resend.
+     *
+     * **The parameter is `action`, not `qaStatus`.** The client package's own
+     * README documents the latter, and the provider answers it
+     * `"action is a required value"` -- so the package's documentation and the
+     * live API disagree, and the API wins. Passing an unrecognised verb answers
+     * `{"action": "Not a valid input. Must be in: 'APPROVE', 'DECLINE'"}`, which
+     * is where the accepted set comes from.
+     *
+     * @return array<string, mixed>
+     */
+    public static function forQaApproval(string $reference): array
+    {
+        return ['orderId' => $reference, 'action' => self::QA_APPROVE];
     }
 
     /**

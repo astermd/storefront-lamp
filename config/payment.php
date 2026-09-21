@@ -45,6 +45,33 @@ return [
     // that combination as an error so it is found before a buyer does.
     'settlement' => $env['PAYMENT_SETTLEMENT'] ?? 'capture',
 
+    // Settings that belong to one payment provider, because only that provider
+    // has the choice to make. Everything above this line applies whichever
+    // adapter is configured.
+    'checkout_champ' => [
+        // Which of CheckoutChamp's two authorization mechanisms to use. Only
+        // consulted when an order settles as 'authorize'; a charge-now order
+        // takes the same path either way.
+        //
+        //   'qa'      — /order/import/ with forceQA:1 puts the order in PENDING
+        //               review with the FULL ORDER AMOUNT held on the card, and
+        //               /order/qa/ releases it. The provider recommends this,
+        //               and it is the default: a later capture is far less
+        //               likely to decline because the money is genuinely
+        //               reserved.
+        //   'preauth' — /order/preauth/ validates the card by charging a
+        //               nominal amount and refunding it, then /order/import/
+        //               settles. It does NOT reserve the order's value, so by
+        //               the time you capture, the funds may be gone and the
+        //               settle call can decline. The older mechanism, still
+        //               supported.
+        //
+        // Deployment-wide, never per product: it is a property of how this
+        // deployment is set up with its provider, and a cart cannot be half one
+        // and half the other.
+        'authorize_mode' => $env['PAYMENT_CC_AUTHORIZE_MODE'] ?? 'qa',
+    ],
+
     'rate_limits' => [
         // Per client address, per fixed window. Deliberately generous: this
         // stops a stuck retry loop and a double-click storm, not a determined

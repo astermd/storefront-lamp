@@ -9,6 +9,7 @@ use AsterMD\Storefront\Payment\CaptureOutcome;
 use AsterMD\Storefront\Payment\CaptureRequest;
 use AsterMD\Storefront\Payment\CheckoutChamp\CheckoutChampAdapter;
 use AsterMD\Storefront\Payment\CheckoutChamp\CheckoutChampApiFactory;
+use AsterMD\Storefront\Payment\CheckoutChamp\CheckoutChampAuthorizeMode;
 use AsterMD\Storefront\Payment\CheckoutChamp\CheckoutChampCredentials;
 use AsterMD\Storefront\Payment\OrderEnvelope;
 use AsterMD\Storefront\Payment\OrderLine;
@@ -32,12 +33,14 @@ final class CheckoutChampAdapterTest extends TestCase
         FakeCheckoutChampTransport $transport,
         ?CapturedLog $log = null,
         string $salesUrl = 'https://store.example.test/checkout/',
+        CheckoutChampAuthorizeMode $mode = CheckoutChampAuthorizeMode::Qa,
     ): CheckoutChampAdapter {
         return new CheckoutChampAdapter(
             $this->credentials(),
             new CheckoutChampApiFactory($transport),
             ($log ?? new CapturedLog())->log,
             $salesUrl,
+            $mode,
         );
     }
 
@@ -178,8 +181,12 @@ final class CheckoutChampAdapterTest extends TestCase
         self::assertArrayNotHasKey('product2_id', $params);
     }
 
-    public function testAnAuthorizeOrderIsSentToThePreauthEndpointInstead(): void
+    public function testTheQaMechanismAuthorizesThroughTheBillingEndpointWithForceQa(): void
     {
+        // The default, and the one the provider recommends. It authorizes
+        // through /order/import/ rather than /order/preauth/, so the flag
+        // rather than the endpoint carries the distinction — and what it buys
+        // is the full order amount actually reserved on the card.
         $transport = $this->transportThatPlaces();
 
         $outcome = $this->adapter($transport)->place(
@@ -187,8 +194,75 @@ final class CheckoutChampAdapterTest extends TestCase
             $this->card(),
         );
 
-        self::assertStringContainsString('/order/preauth/', $transport->path(1));
+        self::assertStringContainsString('/order/import/', $transport->path(1));
+        self::assertSame('1', $transport->params(1)['forceQA'] ?? null);
         self::assertTrue($outcome->isAuthorizedOnly());
+    }
+
+    public function testThePreauthMechanismUsesTheOlderEndpointAndSendsNoForceQaFlag(): void
+    {
+        $transport = $this->transportThatPlaces();
+
+        $outcome = $this->adapter($transport, mode: CheckoutChampAuthorizeMode::Preauth)->place(
+            $this->envelope(settlement: SettlementMode::Authorize),
+            $this->card(),
+        );
+
+        self::assertStringContainsString('/order/preauth/', $transport->path(1));
+        self::assertArrayNotHasKey('forceQA', $transport->params(1));
+        self::assertTrue($outcome->isAuthorizedOnly());
+    }
+
+    public function testAChargeNowOrderCarriesNoForceQaFlagUnderEitherMechanism(): void
+    {
+        // The mechanism is only consulted for an authorization. Sending the flag
+        // on a plain sale would hold every order for a review nobody is doing.
+        foreach ([CheckoutChampAuthorizeMode::Qa, CheckoutChampAuthorizeMode::Preauth] as $mode) {
+            $transport = $this->transportThatPlaces();
+
+            $this->adapter($transport, mode: $mode)->place($this->envelope(), $this->card());
+
+            self::assertStringContainsString('/order/import/', $transport->path(1));
+            self::assertArrayNotHasKey('forceQA', $transport->params(1), $mode->value);
+        }
+    }
+
+    public function testTheQaMechanismSettlesWithAnApproveVerbAndNoLines(): void
+    {
+        // The amount is already reserved against the order, so there is nothing
+        // to restate. Recorded: `action: "APPROVE"`, answered "Order QA
+        // Approved".
+        $transport = new FakeCheckoutChampTransport();
+        $transport->queueFixture('checkoutchamp-qa-approved.json');
+
+        $outcome = $this->adapter($transport)->capture(new CaptureRequest('8DF962A27F'));
+
+        self::assertTrue($outcome->isCaptured());
+        self::assertStringContainsString('/order/qa/', $transport->path(0));
+        self::assertSame('8DF962A27F', $transport->params(0)['orderId']);
+        self::assertSame('APPROVE', $transport->params(0)['action']);
+        self::assertArrayNotHasKey('product1_id', $transport->params(0));
+    }
+
+    public function testTheQaMechanismNeedsNoLinesToSettle(): void
+    {
+        // The asymmetry worth pinning: the older mechanism refuses an empty
+        // CaptureRequest before the wire, and this one does not need one at all.
+        $transport = new FakeCheckoutChampTransport();
+        $transport->queueFixture('checkoutchamp-qa-approved.json');
+
+        self::assertTrue($this->adapter($transport)->capture(new CaptureRequest('8DF962A27F'))->isCaptured());
+    }
+
+    public function testARejectedQaVerbIsNotReportedAsSettled(): void
+    {
+        $transport = new FakeCheckoutChampTransport();
+        $transport->queueFixture('checkoutchamp-qa-bad-action.json');
+
+        $outcome = $this->adapter($transport)->capture(new CaptureRequest('8DF962A27F'));
+
+        self::assertSame(CaptureOutcome::FAILED, $outcome->state);
+        self::assertStringContainsString('APPROVE', (string) $outcome->reason);
     }
 
     public function testAFailedLeadCallNeverPresentsTheCard(): void
@@ -353,9 +427,10 @@ final class CheckoutChampAdapterTest extends TestCase
         $transport = new FakeCheckoutChampTransport();
         $transport->queueFixture('checkoutchamp-capture-approved.json');
 
-        $outcome = $this->adapter($transport)->capture(new CaptureRequest('FF2BE54DD5', [
-            new OrderLine('nad-500', 'NAD+ (500mg)', '459', '15271', 12000, 1),
-        ]));
+        $outcome = $this->adapter($transport, mode: CheckoutChampAuthorizeMode::Preauth)
+            ->capture(new CaptureRequest('FF2BE54DD5', [
+                new OrderLine('nad-500', 'NAD+ (500mg)', '459', '15271', 12000, 1),
+            ]));
 
         self::assertTrue($outcome->isCaptured());
 
@@ -374,7 +449,8 @@ final class CheckoutChampAdapterTest extends TestCase
         $transport = new FakeCheckoutChampTransport();
         $log = new CapturedLog();
 
-        $outcome = $this->adapter($transport, $log)->capture(new CaptureRequest('FF2BE54DD5'));
+        $outcome = $this->adapter($transport, $log, mode: CheckoutChampAuthorizeMode::Preauth)
+            ->capture(new CaptureRequest('FF2BE54DD5'));
 
         self::assertSame(CaptureOutcome::FAILED, $outcome->state);
         self::assertSame('lines_unusable', $outcome->reason);
@@ -390,9 +466,10 @@ final class CheckoutChampAdapterTest extends TestCase
         $transport = new FakeCheckoutChampTransport();
         $transport->queueFixture('checkoutchamp-capture-without-lines.json');
 
-        $outcome = $this->adapter($transport)->capture(new CaptureRequest('FF2BE54DD5', [
-            new OrderLine('nad-500', 'NAD+ (500mg)', '459', '15271', 12000, 1),
-        ]));
+        $outcome = $this->adapter($transport, mode: CheckoutChampAuthorizeMode::Preauth)
+            ->capture(new CaptureRequest('FF2BE54DD5', [
+                new OrderLine('nad-500', 'NAD+ (500mg)', '459', '15271', 12000, 1),
+            ]));
 
         self::assertSame(CaptureOutcome::FAILED, $outcome->state);
         self::assertSame('No products exist in the order', $outcome->reason);
@@ -403,9 +480,10 @@ final class CheckoutChampAdapterTest extends TestCase
         $transport = new FakeCheckoutChampTransport();
         $transport->queue(0, '', 'Could not resolve host');
 
-        $outcome = $this->adapter($transport)->capture(new CaptureRequest('FF2BE54DD5', [
-            new OrderLine('nad-500', 'NAD+ (500mg)', '459', '15271', 12000, 1),
-        ]));
+        $outcome = $this->adapter($transport, mode: CheckoutChampAuthorizeMode::Preauth)
+            ->capture(new CaptureRequest('FF2BE54DD5', [
+                new OrderLine('nad-500', 'NAD+ (500mg)', '459', '15271', 12000, 1),
+            ]));
 
         self::assertSame(CaptureOutcome::FAILED, $outcome->state);
         self::assertSame('transport_error', $outcome->reason);

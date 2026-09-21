@@ -86,6 +86,7 @@ use AsterMD\CheckoutChampClient\Http\CurlClient as CheckoutChampCurlClient;
 use AsterMD\CheckoutChampClient\Http\HttpClientInterface as CheckoutChampHttpClient;
 use AsterMD\Storefront\Payment\CheckoutChamp\CheckoutChampAdapter;
 use AsterMD\Storefront\Payment\CheckoutChamp\CheckoutChampApiFactory;
+use AsterMD\Storefront\Payment\CheckoutChamp\CheckoutChampAuthorizeMode;
 use AsterMD\Storefront\Payment\CheckoutChamp\CheckoutChampCredentials;
 use AsterMD\Storefront\Payment\CheckoutChamp\CheckoutChampRefusingTransport;
 use AsterMD\Storefront\Payment\CheckoutChamp\CheckoutChampWireLog;
@@ -738,6 +739,12 @@ final class AppFactory
                 // dashboard: an operator reconciling one by hand sees which page
                 // it came from rather than only a campaign number.
                 rtrim((string) $config->get('app.url', ''), '/') . '/checkout/',
+                // An unrecognised spelling falls back to the recommended
+                // mechanism rather than the one that reserves nothing.
+                // `config:validate` reports the typo; the runtime keeps holding
+                // the money it was told to hold.
+                CheckoutChampAuthorizeMode::parse($config->get('payment.checkout_champ.authorize_mode'))
+                    ?? CheckoutChampAuthorizeMode::Qa,
             ));
 
             return $registry;

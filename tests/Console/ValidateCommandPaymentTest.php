@@ -9,6 +9,10 @@ use AsterMD\Storefront\Console\ValidateCommand;
 use AsterMD\Storefront\Emr\ClientFactory;
 use AsterMD\Storefront\Payment\AdapterCapabilities;
 use AsterMD\Storefront\Payment\NullPaymentAdapter;
+use AsterMD\Storefront\Payment\CheckoutChamp\CheckoutChampAdapter;
+use AsterMD\Storefront\Payment\CheckoutChamp\CheckoutChampApiFactory;
+use AsterMD\Storefront\Payment\CheckoutChamp\CheckoutChampCredentials;
+use AsterMD\Storefront\Tests\Support\FakeCheckoutChampTransport;
 use AsterMD\Storefront\Payment\PaymentAdapter;
 use AsterMD\Storefront\Payment\Vrio\VrioAdapter;
 use AsterMD\Storefront\Payment\Vrio\VrioApiFactory;
@@ -184,6 +188,57 @@ final class ValidateCommandPaymentTest extends TestCase
 
         self::assertSame(0, $tester->execute([]));
         self::assertStringNotContainsString('authorize-and-capture', $tester->getDisplay());
+    }
+
+    public function testAnUnrecognisedCheckoutChampAuthorizeModeIsAnError(): void
+    {
+        // The runtime falls back to the mechanism that reserves the money, so a
+        // typo cannot leave a deployment holding nothing — which also means
+        // nothing on the page would show for it. This pass is where it is
+        // caught.
+        $this->writePayment(checkoutChampMode: 'pre-auth');
+
+        $tester = new CommandTester($this->command(
+            fn (): PaymentAdapter => new CheckoutChampAdapter(
+                new CheckoutChampCredentials('api.checkoutchamp.com', '', 'store_api', 'secret'),
+                new CheckoutChampApiFactory(new FakeCheckoutChampTransport()),
+                (new CapturedLog())->log,
+            ),
+        ));
+
+        self::assertSame(2, $tester->execute([]));
+        self::assertStringContainsString('authorize_mode is "pre-auth"', $tester->getDisplay());
+    }
+
+    public function testAWellSpelledCheckoutChampAuthorizeModePasses(): void
+    {
+        $this->writePayment(checkoutChampMode: 'preauth');
+
+        $tester = new CommandTester($this->command(
+            fn (): PaymentAdapter => new CheckoutChampAdapter(
+                new CheckoutChampCredentials('api.checkoutchamp.com', '', 'store_api', 'secret'),
+                new CheckoutChampApiFactory(new FakeCheckoutChampTransport()),
+                (new CapturedLog())->log,
+            ),
+        ));
+
+        // Not asserted on the exit code: this fixture's channel carries the
+        // other provider's credential keys, which that adapter reports missing.
+        // What this case is about is the one line it must NOT print.
+        $tester->execute([]);
+        self::assertStringNotContainsString('authorize_mode', $tester->getDisplay());
+    }
+
+    public function testADeploymentOnTheOtherProviderIsNotToldAboutAKeyItDoesNotRead(): void
+    {
+        // The key is provider-scoped, and a Vrio deployment does not read it.
+        // Reporting it would be noise an operator cannot act on.
+        $this->writePayment(checkoutChampMode: 'nonsense');
+
+        $tester = new CommandTester($this->command());
+
+        self::assertSame(0, $tester->execute([]));
+        self::assertStringNotContainsString('authorize_mode', $tester->getDisplay());
     }
 
     public function testAnUnresolvedAdapterIsAnError(): void
@@ -568,13 +623,20 @@ final class ValidateCommandPaymentTest extends TestCase
         );
     }
 
-    private function writePayment(?int $shippingProfileId = 1, mixed $settlement = self::UNSET): void
-    {
+    private function writePayment(
+        ?int $shippingProfileId = 1,
+        mixed $settlement = self::UNSET,
+        mixed $checkoutChampMode = self::UNSET,
+    ): void {
         $payment = [
             'adapter' => null,
             'shipping_profile_id' => $shippingProfileId,
             'currency' => 'USD',
         ];
+
+        if ($checkoutChampMode !== self::UNSET) {
+            $payment['checkout_champ'] = ['authorize_mode' => $checkoutChampMode];
+        }
 
         // Written only when a case asks for it, so the default cases exercise
         // the shape a deployment whose payment.php predates settlement has.

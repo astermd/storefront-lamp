@@ -71,6 +71,7 @@ final class CheckoutChampAdapter implements PaymentAdapter
         private readonly CheckoutChampApiFactory $apiFactory,
         private readonly OperatorLog $log,
         private readonly string $salesUrl = '',
+        private readonly CheckoutChampAuthorizeMode $authorizeMode = CheckoutChampAuthorizeMode::Qa,
     ) {
     }
 
@@ -90,12 +91,12 @@ final class CheckoutChampAdapter implements PaymentAdapter
      * *no sweep*, which the sweep is explicitly built to distinguish from a
      * clean bill of health.
      *
-     * **`supportsAuthorizeCapture` is true**, and both halves are recorded:
-     * `POST /order/preauth/` holds the funds and answers
-     * `"Card is preauthorized"`, and `POST /order/import/` with the lines and no
-     * card settles it to `orderStatus: "COMPLETE"`. The settle call without its
-     * lines is refused and leaves the order PARTIAL with the funds still held,
-     * which is why {@see CaptureRequest} carries them.
+     * **`supportsAuthorizeCapture` is true**, and this provider has *two*
+     * mechanisms for it, both recorded. Which one runs is
+     * {@see CheckoutChampAuthorizeMode}, a deployment-wide setting, and the
+     * difference is how much money is actually reserved -- see that enum. The
+     * capability is the same either way, so nothing above the boundary has to
+     * know which is configured.
      */
     public function capabilities(): AdapterCapabilities
     {
@@ -162,12 +163,24 @@ final class CheckoutChampAdapter implements PaymentAdapter
             return PlacementOutcome::declined(null, CheckoutChampOutcome::GENERIC_DECLINE, 'lead_not_created');
         }
 
-        $body = CheckoutChampPayload::forOrder($order, $credential, $reference);
+        // Which call authorizes depends on the mechanism, and only one of the
+        // three combinations is a plain charge:
+        //
+        //   capture            -> /order/import/                (bills it)
+        //   authorize, preauth -> /order/preauth/               (validates the card)
+        //   authorize, QA      -> /order/import/ + forceQA: 1    (holds the amount)
+        //
+        // The QA mechanism authorizes through the *billing* endpoint, which is
+        // why the flag rather than the endpoint carries the distinction there.
         $authorize = $order->settlement->isAuthorize();
+        $holdForReview = $authorize && $this->authorizeMode === CheckoutChampAuthorizeMode::Qa;
+        $legacyPreauth = $authorize && !$holdForReview;
+
+        $body = CheckoutChampPayload::forOrder($order, $credential, $reference, $holdForReview);
 
         try {
             $api = $this->apiFactory->create($this->credentials);
-            $envelope = ($authorize ? $api->preauth($body) : $api->importOrder($body))->getInArray()['response'];
+            $envelope = ($legacyPreauth ? $api->preauth($body) : $api->importOrder($body))->getInArray()['response'];
         } catch (\Throwable $e) {
             // The buyer's message is ours, never the exception's: an exception
             // string can carry anything, and for a client that quotes the URL
@@ -268,8 +281,13 @@ final class CheckoutChampAdapter implements PaymentAdapter
     }
 
     /**
-     * Settle an order this adapter pre-authorized: `POST /order/import/` again,
-     * with the lines and without a card.
+     * Settle an order this adapter authorized.
+     *
+     * **Two mechanisms, two settle calls.** Under the QA mechanism the amount is
+     * already reserved against the order, so settling is `/order/qa/` with a
+     * verb and nothing else ({@see self::approveQa()}). Everything below is the
+     * older mechanism, where the order holds nothing and the lines have to be
+     * resent.
      *
      * **The lines are the whole difficulty, and they cannot be fetched.** A
      * pre-authorized order carries an *empty* `items` array until this call
@@ -294,6 +312,10 @@ final class CheckoutChampAdapter implements PaymentAdapter
             $this->log->error('payment.capture_without_reference', []);
 
             return CaptureOutcome::failed(null, 'missing_reference');
+        }
+
+        if ($this->authorizeMode === CheckoutChampAuthorizeMode::Qa) {
+            return $this->approveQa($reference);
         }
 
         $lines = $request->chargeableLines();
@@ -345,6 +367,59 @@ final class CheckoutChampAdapter implements PaymentAdapter
         }
 
         $this->log->info('payment.captured', ['reference' => $reference]);
+
+        return CaptureOutcome::captured($reference);
+    }
+
+    /**
+     * Settle an order the QA mechanism is holding: `POST /order/qa/`.
+     *
+     * No lines, because there is nothing to restate -- `forceQA` already put the
+     * order in PENDING review with the full amount reserved against it, and this
+     * call releases that reservation. Recorded: `action: "APPROVE"` answers
+     * `SUCCESS` with the string `"Order QA Approved"`, and a read afterwards
+     * shows `orderStatus: "COMPLETE"`, `reviewStatus: "APPROVED"`.
+     *
+     * The provider's other verb is `DECLINE`, which would void the hold. It is
+     * deliberately not offered: this storefront has no decline path for an
+     * authorized order, and a method that could throw a buyer's reserved funds
+     * away needs a caller that has decided to, not a flag on a capture.
+     */
+    private function approveQa(string $reference): CaptureOutcome
+    {
+        try {
+            $envelope = $this->apiFactory->create($this->credentials)
+                ->qa(CheckoutChampPayload::forQaApproval($reference))
+                ->getInArray()['response'];
+        } catch (\Throwable $e) {
+            $this->log->error('payment.capture_threw', [
+                'reference' => $reference,
+                'exception' => $e::class,
+                'status' => $e->getCode(),
+            ]);
+
+            return CaptureOutcome::failed($reference, 'exception');
+        }
+
+        if (!is_array($envelope) || isset($envelope['curlError'])) {
+            $this->log->error('payment.capture_unreachable', ['reference' => $reference]);
+
+            return CaptureOutcome::failed($reference, 'transport_error');
+        }
+
+        if (!CheckoutChampOutcome::capturedFrom($envelope)) {
+            $reason = self::captureFailureReason($envelope);
+
+            // Error level for the reason the other settle path uses it: money is
+            // reserved on somebody's card and the hold expires on the acquirer's
+            // clock, so an unsettled capture has a deadline nothing here can
+            // extend.
+            $this->log->error('payment.capture_refused', ['reference' => $reference, 'reason' => $reason]);
+
+            return CaptureOutcome::failed($reference, $reason);
+        }
+
+        $this->log->info('payment.captured', ['reference' => $reference, 'mechanism' => 'qa']);
 
         return CaptureOutcome::captured($reference);
     }
@@ -419,11 +494,13 @@ final class CheckoutChampAdapter implements PaymentAdapter
         return [
             'ok' => true,
             'detail' => sprintf(
-                'checkout_champ %s — login %s, %d campaign(s) visible, order campaign taken %s',
+                'checkout_champ %s — login %s, %d campaign(s) visible, order campaign taken %s, authorize mechanism "%s" (%s)',
                 $this->credentials->host,
                 $this->credentials->loginId,
                 count($campaigns),
                 'from the catalog',
+                $this->authorizeMode->value,
+                $this->authorizeMode->holdsTheOrderAmount() ? 'holds the order amount' : 'does not hold the order amount',
             ),
         ];
     }
