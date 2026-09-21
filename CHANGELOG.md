@@ -130,7 +130,7 @@ on:
   `payment:capture` would read a row saying the order was already captured and
   refuse to settle an authorization that is really outstanding.
 
-`docs/INTEGRATION-NOTES.md` items 19–26 carry the full list.
+`docs/INTEGRATION-NOTES.md` items 20–27 carry the full list.
 
 New configuration: `payment.checkout_champ.authorize_mode` above, and nothing
 else. In particular the campaign this provider needs on every order is a

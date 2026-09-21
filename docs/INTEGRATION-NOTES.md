@@ -464,6 +464,26 @@ channel fetch**, when reproducing what the application does. The two are not
 always the same, and `theme:sync`'s merge semantics are what preserve a key the
 payload has stopped sending.
 
+### 19. `card_type_id` comes back on a placement, and its provenance is unsettled
+
+`data.order.customer_card.card_type_id` is present on an approved placement. The
+storefront also **sends** `card_type_id` on the way in
+(`core/Payment/Vrio/VrioPayload.php`), and whether the response derives the
+value or echoes the one it was given is not established.
+
+That matters because the storefront sends `2` for any prefix its own table
+cannot place — the documented Visa fallback — so a `2` in the response cannot be
+read as proof the card is a Visa. `core/Payment/Vrio/VrioOutcome.php` carries
+the value onto the outcome and `core/Payment/CardDescriptor.php` consults it only
+where the number's prefix named no scheme, which is the weakest reading the
+value supports.
+
+Settling it takes one order placed with a prefix outside
+`core/Payment/CardBrand.php`'s table — a UnionPay number, or a sandbox pan — and
+a read of what comes back. If the response names the real scheme, this is a
+genuine second source; if it answers `2`, it is an echo and the fallback should
+be dropped for this provider.
+
 ## The second payment provider
 
 Everything above under "The payment provider" is the `vrio` adapter's. This
@@ -471,7 +491,7 @@ section is the `checkout_champ` one, and the two disagree about almost
 everything except the envelope-shaped fact that both disagree with their own
 documentation.
 
-### 19. Placement is two calls, and the second one alone says "Customer not found"
+### 20. Placement is two calls, and the second one alone says "Customer not found"
 
 `POST /order/import/` bills a session; `POST /leads/import/` creates the
 customer and answers the `sessionId` it bills against. Calling `/order/import/`
@@ -482,7 +502,7 @@ The cost is a second round trip inside a request the buyer is waiting on, and a
 lead created for an order that then fails — a CRM row rather than a charge, and
 the provider's own model rather than a choice this storefront made.
 
-### 20. The envelope is two keys, and `message` changes type between them
+### 21. The envelope is two keys, and `message` changes type between them
 
 Every combination of `result` and `message` type occurs, so **`result` is the
 only discriminator** — the obvious reading, string means failure, is wrong in
@@ -516,7 +536,7 @@ cannot survive a body that never decoded, since a proxy's HTML error page has no
 `result` at all. The check is for the literal `SUCCESS` rather than for the
 absence of `ERROR`.
 
-### 21. Every parameter travels in the query string, including the card and the password
+### 22. Every parameter travels in the query string, including the card and the password
 
 This provider authenticates with `loginId` and `password` as **query
 parameters**, and takes the card number, expiry and security code the same way.
@@ -534,7 +554,7 @@ treats the file as a secret to destroy rather than a log to ship. And the
 adapter's declared PCI posture says all of this, so `config:validate` prints it
 to an operator before they go live rather than after.
 
-### 22. The campaign is a line's `offer_id`, and the product id is the campaign-scoped one
+### 23. The campaign is a line's `offer_id`, and the product id is the campaign-scoped one
 
 The EMR channel's `payment_processor.config` for this provider carries no
 campaign, and it does not need to: **the campaign is per line**, carried by the
@@ -569,7 +589,7 @@ fault described as a cart problem, which is the worst possible place to debug on
 459 came to look absent from an account that has it — pass `campaignId` to ask
 about one.
 
-### 23. The full flow, and the two calls that are not what their names suggest
+### 24. The full flow, and the two calls that are not what their names suggest
 
 Placement, recorded end to end:
 
@@ -609,7 +629,7 @@ and the settling call carries the **lines and no card**. Both matter:
 Shipping is required on `order/import` as well as on the lead call; omitting it
 answers the field map in item 20.
 
-### 24. A PARTIAL order is reused, so a reference is not unique across attempts
+### 25. A PARTIAL order is reused, so a reference is not unique across attempts
 
 Recorded: a decline leaves its PARTIAL order in place, and the **next lead call
 reuses it** rather than creating a second one. Two attempts then share one
@@ -630,7 +650,7 @@ that is really outstanding.
 The reuse is not itself a problem: it is why a retry after a decline produces no
 orphan order at the provider.
 
-### 25. Two authorization mechanisms, and only one reserves the money
+### 26. Two authorization mechanisms, and only one reserves the money
 
 The provider offers two ways to authorize, and they are not two spellings of one
 thing.
@@ -677,7 +697,7 @@ and defaulting to `qa`. It is not per product, unlike
 `Payment\SettlementMode`: it is a property of how the deployment is set up with
 its provider, and a cart cannot be half one and half the other.
 
-### 26. What is still not recorded
+### 27. What is still not recorded
 
 Two things, both declared `false` on the adapter rather than guessed at:
 

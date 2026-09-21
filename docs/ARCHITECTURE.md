@@ -914,7 +914,7 @@ The setting is deployment-wide under `payment.checkout_champ.*`, never per produ
 property of the merchant arrangement, and a cart cannot be half one and half the other.
 The capability is the same either way, so nothing above the boundary knows which is set. It declares
 `supportsPromotions` and `supportsOrderSearch` **false**, each for a stated reason rather
-than as a stub; see [`INTEGRATION-NOTES.md`](INTEGRATION-NOTES.md) items 19–26.
+than as a stub; see [`INTEGRATION-NOTES.md`](INTEGRATION-NOTES.md) items 20–27.
 
 Settling is why `PaymentAdapter::capture()` takes a {@see CaptureRequest} rather than a bare
 reference. A pre-authorized order at this provider carries **no line items** until the
