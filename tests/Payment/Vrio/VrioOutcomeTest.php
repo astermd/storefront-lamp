@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace AsterMD\Storefront\Tests\Payment\Vrio;
 
 use AsterMD\Storefront\Checkout\CheckoutAttempt;
+use AsterMD\Storefront\Payment\CardBrand;
 use AsterMD\Storefront\Payment\PlacementOutcome;
 use AsterMD\Storefront\Payment\SettlementMode;
 use AsterMD\Storefront\Payment\Vrio\VrioOutcome;
@@ -366,5 +367,30 @@ final class VrioOutcomeTest extends TestCase
         $decoded = json_decode($raw, true, 512, JSON_THROW_ON_ERROR);
 
         return $decoded;
+    }
+
+    public function testTheProvidersStoredCardCodeIsCarriedOnThePlacement(): void
+    {
+        // `data.order.customer_card.card_type_id`. See `CardScheme::brandFor()`
+        // for why a 2 is not by itself proof the card is a Visa.
+        self::assertSame(
+            CardBrand::Visa,
+            VrioOutcome::from($this->fixture('vrio-order-approved.json'))->providerCardBrand,
+        );
+    }
+
+    public function testAResponseWithNoStoredCardCarriesNoBrand(): void
+    {
+        $envelope = $this->fixture('vrio-order-approved.json');
+        unset($envelope['data']['order']['customer_card']);
+
+        self::assertNull(VrioOutcome::from($envelope)->providerCardBrand);
+    }
+
+    public function testThisProviderHasNoOpinionAboutAQaHold(): void
+    {
+        // Null rather than false: it has no such mechanism, so "did not use it"
+        // would describe a choice it never had.
+        self::assertNull(VrioOutcome::from($this->fixture('vrio-order-approved.json'))->preAuthQa);
     }
 }

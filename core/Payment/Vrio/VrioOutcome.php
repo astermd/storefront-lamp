@@ -6,6 +6,7 @@ declare(strict_types=1);
 
 namespace AsterMD\Storefront\Payment\Vrio;
 
+use AsterMD\Storefront\Payment\CardBrand;
 use AsterMD\Storefront\Payment\ChargeDiscrepancy;
 use AsterMD\Storefront\Payment\PaymentCredential;
 use AsterMD\Storefront\Payment\PlacementOutcome;
@@ -176,6 +177,10 @@ final class VrioOutcome
             self::reconcile($transaction, $expectedTotalCents),
             self::reusableCredential($envelope),
             $settlement,
+            // This provider has no QA mechanism, so it has no opinion about
+            // one -- which is not the same as having used something else.
+            null,
+            self::providerCardBrand($envelope),
         );
     }
 
@@ -260,6 +265,27 @@ final class VrioOutcome
             'customer_id' => $customerId,
             'customer_card_id' => $cardId,
         ]);
+    }
+
+    /**
+     * The scheme the provider recorded against the stored card.
+     *
+     * Read from the same `data.order.customer_card` node the reusable
+     * credential comes from. Whether the provider derives this code or echoes
+     * the one the order was sent with is not established, so it is treated as
+     * the weaker answer it may be: {@see \AsterMD\Storefront\Payment\CardDescriptor::fromCredential()}
+     * consults it only where the number's own prefix named no scheme.
+     *
+     * @param array<string, mixed> $envelope
+     */
+    private static function providerCardBrand(array $envelope): ?CardBrand
+    {
+        $data = is_array($envelope['data'] ?? null) ? $envelope['data'] : [];
+        $order = is_array($data['order'] ?? null) ? $data['order'] : [];
+        $card = is_array($order['customer_card'] ?? null) ? $order['customer_card'] : [];
+        $code = $card['card_type_id'] ?? null;
+
+        return is_int($code) ? CardScheme::brandFor($code) : null;
     }
 
     /** One of the provider's integer ids as a non-empty string, or null when it sent none. */

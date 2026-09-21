@@ -63,12 +63,15 @@ final class CheckoutChampOutcome
      * @param array<string, mixed> $envelope   the `response` node of the client's `getInArray()`
      * @param string               $reference  the order id the lead call minted, since the billing
      *                                         call does not always answer one and a refusal never does
+     * @param bool                 $preAuthQa  whether this placement held the order amount through
+     *                                         the QA mechanism rather than charging or pre-authorizing
      */
     public static function from(
         array $envelope,
         string $reference,
         ?int $expectedTotalCents = null,
         SettlementMode $settlement = SettlementMode::Capture,
+        bool $preAuthQa = false,
     ): PlacementOutcome {
         // A transport failure arrives as a key, not an exception.
         if (isset($envelope['curlError'])) {
@@ -91,6 +94,11 @@ final class CheckoutChampOutcome
             self::reconcile($message, $expectedTotalCents),
             self::reusableCredential($message),
             $settlement,
+            $preAuthQa,
+            // The provider's own reading of the card, which is why it is worth
+            // carrying: it arrives beside a bin and an expiry the storefront
+            // never sent in that form, so it is not an echo of what was posted.
+            CheckoutChampCardType::brandFor($message['cardType'] ?? null),
         );
     }
 

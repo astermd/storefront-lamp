@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace AsterMD\Storefront\Tests\Payment\CheckoutChamp;
 
+use AsterMD\Storefront\Payment\CardBrand;
 use AsterMD\Storefront\Payment\CheckoutChamp\CheckoutChampOutcome;
 use AsterMD\Storefront\Payment\PlacementOutcome;
 use AsterMD\Storefront\Payment\SettlementMode;
@@ -172,5 +173,44 @@ final class CheckoutChampOutcomeTest extends TestCase
     public function testATransportFailureIsNotASettlement(): void
     {
         self::assertFalse(CheckoutChampOutcome::capturedFrom(['curlError' => 'timeout']));
+    }
+
+    public function testAnOrderHeldByTheQaMechanismSaysSo(): void
+    {
+        $envelope = $this->fixture('checkoutchamp-order-approved.json');
+
+        $held = CheckoutChampOutcome::from($envelope, self::REFERENCE, null, SettlementMode::Authorize, true);
+        self::assertTrue($held->preAuthQa);
+
+        // This provider has a QA mechanism and this order did not use it,
+        // which is a different answer from having no mechanism at all.
+        $captured = CheckoutChampOutcome::from($envelope, self::REFERENCE);
+        self::assertFalse($captured->preAuthQa);
+    }
+
+    public function testTheProvidersOwnCardTypeIsCarriedOnThePlacement(): void
+    {
+        // The sandbox answers `TESTCARD`, which names no scheme.
+        self::assertNull(
+            CheckoutChampOutcome::from($this->fixture('checkoutchamp-order-approved.json'), self::REFERENCE)
+                ->providerCardBrand,
+        );
+
+        $envelope = $this->fixture('checkoutchamp-order-approved.json');
+        $envelope['message']['cardType'] = 'MASTERCARD';
+
+        self::assertSame(
+            CardBrand::Mastercard,
+            CheckoutChampOutcome::from($envelope, self::REFERENCE)->providerCardBrand,
+        );
+    }
+
+    public function testADeclineCarriesNeitherAHoldNorABrand(): void
+    {
+        // The refusal envelope describes no card and held nothing.
+        $outcome = CheckoutChampOutcome::from($this->fixture('checkoutchamp-order-declined.json'), self::REFERENCE);
+
+        self::assertNull($outcome->preAuthQa);
+        self::assertNull($outcome->providerCardBrand);
     }
 }

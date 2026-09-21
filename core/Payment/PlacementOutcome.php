@@ -51,6 +51,14 @@ namespace AsterMD\Storefront\Payment;
  * It defaults to {@see SettlementMode::Capture}, so an adapter or a test that
  * has never heard of settlement reports what it always meant -- the money
  * moved. An adapter that authorizes has to say so.
+ *
+ * **Two fields only an adapter can answer.** `preAuthQa` says whether a
+ * reservation used the provider's QA mechanism, and `providerCardBrand` is the
+ * provider's own reading of the card's scheme. Both are null where the adapter
+ * has nothing to say, which is not the same as a negative: an adapter with no
+ * QA mechanism has no opinion about one, and a response carrying no stored card
+ * names no brand. A decline leaves both null — nothing was held and neither
+ * refusal envelope describes a card.
  */
 final class PlacementOutcome
 {
@@ -69,6 +77,8 @@ final class PlacementOutcome
         public readonly ?ChargeDiscrepancy $chargeDiscrepancy = null,
         public readonly ?PaymentCredential $reusableCredential = null,
         public readonly SettlementMode $settlement = SettlementMode::Capture,
+        public readonly ?bool $preAuthQa = null,
+        public readonly ?CardBrand $providerCardBrand = null,
     ) {
     }
 
@@ -78,8 +88,21 @@ final class PlacementOutcome
         ?ChargeDiscrepancy $discrepancy = null,
         ?PaymentCredential $reusableCredential = null,
         SettlementMode $settlement = SettlementMode::Capture,
+        ?bool $preAuthQa = null,
+        ?CardBrand $providerCardBrand = null,
     ): self {
-        return new self(self::PLACED, $reference, null, $rawStatus, null, $discrepancy, $reusableCredential, $settlement);
+        return new self(
+            self::PLACED,
+            $reference,
+            null,
+            $rawStatus,
+            null,
+            $discrepancy,
+            $reusableCredential,
+            $settlement,
+            $preAuthQa,
+            $providerCardBrand,
+        );
     }
 
     public static function declined(?string $reference, string $reason, ?string $rawStatus = null): self

@@ -195,6 +195,7 @@ final class CheckoutChampAdapter implements PaymentAdapter
             $reference,
             $order->totalCents,
             $order->settlement,
+            $holdForReview,
         );
 
         if (!$outcome->isPlaced()) {
