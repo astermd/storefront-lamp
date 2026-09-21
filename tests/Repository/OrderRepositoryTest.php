@@ -267,6 +267,29 @@ final class OrderRepositoryTest extends TestCase
         self::assertSame('authorize', $order['settlement']);
     }
 
+    public function testTheBuyersUserAgentIsKeptAgainstTheOrder(): void
+    {
+        $pdo = $this->tempPdo();
+        $repository = $this->repository($pdo, withSession: true);
+        $repository->insert($this->order() + ['user_agent' => 'Mozilla/5.0 (iPhone)'], [], []);
+
+        self::assertSame('Mozilla/5.0 (iPhone)', $repository->findByReference('34660')['user_agent']);
+    }
+
+    public function testAnOrderRecordedWithoutOneKeepsNullRatherThanAnEmptyString(): void
+    {
+        // Null says "we do not have one". An empty string is a value, and the
+        // treatment-sync endpoint rejects an empty User-Agent header, so the
+        // two have to stay apart in the column a replay reads.
+        $pdo = $this->tempPdo();
+        $repository = $this->repository($pdo, withSession: true);
+        $repository->insert($this->order(), [], []);
+        $repository->insert(['provider_reference' => '34661', 'user_agent' => ''] + $this->order(), [], []);
+
+        self::assertNull($repository->findByReference('34660')['user_agent']);
+        self::assertNull($repository->findByReference('34661')['user_agent']);
+    }
+
     private function order(): array
     {
         return [

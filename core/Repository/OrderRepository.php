@@ -96,8 +96,8 @@ final class OrderRepository
                     session_uuid, provider_reference, anchor_slug, amount_cents, currency, status,
                     buyer_email, buyer_name, buyer_territory, discount_cents, promotion_code,
                     payment_method, card_last_four, idempotency_key, provider_category, placed_at,
-                    is_upsell, settlement, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                    is_upsell, settlement, user_agent, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
             )->execute([
                 $order['session_uuid'] ?? null,
                 (string) $order['provider_reference'],
@@ -121,6 +121,10 @@ final class OrderRepository
                 // rather than leaning on a column default a future engine might
                 // not apply the same way.
                 (string) ($order['settlement'] ?? SettlementMode::Capture->value),
+                // Null rather than an empty string: the treatment-sync endpoint
+                // rejects an empty User-Agent header, so "sent blank" and "not
+                // sent" must stay distinguishable in the column a replay reads.
+                trim((string) ($order['user_agent'] ?? '')) === '' ? null : (string) $order['user_agent'],
                 $now,
                 $now,
             ]);
@@ -233,6 +237,9 @@ final class OrderRepository
             // A row written before 0006 has no column to read, and every one of
             // those was charged in full -- the storefront had no other mode.
             'settlement' => (string) ($row['settlement'] ?? SettlementMode::Capture->value),
+            // Null on a row written before 0007, and on one placed by a caller
+            // that had no request to read an agent from.
+            'user_agent' => self::nullableString($row['user_agent'] ?? null),
             'created_at' => (string) $row['created_at'],
             'updated_at' => (string) $row['updated_at'],
             'lines' => $this->linesFor($id),

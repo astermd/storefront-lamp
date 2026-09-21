@@ -84,6 +84,11 @@ final class DatabaseOrderRecorder implements OrderRecorder
                     'payment_method' => $credential->kind,
                     'card_last_four' => self::lastFour($credential),
                     'idempotency_key' => $order->idempotencyKey,
+                    // Kept so a later treatment sync can attribute the import
+                    // to the buyer's own device. The reconciliation sweep runs
+                    // from the console with no request behind it, and this row
+                    // is the only place that agent still exists by then.
+                    'user_agent' => $order->userAgent,
                     'provider_category' => $providerCategory,
                     'is_upsell' => $isUpsell,
                     // Taken from the outcome rather than the envelope, because
