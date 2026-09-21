@@ -1279,6 +1279,62 @@ final class CheckoutServiceTest extends TestCase
     // ---------------------------------------------------------------- fixtures
 
     /** The whole service, with the recorded approval queued on the transport. */
+
+    public function testAnAuthorizedOrderReportsTheAmountItHeldAndTheCardItHeldItOn(): void
+    {
+        $reporter = new CountingCheckoutEventReporter();
+
+        $this->serviceThatPlaces(events: $reporter, settlement: SettlementMode::Authorize)
+            ->submit($this->buyer(), $this->card(), ['terms' => 'on']);
+
+        $payment = $reporter->lastPlacedPayment;
+
+        self::assertNotNull($payment);
+        self::assertSame(PaymentDescriptor::TYPE_CREDIT_CARD, $payment->type);
+        self::assertTrue($payment->preAuth);
+        self::assertSame(12000, $payment->preAuthAmountCents);
+
+        // The bin and the expiry are the buyer's own, off the form; only the
+        // brand would ever have come from the provider, and here the prefix
+        // already answered.
+        self::assertSame('visa', $payment->card?->brand?->value);
+        self::assertSame('411111', $payment->card?->bin);
+        self::assertSame('12/30', $payment->card?->expiry);
+    }
+
+    public function testACapturedOrderReportsNoHeldAmount(): void
+    {
+        $reporter = new CountingCheckoutEventReporter();
+
+        $this->serviceThatPlaces(events: $reporter)->submit($this->buyer(), $this->card(), ['terms' => 'on']);
+
+        $payment = $reporter->lastPlacedPayment;
+
+        self::assertNotNull($payment);
+        self::assertFalse($payment->preAuth);
+        self::assertNull($payment->preAuthAmountCents);
+    }
+
+    public function testADeclinedOrderReportsTheSettlementItAttemptedNotTheOutcomesDefault(): void
+    {
+        // `PlacementOutcome::declined()` carries no settlement and falls back
+        // to capture, so reading it off the outcome would report every refused
+        // authorization as an attempt to charge.
+        $reporter = new CountingCheckoutEventReporter();
+
+        $this->service('vrio-order-declined.json', events: $reporter, settlement: SettlementMode::Authorize)
+            ->submit($this->buyer(), $this->card(), ['terms' => 'on']);
+
+        $payment = $reporter->lastDeclinedPayment;
+
+        self::assertNotNull($payment);
+        self::assertTrue($payment->preAuth);
+        // Nothing was held, so there is no held amount and no QA mechanism
+        // engaged -- but the card the buyer typed is still known.
+        self::assertNull($payment->preAuthAmountCents);
+        self::assertSame('visa', $payment->card?->brand?->value);
+    }
+
     private function serviceThatPlaces(
         ?string $sessionUuid = self::SESSION_UUID,
         ?string $strategy = null,

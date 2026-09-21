@@ -647,6 +647,49 @@ final class EmrCheckoutEventReporterTest extends TestCase
         self::assertArrayNotHasKey('payment', $this->bodyOf('/treatments/sync'));
     }
 
+    public function testAPlacedOrdersFunnelRecordCarriesThePaymentBlockBesideTheOlderField(): void
+    {
+        $this->reporter()->orderPlaced(
+            self::SESSION,
+            $this->totals(10850, 10850),
+            'card',
+            ['34660'],
+            new PaymentDescriptor(PaymentDescriptor::TYPE_CREDIT_CARD, false, null, null, null),
+        );
+
+        $body = $this->bodyOf('/checkout-events/update/');
+
+        // Two vocabularies for one fact, and both are sent: `payment_method`
+        // is the EMR's older field and `payment.type` is the new block's.
+        self::assertSame('card', $body['payment_method']);
+        self::assertSame(['type' => 'credit_card', 'pre_auth' => false], $body['payment']);
+    }
+
+    public function testADeclinedOrdersFunnelRecordCarriesTheAttemptedSettlement(): void
+    {
+        $this->reporter()->orderDeclined(
+            self::SESSION,
+            $this->totals(10850, 10850),
+            'card',
+            '34660',
+            'Card Declined',
+            new PaymentDescriptor(PaymentDescriptor::TYPE_CREDIT_CARD, true, null, null, null),
+        );
+
+        $body = $this->bodyOf('/checkout-events/update/');
+
+        self::assertTrue($body['payment']['pre_auth']);
+        // Nothing was held, so there is no held amount to report.
+        self::assertArrayNotHasKey('pre_auth_amount', $body['payment']);
+    }
+
+    public function testAnOrderEventWithNoDescriptorSendsNoPaymentKey(): void
+    {
+        $this->reporter()->orderPlaced(self::SESSION, $this->totals(10850, 10850), 'card', ['34660']);
+
+        self::assertArrayNotHasKey('payment', $this->bodyOf('/checkout-events/update/'));
+    }
+
     private function reporter(
         array $overrides = [],
         bool $reportToEmr = true,

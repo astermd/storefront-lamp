@@ -1435,8 +1435,14 @@ final class FullFunnelUpsellTest extends TestCase
      * Every string in a sync payload that looks like an order reference.
      *
      * The SDK owns the field name, and pinning it here would make this file
-     * fail on an upgrade that has nothing to do with the funnel — so the whole
-     * payload is flattened and the references are read out of it.
+     * fail on an upgrade that has nothing to do with the funnel — so the lists
+     * in the payload are flattened and the references are read out of them.
+     *
+     * **Lists only, and that is the whole precision of it.** The order ids are
+     * the payload's list of numeric strings; its *objects* describe other
+     * things entirely, and one of them is a card's six-digit bin, which is
+     * indistinguishable from a reference by shape alone. Descending into them
+     * read a bin as an order.
      *
      * @param  array<mixed>  $payload
      * @return list<string>
@@ -1447,6 +1453,10 @@ final class FullFunnelUpsellTest extends TestCase
 
         foreach ($payload as $value) {
             if (is_array($value)) {
+                if (!array_is_list($value)) {
+                    continue;
+                }
+
                 foreach (self::referencesIn($value) as $nested) {
                     $found[] = $nested;
                 }

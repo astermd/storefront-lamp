@@ -26,6 +26,12 @@ final class CountingCheckoutEventReporter implements CheckoutEventReporter
     /** @var list<list<string>> */
     public array $placements = [];
 
+    /** How the last placed order said it was paid for. */
+    public ?PaymentDescriptor $lastPlacedPayment = null;
+
+    /** How the last refused order said it was being paid for. */
+    public ?PaymentDescriptor $lastDeclinedPayment = null;
+
     public function checkoutVisited(?string $sessionUuid, Totals $totals): void
     {
         ++$this->visits;
@@ -35,6 +41,7 @@ final class CountingCheckoutEventReporter implements CheckoutEventReporter
     public function orderPlaced(?string $sessionUuid, Totals $totals, string $paymentMethod, array $orderReferences, ?PaymentDescriptor $payment = null): void
     {
         $this->placements[] = $orderReferences;
+        $this->lastPlacedPayment = $payment;
     }
 
     public function orderDeclined(
@@ -46,6 +53,7 @@ final class CountingCheckoutEventReporter implements CheckoutEventReporter
         ?PaymentDescriptor $payment = null,
     ): void {
         $this->declines[] = ['reference' => $reference, 'reason' => $reason];
+        $this->lastDeclinedPayment = $payment;
     }
 
     /** @param list<string> $orderReferences */

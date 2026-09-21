@@ -151,15 +151,15 @@ final class EmrCheckoutEventReporter implements CheckoutEventReporter
             return;
         }
 
-        $this->send($sessionUuid, 'order_placed', function (AsterMDClient $client) use ($sessionUuid, $totals, $paymentMethod, $orderReferences): void {
+        $this->send($sessionUuid, 'order_placed', function (AsterMDClient $client) use ($sessionUuid, $totals, $paymentMethod, $orderReferences, $payment): void {
             $client->checkoutEvents()->update($sessionUuid, CheckoutEvent::OrderPlaced, self::money($totals) + [
                 'payment_method' => $paymentMethod,
                 'currency' => $this->currency,
                 'provider_order_id' => $orderReferences,
-            ]);
+            ] + self::paymentBlock($payment));
         });
 
-        $this->treatmentsSynced($sessionUuid, $orderReferences);
+        $this->treatmentsSynced($sessionUuid, $orderReferences, $payment);
     }
 
     public function orderDeclined(
@@ -190,13 +190,27 @@ final class EmrCheckoutEventReporter implements CheckoutEventReporter
             return;
         }
 
-        $this->send($sessionUuid, 'order_declined', function (AsterMDClient $client) use ($sessionUuid, $totals, $paymentMethod, $reference): void {
+        $this->send($sessionUuid, 'order_declined', function (AsterMDClient $client) use ($sessionUuid, $totals, $paymentMethod, $reference, $payment): void {
             $client->checkoutEvents()->update($sessionUuid, CheckoutEvent::OrderDeclined, self::money($totals) + [
                 'payment_method' => $paymentMethod,
                 'currency' => $this->currency,
                 'provider_order_id' => $reference === null ? [] : [$reference],
-            ]);
+            ] + self::paymentBlock($payment));
         });
+    }
+
+    /**
+     * The `payment` key, or no key at all.
+     *
+     * An empty object would assert a payment method nothing observed, and this
+     * field is optional on the EMR's side — the caller that has no card is the
+     * caller that has nothing to say about one.
+     *
+     * @return array{payment?: array<string, mixed>}
+     */
+    private static function paymentBlock(?PaymentDescriptor $payment): array
+    {
+        return $payment === null ? [] : ['payment' => $payment->toArray()];
     }
 
     /**
