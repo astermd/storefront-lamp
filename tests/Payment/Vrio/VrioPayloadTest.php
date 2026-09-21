@@ -9,6 +9,7 @@ use AsterMD\Storefront\Payment\OrderEnvelope;
 use AsterMD\Storefront\Payment\OrderLine;
 use AsterMD\Storefront\Payment\PaymentCredential;
 use AsterMD\Storefront\Payment\SettlementMode;
+use AsterMD\Storefront\Payment\CardBrand;
 use AsterMD\Storefront\Payment\Vrio\CardScheme;
 use AsterMD\Storefront\Payment\Vrio\VrioCredentials;
 use AsterMD\Storefront\Payment\Vrio\VrioPayload;
@@ -299,6 +300,31 @@ final class VrioPayloadTest extends TestCase
         // card_type_id 2.
         self::assertSame(2, CardScheme::codeFor('4111111100084444'));
         self::assertSame(2, CardScheme::codeFor('4111111100005555'));
+    }
+
+    public function testTheTwoBrandsThisProviderHasNoCodeForReachTheVisaFallback(): void
+    {
+        // The provider's table runs 1-4 plus wallet, ACH and SEPA. Diners Club
+        // and JCB are absent from it, so they take the same fallback an
+        // unrecognised prefix takes rather than inventing a code.
+        self::assertSame(CardScheme::VISA, CardScheme::codeFor('36227206271667'));
+        self::assertSame(CardScheme::VISA, CardScheme::codeFor('3530111333300000'));
+    }
+
+    public function testEachProviderCodeReadsBackAsTheBrandItStandsFor(): void
+    {
+        self::assertSame(CardBrand::Mastercard, CardScheme::brandFor(CardScheme::MASTERCARD));
+        self::assertSame(CardBrand::Visa, CardScheme::brandFor(CardScheme::VISA));
+        self::assertSame(CardBrand::Discover, CardScheme::brandFor(CardScheme::DISCOVER));
+        self::assertSame(CardBrand::Amex, CardScheme::brandFor(CardScheme::AMEX));
+    }
+
+    public function testACodeOutsideTheCardRangeIsNullRatherThanABrand(): void
+    {
+        // 5, 6 and 7 are the provider's digital-wallet, ACH and SEPA codes.
+        // None of them is a card scheme and none may be reported as one.
+        self::assertNull(CardScheme::brandFor(5));
+        self::assertNull(CardScheme::brandFor(0));
     }
 
     public function testTheIdempotencyKeyIsNotSentToTheProvider(): void
