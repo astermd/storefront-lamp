@@ -57,6 +57,42 @@ final class RecordMapperTest extends TestCase
         ]]]]);
     }
 
+    public function testADateReachesTheRecordAsAnIsoDateRatherThanAsItWasTyped(): void
+    {
+        $payload = $this->mapper()->build(
+            self::metadata(['date_of_birth' => 'opportunity.date_of_birth']),
+            AnswerSet::fromArray(['date_of_birth' => '02 / 28 / 1990']),
+            self::definition(),
+        );
+
+        self::assertSame(['date_of_birth' => '1990-02-28'], $payload);
+    }
+
+    public function testADateThatCannotBeReadReachesTheRecordUntouched(): void
+    {
+        // Blanking it would delete the clinician's only copy of what the
+        // visitor actually entered; judging it is the validator's job.
+        $payload = $this->mapper()->build(
+            self::metadata(['date_of_birth' => 'opportunity.date_of_birth']),
+            AnswerSet::fromArray(['date_of_birth' => 'last tuesday']),
+            self::definition(),
+        );
+
+        self::assertSame(['date_of_birth' => 'last tuesday'], $payload);
+    }
+
+    public function testOnlyADateFieldIsTreatedAsADate(): void
+    {
+        // A free-text answer that happens to look like a date is still text.
+        $payload = $this->mapper()->build(
+            self::metadata(['other_medications_details' => 'opportunity.clinical.medications']),
+            AnswerSet::fromArray(['other_medications_details' => '02/28/1990']),
+            self::definition(),
+        );
+
+        self::assertSame(['clinical' => ['medications' => '02/28/1990']], $payload);
+    }
+
     public function testExpandsDottedTargetsIntoANestedPayload(): void
     {
         $payload = $this->mapper()->build(

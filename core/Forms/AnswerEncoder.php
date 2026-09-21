@@ -94,6 +94,27 @@ final class AnswerEncoder
     }
 
     /**
+     * One value in the form the record wants it, which today means a date.
+     *
+     * A `picker-date` field collects `MM / DD / YYYY` because that is what the
+     * control writes and what goes back into the box on a re-render; the EMR
+     * wants `YYYY-MM-DD`. The conversion belongs here, at the edge, rather
+     * than in the stored answer — see {@see DateAnswer}.
+     *
+     * A value {@see DateAnswer::iso()} cannot read passes through untouched.
+     * Deciding an answer is wrong is {@see AnswerValidator}'s job, and a
+     * boundary that blanked one would delete the clinician's only copy.
+     */
+    private static function normalise(Field $field, string|int|float $value): string|int|float
+    {
+        if ($field->type !== FieldTypes::PICKER_DATE) {
+            return $value;
+        }
+
+        return DateAnswer::iso((string) $value) ?? $value;
+    }
+
+    /**
      * One value, with the label of the option it came from when the field
      * declares options and this value is one of them.
      *
@@ -101,7 +122,7 @@ final class AnswerEncoder
      */
     private static function entry(Field $field, string|int|float $value): array
     {
-        $entry = ['value' => $value];
+        $entry = ['value' => self::normalise($field, $value)];
 
         foreach ($field->options() as $option) {
             if ($option['value'] === (string) $value) {

@@ -110,7 +110,7 @@ final class RecordMapper
                 $value = reset($value);
             }
 
-            $payload = self::place($payload, $segments, self::normalise($target, $value, $unitSystem));
+            $payload = self::place($payload, $segments, self::normalise($target, $value, $unitSystem, $definition->field($name)));
         }
 
         return $payload;
@@ -167,8 +167,16 @@ final class RecordMapper
      * number at all — free text where a measurement was expected — passes
      * through unconverted rather than becoming a nonsense zero.
      */
-    private static function normalise(string $target, mixed $value, string $unitSystem): mixed
+    private static function normalise(string $target, mixed $value, string $unitSystem, ?Field $field): mixed
     {
+        // A date is recognised by the field's own type rather than by its
+        // target path: unlike a height, which is identified by where it is
+        // written because the question's name is the author's to choose, the
+        // control that collected it already says what it is.
+        if ($field?->type === FieldTypes::PICKER_DATE && is_scalar($value)) {
+            return DateAnswer::iso((string) $value) ?? $value;
+        }
+
         if (!is_scalar($value) || !is_numeric(trim((string) $value))) {
             return $value;
         }
