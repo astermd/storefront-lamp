@@ -8,6 +8,7 @@ use AsterMD\Storefront\Checkout\EmrCheckoutEventReporter;
 use AsterMD\Storefront\Checkout\Promotion;
 use AsterMD\Storefront\Checkout\Totals;
 use AsterMD\Storefront\Emr\ClientFactory;
+use AsterMD\Storefront\Emr\VerificationGateway;
 use AsterMD\Storefront\Payment\PaymentDescriptor;
 use AsterMD\Storefront\Repository\EventRepository;
 use AsterMD\Storefront\Repository\OrderRepository;
@@ -690,10 +691,49 @@ final class EmrCheckoutEventReporterTest extends TestCase
         self::assertArrayNotHasKey('payment', $this->bodyOf('/checkout-events/update/'));
     }
 
+    public function testADeliverableAddressIsReportedAsTheOneThingThatWasVerified(): void
+    {
+        $this->reporter(verification: $this->verificationAnswering(true))
+            ->treatmentsSynced(self::SESSION, ['34660']);
+
+        // Address is false because this storefront has never verified one:
+        // `normaliseAddress()` has no caller anywhere.
+        self::assertSame(
+            ['email' => true, 'address' => false],
+            $this->bodyOf('/treatments/sync')['verification'],
+        );
+    }
+
+    public function testACheckThatDidNotRunOrDidNotPassSendsNoVerificationKey(): void
+    {
+        // Null is "the check could not run", which passes checkout validation
+        // without verifying anything -- and on this credential the whole
+        // verification resource is refused, so null is the common case.
+        // Reporting `email: false` would be equally wrong: it asserts a check
+        // that ran and failed.
+        $this->reporter(verification: $this->verificationAnswering(null))
+            ->treatmentsSynced(self::SESSION, ['34660']);
+        self::assertArrayNotHasKey('verification', $this->bodyOf('/treatments/sync'));
+
+        $this->reporter(verification: $this->verificationAnswering(false))
+            ->treatmentsSynced(self::SESSION, ['34661']);
+        self::assertArrayNotHasKey('verification', $this->bodyOf('/treatments/sync'));
+    }
+
+    public function testAJourneyWithNoBuyerYetVerifiesNothing(): void
+    {
+        $this->reporter(verification: $this->verificationAnswering(true), buyerEmail: null)
+            ->treatmentsSynced(self::SESSION, ['34660']);
+
+        self::assertArrayNotHasKey('verification', $this->bodyOf('/treatments/sync'));
+    }
+
     private function reporter(
         array $overrides = [],
         bool $reportToEmr = true,
         ?string $userAgent = 'Mozilla/5.0 (test)',
+        ?VerificationGateway $verification = null,
+        ?string $buyerEmail = 'ada@example.com',
     ): EmrCheckoutEventReporter {
         $this->http = new FakeEmrHttpClient(self::TOKEN_ROUTE + $overrides + self::OK_ROUTES);
 
@@ -707,7 +747,35 @@ final class EmrCheckoutEventReporterTest extends TestCase
             $reportToEmr,
             $this->http,
             static fn (): ?string => $userAgent,
+            $verification,
+            static fn (): ?string => $buyerEmail,
         );
+    }
+
+    /** A verification gateway that is switched on and already knows one answer. */
+    private function verificationAnswering(?bool $deliverable): VerificationGateway
+    {
+        return new class($deliverable) implements VerificationGateway {
+            public function __construct(private readonly ?bool $deliverable)
+            {
+            }
+
+            public function emailIsDeliverable(string $email): ?bool
+            {
+                return $this->deliverable;
+            }
+
+            /** @return array<string, string>|null */
+            public function normaliseAddress(string $address): ?array
+            {
+                return null;
+            }
+
+            public function isEnabled(): bool
+            {
+                return true;
+            }
+        };
     }
 
     private function totals(int $subtotalCents, int $totalCents): Totals

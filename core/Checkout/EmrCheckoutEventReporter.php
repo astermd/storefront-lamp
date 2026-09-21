@@ -9,6 +9,7 @@ namespace AsterMD\Storefront\Checkout;
 use AsterMD\Sdk\AsterMDClient;
 use AsterMD\Sdk\Enum\CheckoutEvent;
 use AsterMD\Storefront\Emr\ClientFactory;
+use AsterMD\Storefront\Emr\VerificationGateway;
 use AsterMD\Storefront\Payment\PaymentDescriptor;
 use AsterMD\Storefront\Repository\EventRepository;
 use AsterMD\Storefront\Repository\OrderRepository;
@@ -93,11 +94,16 @@ final class EmrCheckoutEventReporter implements CheckoutEventReporter
     /** @var \Closure(): ?string the visitor's own user agent, for the treatment sync's attribution */
     private readonly \Closure $userAgent;
 
+    /** @var \Closure(): ?string the buyer's address, resolved lazily so this class never holds journey state */
+    private readonly \Closure $buyerEmail;
+
     /**
      * @param \Closure(): ?string $utmSource the journey's first-touch source, resolved lazily so this class never holds journey state
      * @param string $currency sent on the create; the EMR merges rather than replaces, so it survives every later update
      * @param bool $reportToEmr whether the EMR half runs at all; the local trail is written either way
      * @param (\Closure(): ?string)|null $userAgent injected so a test does not read the ambient request
+     * @param ?VerificationGateway $verification asked what it already established, not asked to establish anything
+     * @param (\Closure(): ?string)|null $buyerEmail the journey's buyer, resolved on use because the journey is request-scoped
      */
     public function __construct(
         private readonly ClientFactory $clients,
@@ -109,7 +115,11 @@ final class EmrCheckoutEventReporter implements CheckoutEventReporter
         private readonly bool $reportToEmr = true,
         private readonly ?ClientInterface $httpClient = null,
         ?\Closure $userAgent = null,
+        private readonly ?VerificationGateway $verification = null,
+        ?\Closure $buyerEmail = null,
     ) {
+        $this->buyerEmail = $buyerEmail ?? static fn (): ?string => null;
+
         $this->userAgent = $userAgent ?? static function (): ?string {
             // The SDK forwards this verbatim so the import is attributed to the
             // buyer's device rather than to this server, and asks the consuming
@@ -351,15 +361,33 @@ final class EmrCheckoutEventReporter implements CheckoutEventReporter
     /**
      * What this storefront has actually verified about the buyer.
      *
-     * Nothing yet: identity verification ships off and no address has ever
-     * been verified here. Filled in where the checks exist; until then a block
-     * would assert things that did not happen.
+     * **Only what was checked, and never a row of falses.** `address` is false
+     * because no address has ever been verified here —
+     * {@see VerificationGateway::normaliseAddress()} has no caller — so sending
+     * the block on an unverified email would fill both fields with things that
+     * did not happen. A journey with nothing verified sends no `verification`
+     * key at all.
+     *
+     * **Only a literal true counts.** `emailIsDeliverable()` answers null when
+     * the check could not run, and a null passes checkout validation without
+     * verifying anything: on this storefront's own credential the whole
+     * verification resource is refused, so null is the common case rather than
+     * the rare one. The gateway memoises, so this second read costs no round
+     * trip.
      *
      * @return array{email: bool, address: bool}|null
      */
     private function verificationBlock(): ?array
     {
-        return null;
+        $email = trim((string) (($this->buyerEmail)() ?? ''));
+
+        if ($email === '' || $this->verification === null || !$this->verification->isEnabled()) {
+            return null;
+        }
+
+        return $this->verification->emailIsDeliverable($email) === true
+            ? ['email' => true, 'address' => false]
+            : null;
     }
 
     public function upsellOffered(?string $sessionUuid, string $slug, string $name): void

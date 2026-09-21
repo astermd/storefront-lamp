@@ -797,6 +797,11 @@ final class AppFactory
             static fn (): ?string => $c->get(JourneyStore::class)->state()?->attribution?->get('utm_source'),
             (string) $c->get(Config::class)->get('payment.currency', 'USD'),
             $config->get('app.session.analytics') === true,
+            null,
+            null,
+            $c->get(VerificationGateway::class),
+            // Request-scoped like the source above, and for the same reason.
+            static fn (): ?string => $c->get(JourneyStore::class)->state()?->buyer['email'] ?? null,
         )));
         // The settlement decision, resolved once and shared by the checkout
         // charge and the upsell charge so the two cannot disagree about whether

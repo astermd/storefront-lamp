@@ -114,6 +114,66 @@ final class VerificationGatewayTest extends TestCase
         self::assertNull($this->gateway($http)->emailIsDeliverable('ada@example.com'));
     }
 
+    public function testOneAddressIsAskedAboutOnce(): void
+    {
+        // The verdict is read twice in one request -- once to validate the
+        // checkout form and once to say what was verified on the order -- and
+        // the buyer must not wait for a second round trip to learn the same
+        // thing.
+        $http = new FakeEmrHttpClient(self::TOKEN_ROUTE + [
+            '/extensions/email-verify' => [200, ['success' => true, 'data' => ['result' => 'valid']]],
+        ]);
+        $gateway = $this->gateway($http);
+
+        self::assertTrue($gateway->emailIsDeliverable('ada@example.com'));
+        self::assertTrue($gateway->emailIsDeliverable('ada@example.com'));
+
+        self::assertCount(1, $this->callsTo($http, '/extensions/email-verify'));
+    }
+
+    public function testACheckThatCouldNotRunIsRememberedAsSuchRatherThanRetried(): void
+    {
+        // Null is an answer. Asking again inside one request will not produce
+        // a better one, and the refusal is the recorded live behaviour.
+        $http = new FakeEmrHttpClient(self::TOKEN_ROUTE + [
+            '/extensions/email-verify' => [403, ['success' => false, 'message' => 'You do not have permission.']],
+        ]);
+        $gateway = $this->gateway($http);
+
+        self::assertNull($gateway->emailIsDeliverable('ada@example.com'));
+        self::assertNull($gateway->emailIsDeliverable('ada@example.com'));
+
+        self::assertCount(1, $this->callsTo($http, '/extensions/email-verify'));
+    }
+
+    public function testTwoAddressesAreTwoQuestions(): void
+    {
+        $http = new FakeEmrHttpClient(self::TOKEN_ROUTE + [
+            '/extensions/email-verify' => [200, ['success' => true, 'data' => ['result' => 'valid']]],
+        ]);
+        $gateway = $this->gateway($http);
+
+        $gateway->emailIsDeliverable('ada@example.com');
+        $gateway->emailIsDeliverable('grace@example.com');
+
+        self::assertCount(2, $this->callsTo($http, '/extensions/email-verify'));
+    }
+
+    /** @return list<string> every request the gateway made whose path contains $needle */
+    private function callsTo(FakeEmrHttpClient $http, string $needle): array
+    {
+        $paths = [];
+
+        foreach ($http->requests as $request) {
+            $path = $request->getUri()->getPath();
+            if (str_contains($path, $needle)) {
+                $paths[] = $path;
+            }
+        }
+
+        return $paths;
+    }
+
     public function testARefusedCredentialAnswersNullAndIsLoggedAtInfo(): void
     {
         // The recorded live behaviour: the whole verification() resource is
