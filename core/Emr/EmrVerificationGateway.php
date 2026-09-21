@@ -39,7 +39,7 @@ final class EmrVerificationGateway implements VerificationGateway
      * The verdict is read twice — once to validate the checkout form, and once
      * to say what was verified on the order that follows it — and without this
      * the buyer waits for two round trips to learn the same thing. Keyed on the
-     * address and holding the null verdict as well, because "the check could
+     * address and keeping the null verdict as well, because "the check could
      * not run" is an answer and asking again inside one request will not
      * produce a better one.
      *
