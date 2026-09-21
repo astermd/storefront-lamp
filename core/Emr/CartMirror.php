@@ -192,15 +192,29 @@ final class CartMirror
      * with lines carrying no EMR identifier skipped rather than sent with a
      * blank id.
      *
-     * @return list<array{product_id: string, name: string, qty: int}>
+     * **The variant rides along when the line has one.** A product with several
+     * strengths is one `product_id` and several plans, so without it the EMR
+     * can see what was bought and not which of them — and a line that has no
+     * variant sends no key rather than a blank one, which would be a claim
+     * about a plan that does not exist.
+     *
+     * @return list<array{product_id: string, variant_id?: string, name: string, qty: int}>
      */
     private static function items(Cart $cart): array
     {
         $items = [];
         foreach ($cart->lines() as $line) {
-            if ($line->emrProductId !== null && $line->emrProductId !== '') {
-                $items[] = ['product_id' => $line->emrProductId, 'name' => $line->name, 'qty' => $line->quantity];
+            if ($line->emrProductId === null || $line->emrProductId === '') {
+                continue;
             }
+
+            $item = ['product_id' => $line->emrProductId];
+
+            if ($line->variantId !== null && $line->variantId !== '') {
+                $item['variant_id'] = $line->variantId;
+            }
+
+            $items[] = $item + ['name' => $line->name, 'qty' => $line->quantity];
         }
 
         return $items;

@@ -143,6 +143,42 @@ final class CartMirrorTest extends TestCase
         self::assertCount(2, $gateway->createCalls[0][1]);
     }
 
+    public function testAMirroredLineCarriesTheVariantTheBuyerChose(): void
+    {
+        // One product, several strengths: without the variant the EMR sees
+        // which product was bought and not which of its plans.
+        $cart = new Cart();
+        $cart->put(new CartLine(
+            slug: 'semaglutide',
+            name: 'Semaglutide',
+            kind: 'rx',
+            emrProductId: 'emr-1',
+            parentSlug: null,
+            quantity: 1,
+            unitPriceCents: 5000,
+            variantId: 'variant-3',
+        ));
+
+        $gateway = new FakeCartGateway();
+        (new CartMirror($gateway, $this->log()))->mirror('sess-1', $cart, new JourneyState());
+
+        self::assertSame(
+            [['product_id' => 'emr-1', 'variant_id' => 'variant-3', 'name' => 'Semaglutide', 'qty' => 1]],
+            $gateway->createCalls[0][1],
+        );
+    }
+
+    public function testALineWithNoVariantSendsNoVariantKey(): void
+    {
+        $cart = new Cart();
+        $cart->put(new CartLine(slug: 'lab', name: 'Lab Panel', kind: 'lab', emrProductId: 'emr-2', parentSlug: null));
+
+        $gateway = new FakeCartGateway();
+        (new CartMirror($gateway, $this->log()))->mirror('sess-1', $cart, new JourneyState());
+
+        self::assertArrayNotHasKey('variant_id', $gateway->createCalls[0][1][0]);
+    }
+
     public function testACartWithNoMirrorableLinesNeverCallsTheEmr(): void
     {
         $cart = new Cart();
