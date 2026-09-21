@@ -13,7 +13,8 @@
     ],
     "require": {
         "php": ">=8.4",
-        "astermd/sdk": "^0.0.2",
+        "astermd/checkoutchamp-client": "^0.0.1",
+        "astermd/sdk": "^0.0.3",
         "astermd/vrio-client": "^0.0.1",
         "php-di/php-di": "^7.1",
         "slim/psr7": "^1.8",

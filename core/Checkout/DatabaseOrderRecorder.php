@@ -84,8 +84,20 @@ final class DatabaseOrderRecorder implements OrderRecorder
                     'payment_method' => $credential->kind,
                     'card_last_four' => self::lastFour($credential),
                     'idempotency_key' => $order->idempotencyKey,
+                    // Kept so a later treatment sync can attribute the import
+                    // to the buyer's own device. The reconciliation sweep runs
+                    // from the console with no request behind it, and this row
+                    // is the only place that agent still exists by then.
+                    'user_agent' => $order->userAgent,
                     'provider_category' => $providerCategory,
                     'is_upsell' => $isUpsell,
+                    // Taken from the outcome rather than the envelope, because
+                    // the envelope says what was asked for and the outcome says
+                    // what the provider did. They agree today and the row has to
+                    // keep agreeing with the provider if they ever stop: this
+                    // column is what an operator reads to decide whether money is
+                    // still owed on an order.
+                    'settlement' => $outcome->settlement->value,
                 ],
                 array_map(self::line(...), $order->lines),
                 array_map(static fn (ConsentRecord $c): array => $c->toArray(), $consents),

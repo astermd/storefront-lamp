@@ -122,6 +122,49 @@ final class FieldViewModelTest extends TestCase
         self::assertSame([2, 2], array_column($model['subfields'], 'cols'), 'both parts share the composite row');
     }
 
+    /**
+     * `runtimeClassName` and `runtimeId` are the form builder's hooks for an
+     * author's own CSS — the same author who writes `settings.injectCss`.
+     * They were read by nothing, so a class set in the builder reached the
+     * page as neither markup nor an error.
+     */
+    public function testAFieldCarriesTheAuthorsOwnClassAndId(): void
+    {
+        $model = self::viewModel([
+            'fieldId' => 'first_name', 'name' => 'first_name', 'type' => 'text', 'label' => 'First Name',
+            'properties' => ['runtimeClassName' => 'my-class', 'runtimeId' => 'my-id'],
+        ]);
+
+        self::assertSame('my-class', $model['runtime_class']);
+        self::assertSame('my-id', $model['runtime_id']);
+    }
+
+    /** A field that declares neither carries neither, rather than an empty attribute. */
+    public function testAFieldWithNoAuthoredClassOrIdCarriesNeither(): void
+    {
+        $model = self::viewModel(['fieldId' => 'a', 'name' => 'a', 'type' => 'text', 'label' => 'A']);
+
+        self::assertNull($model['runtime_class']);
+        self::assertNull($model['runtime_id']);
+    }
+
+    /**
+     * Whitespace is not a value. The builder writes an empty string for a
+     * field whose class was typed and then cleared, and rendering that gives
+     * every such field `class="… "` or, worse, `id=""` — which is invalid and
+     * which `document.getElementById('')` will never match.
+     */
+    public function testABlankAuthoredClassOrIdIsTreatedAsAbsent(): void
+    {
+        $model = self::viewModel([
+            'fieldId' => 'a', 'name' => 'a', 'type' => 'text', 'label' => 'A',
+            'properties' => ['runtimeClassName' => '   ', 'runtimeId' => ''],
+        ]);
+
+        self::assertNull($model['runtime_class']);
+        self::assertNull($model['runtime_id']);
+    }
+
     public function testAnUnsupportedTypeGetsTheUnsupportedPartialRatherThanBeingOmitted(): void
     {
         $model = self::viewModel(['fieldId' => 'a', 'name' => 'a', 'type' => 'signature', 'label' => 'Sign']);

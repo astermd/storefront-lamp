@@ -58,9 +58,8 @@ final class VerificationStep
      * The checkout field names {@see Prefill} produces, mapped to the names the
      * identity provider recognises.
      *
-     * Recorded against the live integration on 2026-08-25: the provider takes
-     * `firstName`, `lastName`, `email`, `phone`, `dob`, `ssn`, `ipAddress` and
-     * a nested `address`. The camel case is theirs, not ours.
+     * The provider takes `firstName`, `lastName`, `email`, `phone`, `dob`, `ssn`,
+     * `ipAddress` and a nested `address`. The camel case is theirs, not ours.
      *
      * @var array<string, string>
      */
@@ -241,12 +240,12 @@ final class VerificationStep
      * `[22.21]` and §30 permit exactly the fragment the check needs.
      *
      * Truncating rather than refusing, because the two are the same answer:
-     * recorded 2026-08-25, the provider accepts a four-digit `ssn` and returns
-     * a completed check against it, so the last four of a full number is the
-     * number the box asked for. A shorter answer is passed through as typed —
-     * dropping it would turn a buyer's typo into an `inconclusive` verdict
-     * with nothing on the page to explain it, and the check itself is the
-     * right judge of a fragment that is too short.
+     * the provider accepts a four-digit `ssn` and returns a completed check
+     * against it, so the last four of a full number is the number the box asked
+     * for. A shorter answer is passed through as typed — dropping it would turn
+     * a buyer's typo into an `inconclusive` verdict with nothing on the page to
+     * explain it, and the check itself is the right judge of a fragment that is
+     * too short.
      *
      * Digits only for the same reason it always was: the provider normalises
      * before it caches, so `078-05-1120` and `078051120` are one key, and a

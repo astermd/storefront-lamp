@@ -26,9 +26,8 @@
  *
  * WHY THIS SHIPS DISABLED AND NON-BLOCKING
  *
- * Recorded against the live provider integration on 2026-08-25: twenty calls
- * across nine identities and all three checks returned `valid: false`. Not one
- * passed. `crosscheck` scored exactly 0 against its configured threshold of
+ * Twenty calls across nine identities and all three checks returned `valid: false`.
+ * Not one passed. `crosscheck` scored exactly 0 against its configured threshold of
  * 0.75 -- for a real, deliverable identity with a valid phone and a real
  * originating address, and for a fabricated one, alike. The two are
  * indistinguishable in the response, so the provider cannot currently tell

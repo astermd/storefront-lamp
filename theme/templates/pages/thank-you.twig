@@ -272,14 +272,22 @@
       </div>
 
       <!-- ==================== PAYMENT NOTICE ==================== -->
-      {# The mockup said the card was only authorized and would not be charged
-         unless a doctor approved the prescription. That is not what happens here:
-         the charge is single-step and the money has already moved by the time this
-         page renders, so the notice says so. Skipped when nothing was charged. #}
+      {# Which sentence is printed is a fact about the order, never a design
+         choice: the buyer's statement will contradict the wrong one. A capture
+         deployment has already taken the money by the time this page renders;
+         an authorize deployment has only placed a hold, and telling that buyer
+         they were charged would have them looking for a debit that is not there
+         and may never be. `authorizedOnly` is resolved from the placed order
+         rows, so a journey that captured a checkout and authorized an upsell
+         takes the cautious sentence. Skipped when no money is involved at all. #}
       {% if receipt.paidTotalCents > 0 %}
       <div class="mt-6 flex items-start gap-3 rounded-sm border border-primary bg-primary-light px-4 py-4">
         <i data-lucide="info" class="mt-0.5 size-5 shrink-0 text-primary"></i>
+        {% if receipt.authorizedOnly %}
+        <p class="text-sm leading-relaxed text-heading">Your card has been authorized for {{ receipt.paidTotalCents|money }}. You have not been charged yet — the payment is taken once a licensed physician has reviewed your information.</p>
+        {% else %}
         <p class="text-sm leading-relaxed text-heading">Your card has been charged {{ receipt.paidTotalCents|money }}. Your order is on hold until a licensed physician has reviewed your information.</p>
+        {% endif %}
       </div>
       {% endif %}
     </div>

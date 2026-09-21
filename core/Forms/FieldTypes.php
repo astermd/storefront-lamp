@@ -24,10 +24,18 @@ namespace AsterMD\Storefront\Forms;
  */
 final class FieldTypes
 {
+    /**
+     * The date field, named because two outbound boundaries have to recognise
+     * it to convert what it collects (`MM / DD / YYYY`) into what the EMR
+     * stores (`YYYY-MM-DD`). A spelling repeated at a call site is where a
+     * private one starts.
+     */
+    public const string PICKER_DATE = 'picker-date';
+
     /** Types that hold a submitted answer. */
     public const array VALUE_TYPES = [
         'text', 'textarea', 'email', 'phone', 'number', 'password',
-        'picker-date', 'choice-single', 'choice-multi', 'dropdown',
+        self::PICKER_DATE, 'choice-single', 'choice-multi', 'dropdown',
         'checkbox', 'toggle', 'terms', 'agreement', 'bmi', 'hidden',
     ];
 

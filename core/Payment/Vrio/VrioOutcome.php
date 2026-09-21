@@ -6,9 +6,11 @@ declare(strict_types=1);
 
 namespace AsterMD\Storefront\Payment\Vrio;
 
+use AsterMD\Storefront\Payment\CardBrand;
 use AsterMD\Storefront\Payment\ChargeDiscrepancy;
 use AsterMD\Storefront\Payment\PaymentCredential;
 use AsterMD\Storefront\Payment\PlacementOutcome;
+use AsterMD\Storefront\Payment\SettlementMode;
 use AsterMD\Storefront\Support\CardScrubber;
 
 /**
@@ -28,6 +30,11 @@ use AsterMD\Storefront\Support\CardScrubber;
  * container with `date_ordered`, `date_authorized` and `date_capture` all
  * null, and it is 37% of them. The spec's rule would send those buyers to a
  * receipt.
+ *
+ * **That rule inverts under `action: "authorize"`**, and it is the only thing
+ * settlement changes here -- an order with funds reserved and nothing charged
+ * is the outcome that mode is asking for. {@see self::isSettled()} carries the
+ * distinction, and says which half of it is recorded and which is not.
  *
  * **The envelope's own `success` flag cannot be trusted alone.** The client
  * derives it from the absence of an `error` key in the decoded body, so a body
@@ -112,9 +119,15 @@ final class VrioOutcome
      *                                                 when the caller has nothing to reconcile against, which
      *                                                 leaves the outcome unreconciled rather than reporting a
      *                                                 mismatch nobody measured
+     * @param SettlementMode       $settlement         which action produced this envelope. It changes exactly one
+     *                                                 branch -- see {@see self::isSettled()} -- and is carried onto
+     *                                                 the outcome so nothing downstream has to re-derive it
      */
-    public static function from(array $envelope, ?int $expectedTotalCents = null): PlacementOutcome
-    {
+    public static function from(
+        array $envelope,
+        ?int $expectedTotalCents = null,
+        SettlementMode $settlement = SettlementMode::Capture,
+    ): PlacementOutcome {
         // A transport failure arrives as a key, not an exception.
         if (isset($envelope['curlError'])) {
             return PlacementOutcome::declined(null, self::GENERIC_DECLINE, 'transport_error');
@@ -154,7 +167,7 @@ final class VrioOutcome
             return PlacementOutcome::declined($reference, self::reason($envelope), $rawStatus);
         }
 
-        if ($status === null || in_array($status, self::TERMINAL_STATUSES, true)) {
+        if (!self::isSettled($status, $settlement)) {
             return PlacementOutcome::declined($reference, self::reason($envelope), $rawStatus);
         }
 
@@ -163,7 +176,55 @@ final class VrioOutcome
             $rawStatus,
             self::reconcile($transaction, $expectedTotalCents),
             self::reusableCredential($envelope),
+            $settlement,
+            // This provider has no QA mechanism, so it has no opinion about
+            // one -- which is not the same as having used something else.
+            null,
+            self::providerCardBrand($envelope),
         );
+    }
+
+    /**
+     * Whether this order reached the state its action was asking for.
+     *
+     * **The null-status rule is exactly inverted between the two modes, and
+     * that is the whole difference.** For a capture, a null `status_type_id`
+     * marks an order container whose card was never charged -- 55 of 143
+     * recorded orders, with `date_ordered`, `date_authorized` and
+     * `date_capture` all null -- so it is a decline. For an authorize, an order
+     * container with no charge against it is precisely the intended result, so
+     * the same null cannot be read as a failure without declining every
+     * successful authorization.
+     *
+     * What is left carrying the decision for an authorize is the envelope's
+     * `success` flag (checked by the caller) plus the reference (likewise) plus
+     * the terminal-status list below. That is deliberately the *minimum* change
+     * from the capture rule: everything recorded stays load-bearing and only
+     * the one branch whose meaning provably flips is flipped.
+     *
+     * **What remains unrecorded, stated plainly:** the `status_type_id` an
+     * *approved* authorize returns on this account. The sandbox merchant's
+     * acquiring gateway has been answering `Invalid API Key provided` since
+     * before this was written -- it fails `action: "process"` identically, so it
+     * is the account and not this path -- and an approved authorize could not be
+     * taken. A declined one is shape-identical to a declined capture: `success: false`, `response_code: 200`, reference at
+     * `data.error.transaction.order_id`, `status_type_id` null. That envelope is
+     * refused here by the `success` check, before this method is consulted.
+     *
+     * Terminal statuses stay terminal in both modes. A cancelled or refunded
+     * order is not a live authorization waiting to be captured, and reading one
+     * as placed would tell a buyer their order stands and leave an operator a
+     * capture that can only fail.
+     *
+     * @see docs/INTEGRATION-NOTES.md for the recording and the gap
+     */
+    private static function isSettled(?int $status, SettlementMode $settlement): bool
+    {
+        if (in_array($status, self::TERMINAL_STATUSES, true)) {
+            return false;
+        }
+
+        return $settlement->isAuthorize() || $status !== null;
     }
 
     /**
@@ -204,6 +265,27 @@ final class VrioOutcome
             'customer_id' => $customerId,
             'customer_card_id' => $cardId,
         ]);
+    }
+
+    /**
+     * The scheme the provider recorded against the stored card.
+     *
+     * Read from the same `data.order.customer_card` node the reusable
+     * credential comes from. Whether the provider derives this code or echoes
+     * the one the order was sent with is not established, so it is treated as
+     * the weaker answer it may be: {@see \AsterMD\Storefront\Payment\CardDescriptor::fromCredential()}
+     * consults it only where the number's own prefix named no scheme.
+     *
+     * @param array<string, mixed> $envelope
+     */
+    private static function providerCardBrand(array $envelope): ?CardBrand
+    {
+        $data = is_array($envelope['data'] ?? null) ? $envelope['data'] : [];
+        $order = is_array($data['order'] ?? null) ? $data['order'] : [];
+        $card = is_array($order['customer_card'] ?? null) ? $order['customer_card'] : [];
+        $code = $card['card_type_id'] ?? null;
+
+        return is_int($code) ? CardScheme::brandFor($code) : null;
     }
 
     /** One of the provider's integer ids as a non-empty string, or null when it sent none. */

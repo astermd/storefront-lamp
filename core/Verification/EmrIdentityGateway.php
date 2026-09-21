@@ -16,11 +16,11 @@ use Psr\Http\Client\ClientInterface;
 /**
  * {@see IdentityGateway} over the SDK's `verification()->verifyIdentity()`.
  *
- * **The verdict is only ever in the body.** Recorded live on 2026-08-25: every
- * identity call answers HTTP 200, for a plausible identity and for nonsense
- * alike, so any branch on the HTTP status to decide an outcome is wrong by
- * construction. What the status still tells us is whether the request was well
- * formed, and that is a different question with a different consequence.
+ * **The verdict is only ever in the body.** Every identity call answers HTTP 200,
+ * for a plausible identity and for nonsense alike, so any branch on the HTTP
+ * status to decide an outcome is wrong by construction. What the status still
+ * tells us is whether the request was well formed, and that is a different
+ * question with a different consequence.
  *
  * **Three channels, kept apart:**
  *

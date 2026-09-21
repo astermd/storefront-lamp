@@ -5,7 +5,7 @@
    The result is rendered server-side from the stored value, so a prefilled
    composite shows its score immediately rather than waiting for scripts
    ([10.34]). #}
-<fieldset data-intake-bmi data-intake-bmi-target="{{ field.name }}">
+<fieldset data-intake-bmi data-intake-bmi-target="{{ field.name }}"{% if field.runtime_class %} class="{{ field.runtime_class }}"{% endif %}>
   <legend class="text-sm font-semibold leading-snug text-heading">
     {{ field.label }}{% if field.required %}<span class="text-danger" aria-hidden="true"> *</span>{% endif %}
   </legend>

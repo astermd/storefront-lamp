@@ -22,6 +22,20 @@ namespace AsterMD\Storefront\Payment;
  * provider charges an identical payload twice and ignores the external order
  * id it is handed, so a duplicate submit is caught before the call, never by
  * it (`[13.37]`).
+ *
+ * `$settlement` is whether this order takes the money or only reserves it. It
+ * is resolved from the cart and the deployment's configuration before the
+ * envelope is built ({@see \AsterMD\Storefront\Checkout\SettlementPolicy}),
+ * so the adapter is told the decision rather than asked to make it -- an
+ * adapter that read the configuration itself would be a second place the rule
+ * lives, and the two would drift on the one question that decides whether a
+ * card is debited.
+ *
+ * It **defaults to {@see SettlementMode::Capture}**, which is what every
+ * deployment did before this parameter existed. A default here is safe in the
+ * direction that matters: an envelope built without one behaves exactly as it
+ * used to, and turning the behaviour on is something a deployment has to
+ * spell.
  */
 final class OrderEnvelope
 {
@@ -43,6 +57,7 @@ final class OrderEnvelope
         public readonly ?string $userAgent,
         public readonly string $idempotencyKey,
         public readonly string $anchorSlug,
+        public readonly SettlementMode $settlement = SettlementMode::Capture,
     ) {
     }
 

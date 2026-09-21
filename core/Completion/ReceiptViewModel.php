@@ -60,6 +60,14 @@ final class ReceiptViewModel
         public readonly bool $pendingReview,
         public readonly ?string $orderNumber,
         public readonly int $itemCount,
+        /**
+         * Whether the total on this page is reserved rather than taken.
+         *
+         * A bool here rather than the mode string, because the template's only
+         * question is which of two sentences to print and a string would invite
+         * it to compare against a spelling the payment layer owns.
+         */
+        public readonly bool $authorizedOnly = false,
     ) {
     }
 
@@ -94,6 +102,7 @@ final class ReceiptViewModel
             pendingReview: $receipt->pendingReview,
             orderNumber: $receipt->references[0] ?? null,
             itemCount: $itemCount,
+            authorizedOnly: $receipt->isAuthorizedOnly(),
         );
     }
 

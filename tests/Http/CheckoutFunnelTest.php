@@ -6,6 +6,7 @@ namespace AsterMD\Storefront\Tests\Http;
 
 use AsterMD\Storefront\Bootstrap\AppFactory;
 use AsterMD\Storefront\Checkout\CheckoutEventReporter;
+use AsterMD\Storefront\Observability\Instrumentation;
 use AsterMD\Storefront\Checkout\CheckoutService;
 use AsterMD\Storefront\Checkout\EmrCheckoutEventReporter;
 use AsterMD\Storefront\Checkout\OrderBumps;
@@ -600,6 +601,28 @@ final class CheckoutFunnelTest extends TestCase
     // ---------------------------------------------------------------- the walk
 
     /** The happy path, up to and including a placed order. */
+    public function testThePaymentBlockReachesTheEmrThroughTheWholeStack(): void
+    {
+        // Driven over HTTP through `AppFactory`, which is the only way the
+        // instrumentation decorator sits where production puts it. A decorator
+        // that accepted the descriptor and did not forward it left both
+        // payloads without a `payment` key while every test of the inner
+        // reporter stayed green.
+        $this->walkAFullCheckout();
+
+        $expected = ['type' => 'credit_card', 'pre_auth' => false, 'card' => [
+            'type' => 'visa',
+            'bin' => '411111',
+            'exp' => '12/30',
+        ]];
+
+        self::assertSame($expected, $this->emrBodyEndingWith('/treatments/sync')['payment'] ?? null);
+        self::assertSame(
+            $expected,
+            $this->emrBodyEndingWith('/checkout-events/update/' . self::SESSION)['payment'] ?? null,
+        );
+    }
+
     private function walkAFullCheckout(): void
     {
         $app = $this->app();
@@ -710,17 +733,26 @@ final class CheckoutFunnelTest extends TestCase
             // switched back on here with a fake transport underneath: the
             // create/update pair and the treatment sync are half of what a
             // full-funnel test is for.
-            CheckoutEventReporter::class => static fn (Container $c): CheckoutEventReporter => new EmrCheckoutEventReporter(
-                new ClientFactory($c->get(Config::class), $emrRoot),
-                $c->get(EventRepository::class),
-                $c->get(OrderRepository::class),
-                $c->get(OperatorLog::class),
-                static fn (): ?string => $c->get(JourneyStore::class)->state()?->attribution?->get('utm_source'),
-                'USD',
-                true,
-                $emr,
-                static fn (): ?string => 'Mozilla/5.0 (test)',
-            ),
+            //
+            // **Wrapped in the instrumentation decorator, the way
+            // `AppFactory` wraps it.** Substituting the inner reporter alone
+            // took the decorator out of the stack, so nothing here could see
+            // an argument it accepted and failed to pass on — and one it
+            // accepted and failed to pass on reached the EMR as a missing
+            // field while every test of the inner class stayed green.
+            CheckoutEventReporter::class => static fn (Container $c): CheckoutEventReporter => $c
+                ->get(Instrumentation::class)
+                ->checkoutEventReporter(new EmrCheckoutEventReporter(
+                    new ClientFactory($c->get(Config::class), $emrRoot),
+                    $c->get(EventRepository::class),
+                    $c->get(OrderRepository::class),
+                    $c->get(OperatorLog::class),
+                    static fn (): ?string => $c->get(JourneyStore::class)->state()?->attribution?->get('utm_source'),
+                    'USD',
+                    true,
+                    $emr,
+                    static fn (): ?string => 'Mozilla/5.0 (test)',
+                )),
         ]);
     }
 
@@ -940,6 +972,26 @@ final class CheckoutFunnelTest extends TestCase
         }
 
         return $paths;
+    }
+
+    /**
+     * The decoded body of the last EMR request whose path ends with $suffix.
+     *
+     * @return array<string, mixed>
+     */
+    private function emrBodyEndingWith(string $suffix): array
+    {
+        $matching = array_values(array_filter(
+            $this->emr->requests,
+            static fn ($request): bool => str_ends_with($request->getUri()->getPath(), $suffix),
+        ));
+
+        self::assertNotSame([], $matching, sprintf('no EMR request ended with "%s"', $suffix));
+
+        $body = $matching[count($matching) - 1]->getBody();
+        $body->rewind();
+
+        return (array) json_decode($body->getContents(), true, 512, JSON_THROW_ON_ERROR);
     }
 
     /** @return list<array<string, mixed>> */

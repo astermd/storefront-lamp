@@ -9,6 +9,8 @@ namespace AsterMD\Storefront\Checkout;
 use AsterMD\Sdk\AsterMDClient;
 use AsterMD\Sdk\Enum\CheckoutEvent;
 use AsterMD\Storefront\Emr\ClientFactory;
+use AsterMD\Storefront\Emr\VerificationGateway;
+use AsterMD\Storefront\Payment\PaymentDescriptor;
 use AsterMD\Storefront\Repository\EventRepository;
 use AsterMD\Storefront\Repository\OrderRepository;
 use AsterMD\Storefront\Support\CardScrubber;
@@ -76,16 +78,32 @@ final class EmrCheckoutEventReporter implements CheckoutEventReporter
      */
     private const string NO_SESSION = '';
 
+    /**
+     * What an import with no browser behind it is attributed to.
+     *
+     * A product token rather than a browser string, because that is what it
+     * is: a server telling the EMR that this order reached it from a sweep
+     * rather than from a buyer's device. The endpoint requires the header and
+     * the SDK refuses an empty one, so there has to be an answer, and naming a
+     * browser nobody used would be the wrong one.
+     */
+    private const string STOREFRONT_AGENT = 'AsterMD-Storefront';
+
     private ?AsterMDClient $client = null;
 
     /** @var \Closure(): ?string the visitor's own user agent, for the treatment sync's attribution */
     private readonly \Closure $userAgent;
+
+    /** @var \Closure(): ?string the buyer's address, resolved lazily so this class never holds journey state */
+    private readonly \Closure $buyerEmail;
 
     /**
      * @param \Closure(): ?string $utmSource the journey's first-touch source, resolved lazily so this class never holds journey state
      * @param string $currency sent on the create; the EMR merges rather than replaces, so it survives every later update
      * @param bool $reportToEmr whether the EMR half runs at all; the local trail is written either way
      * @param (\Closure(): ?string)|null $userAgent injected so a test does not read the ambient request
+     * @param ?VerificationGateway $verification asked what it already established, not asked to establish anything
+     * @param (\Closure(): ?string)|null $buyerEmail the journey's buyer, resolved on use because the journey is request-scoped
      */
     public function __construct(
         private readonly ClientFactory $clients,
@@ -97,7 +115,11 @@ final class EmrCheckoutEventReporter implements CheckoutEventReporter
         private readonly bool $reportToEmr = true,
         private readonly ?ClientInterface $httpClient = null,
         ?\Closure $userAgent = null,
+        private readonly ?VerificationGateway $verification = null,
+        ?\Closure $buyerEmail = null,
     ) {
+        $this->buyerEmail = $buyerEmail ?? static fn (): ?string => null;
+
         $this->userAgent = $userAgent ?? static function (): ?string {
             // The SDK forwards this verbatim so the import is attributed to the
             // buyer's device rather than to this server, and asks the consuming
@@ -127,7 +149,7 @@ final class EmrCheckoutEventReporter implements CheckoutEventReporter
     }
 
     /** @param list<string> $orderReferences */
-    public function orderPlaced(?string $sessionUuid, Totals $totals, string $paymentMethod, array $orderReferences): void
+    public function orderPlaced(?string $sessionUuid, Totals $totals, string $paymentMethod, array $orderReferences, ?PaymentDescriptor $payment = null): void
     {
         $this->record($sessionUuid, 'checkout.order_placed', [
             'references' => implode(',', $orderReferences),
@@ -139,15 +161,15 @@ final class EmrCheckoutEventReporter implements CheckoutEventReporter
             return;
         }
 
-        $this->send($sessionUuid, 'order_placed', function (AsterMDClient $client) use ($sessionUuid, $totals, $paymentMethod, $orderReferences): void {
+        $this->send($sessionUuid, 'order_placed', function (AsterMDClient $client) use ($sessionUuid, $totals, $paymentMethod, $orderReferences, $payment): void {
             $client->checkoutEvents()->update($sessionUuid, CheckoutEvent::OrderPlaced, self::money($totals) + [
                 'payment_method' => $paymentMethod,
                 'currency' => $this->currency,
                 'provider_order_id' => $orderReferences,
-            ]);
+            ] + self::paymentBlock($payment));
         });
 
-        $this->treatmentsSynced($sessionUuid, $orderReferences);
+        $this->treatmentsSynced($sessionUuid, $orderReferences, $payment);
     }
 
     public function orderDeclined(
@@ -156,6 +178,7 @@ final class EmrCheckoutEventReporter implements CheckoutEventReporter
         string $paymentMethod,
         ?string $reference,
         string $reason,
+        ?PaymentDescriptor $payment = null,
     ): void {
         // The reason is the provider's own buyer-safe text and is recorded
         // because a decline the buyer retried past is otherwise unanswerable
@@ -177,13 +200,27 @@ final class EmrCheckoutEventReporter implements CheckoutEventReporter
             return;
         }
 
-        $this->send($sessionUuid, 'order_declined', function (AsterMDClient $client) use ($sessionUuid, $totals, $paymentMethod, $reference): void {
+        $this->send($sessionUuid, 'order_declined', function (AsterMDClient $client) use ($sessionUuid, $totals, $paymentMethod, $reference, $payment): void {
             $client->checkoutEvents()->update($sessionUuid, CheckoutEvent::OrderDeclined, self::money($totals) + [
                 'payment_method' => $paymentMethod,
                 'currency' => $this->currency,
                 'provider_order_id' => $reference === null ? [] : [$reference],
-            ]);
+            ] + self::paymentBlock($payment));
         });
+    }
+
+    /**
+     * The `payment` key, or no key at all.
+     *
+     * An empty object would assert a payment method nothing observed, and this
+     * field is optional on the EMR's side — the caller that has no card is the
+     * caller that has nothing to say about one.
+     *
+     * @return array{payment?: array<string, mixed>}
+     */
+    private static function paymentBlock(?PaymentDescriptor $payment): array
+    {
+        return $payment === null ? [] : ['payment' => $payment->toArray()];
     }
 
     /**
@@ -247,7 +284,7 @@ final class EmrCheckoutEventReporter implements CheckoutEventReporter
      *
      * @param list<string> $orderReferences
      */
-    public function treatmentsSynced(?string $sessionUuid, array $orderReferences): void
+    public function treatmentsSynced(?string $sessionUuid, array $orderReferences, ?PaymentDescriptor $payment = null): void
     {
         if ($sessionUuid === null || !$this->reportToEmr || $orderReferences === []) {
             return;
@@ -257,8 +294,10 @@ final class EmrCheckoutEventReporter implements CheckoutEventReporter
             $response = $this->client()->treatments()->sync(
                 $sessionUuid,
                 $orderReferences,
+                $this->userAgentFor($orderReferences),
                 ($this->utmSource)(),
-                ($this->userAgent)(),
+                $payment?->toArray(),
+                $this->verificationBlock(),
             );
         } catch (\Throwable $e) {
             $this->log->warning('checkout.treatment_sync_failed', [
@@ -281,6 +320,74 @@ final class EmrCheckoutEventReporter implements CheckoutEventReporter
         foreach ($orderReferences as $reference) {
             $this->stampTreatmentReference($reference, $treatment ?? $reference);
         }
+    }
+
+    /**
+     * The `User-Agent` this import is attributed to.
+     *
+     * Required and non-empty: the SDK throws on an empty one, and that throw
+     * would be caught by the swallow around the call above and reported as a
+     * warning line -- the sync would stop happening and nothing would say why.
+     *
+     * Three answers, in order of how close each is to the buyer. The ambient
+     * request is the buyer's own device and is right whenever there is a
+     * request. The order row holds the same value, kept from the request that
+     * placed it, and is what the receipt batch and the reconciliation sweep
+     * read -- neither has a request of its own. The storefront's own token is
+     * the honest last answer: it says this import came from the server, which
+     * by then it did.
+     *
+     * @param list<string> $orderReferences
+     */
+    private function userAgentFor(array $orderReferences): string
+    {
+        $ambient = trim((string) (($this->userAgent)() ?? ''));
+
+        if ($ambient !== '') {
+            return $ambient;
+        }
+
+        foreach ($orderReferences as $reference) {
+            $stored = trim((string) ($this->orders->findByReference($reference)['user_agent'] ?? ''));
+
+            if ($stored !== '') {
+                return $stored;
+            }
+        }
+
+        return self::STOREFRONT_AGENT;
+    }
+
+    /**
+     * What this storefront has actually verified about the buyer.
+     *
+     * **Only what was checked, and never a row of falses.** `address` is false
+     * because no address has ever been verified here —
+     * {@see VerificationGateway::normaliseAddress()} has no caller — so sending
+     * the block on an unverified email would fill both fields with things that
+     * did not happen. A journey with nothing verified sends no `verification`
+     * key at all.
+     *
+     * **Only a literal true counts.** `emailIsDeliverable()` answers null when
+     * the check could not run, and a null passes checkout validation without
+     * verifying anything: on this storefront's own credential the whole
+     * verification resource is refused, so null is the common case rather than
+     * the rare one. The gateway memoises, so this second read costs no round
+     * trip.
+     *
+     * @return array{email: bool, address: bool}|null
+     */
+    private function verificationBlock(): ?array
+    {
+        $email = trim((string) (($this->buyerEmail)() ?? ''));
+
+        if ($email === '' || $this->verification === null || !$this->verification->isEnabled()) {
+            return null;
+        }
+
+        return $this->verification->emailIsDeliverable($email) === true
+            ? ['email' => true, 'address' => false]
+            : null;
     }
 
     public function upsellOffered(?string $sessionUuid, string $slug, string $name): void

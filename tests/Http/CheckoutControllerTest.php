@@ -17,6 +17,7 @@ use AsterMD\Storefront\Checkout\NullOrderRecorder;
 use AsterMD\Storefront\Checkout\OrderBumps;
 use AsterMD\Storefront\Checkout\OrderRecorder;
 use AsterMD\Storefront\Checkout\PostChargeGuard;
+use AsterMD\Storefront\Checkout\SettlementPolicy;
 use AsterMD\Storefront\Upsell\Upsells;
 use AsterMD\Storefront\Domain\CartRules;
 use AsterMD\Storefront\Domain\ProductCatalog;
@@ -630,6 +631,7 @@ final class CheckoutControllerTest extends TestCase
                 log: $c->get(OperatorLog::class),
                 postCharge: $c->get(PostChargeGuard::class),
                 upsells: $c->get(Upsells::class),
+                settlement: $c->get(SettlementPolicy::class),
             ),
             CheckoutController::class => static fn (Container $c): CheckoutController => new CheckoutController(
                 $c->get(CheckoutService::class),

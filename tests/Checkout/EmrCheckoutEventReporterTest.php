@@ -8,6 +8,8 @@ use AsterMD\Storefront\Checkout\EmrCheckoutEventReporter;
 use AsterMD\Storefront\Checkout\Promotion;
 use AsterMD\Storefront\Checkout\Totals;
 use AsterMD\Storefront\Emr\ClientFactory;
+use AsterMD\Storefront\Emr\VerificationGateway;
+use AsterMD\Storefront\Payment\PaymentDescriptor;
 use AsterMD\Storefront\Repository\EventRepository;
 use AsterMD\Storefront\Repository\OrderRepository;
 use AsterMD\Storefront\Repository\SessionRepository;
@@ -591,8 +593,148 @@ final class EmrCheckoutEventReporterTest extends TestCase
     // ---------------------------------------------------------------- fixtures
 
     /** @param array<string, array{0: int, 1: array<string, mixed>|string}> $overrides */
-    private function reporter(array $overrides = [], bool $reportToEmr = true): EmrCheckoutEventReporter
+    public function testTheSyncIsAttributedToTheBuyersOwnBrowser(): void
     {
+        $this->reporter()->treatmentsSynced(self::SESSION, ['34660']);
+
+        self::assertSame('Mozilla/5.0 (test)', $this->headerOf('/treatments/sync', 'User-Agent'));
+        self::assertSame(self::SESSION, $this->bodyOf('/treatments/sync')['session_id']);
+    }
+
+    public function testASyncWithNoRequestReplaysTheAgentStoredAgainstTheOrder(): void
+    {
+        // The reconciliation sweep runs from the console and has no request of
+        // its own, so the only buyer agent still in existence is the one the
+        // order was recorded with.
+        $this->recordOrder('34660', 'Mozilla/5.0 (Macintosh)');
+
+        $this->reporter(userAgent: null)->treatmentsSynced(self::SESSION, ['34660']);
+
+        self::assertSame('Mozilla/5.0 (Macintosh)', $this->headerOf('/treatments/sync', 'User-Agent'));
+    }
+
+    public function testASyncWithNeitherNamesTheStorefrontRatherThanSendingNothing(): void
+    {
+        // The SDK throws on an empty User-Agent, and this class swallows every
+        // throwable into a warning line -- so an empty header would not fail
+        // loudly, the sync would simply stop happening and nothing would say
+        // why.
+        $this->reporter(userAgent: null)->treatmentsSynced(self::SESSION, ['no-such-order']);
+
+        self::assertSame('AsterMD-Storefront', $this->headerOf('/treatments/sync', 'User-Agent'));
+    }
+
+    public function testThePaymentBlockRidesTheSyncWhenThereIsOne(): void
+    {
+        $this->reporter()->treatmentsSynced(
+            self::SESSION,
+            ['34660'],
+            new PaymentDescriptor(PaymentDescriptor::TYPE_CREDIT_CARD, true, true, 10850, null),
+        );
+
+        self::assertSame(
+            ['type' => 'credit_card', 'pre_auth' => true, 'pre_auth_qa' => true, 'pre_auth_amount' => 108.5],
+            $this->bodyOf('/treatments/sync')['payment'],
+        );
+    }
+
+    public function testASyncWithNoPaymentSendsNoPaymentKey(): void
+    {
+        // The receipt batch and the reconciliation sweep both run without a
+        // card, and an empty object would assert a payment method nothing
+        // observed.
+        $this->reporter()->treatmentsSynced(self::SESSION, ['34660']);
+
+        self::assertArrayNotHasKey('payment', $this->bodyOf('/treatments/sync'));
+    }
+
+    public function testAPlacedOrdersFunnelRecordCarriesThePaymentBlockBesideTheOlderField(): void
+    {
+        $this->reporter()->orderPlaced(
+            self::SESSION,
+            $this->totals(10850, 10850),
+            'card',
+            ['34660'],
+            new PaymentDescriptor(PaymentDescriptor::TYPE_CREDIT_CARD, false, null, null, null),
+        );
+
+        $body = $this->bodyOf('/checkout-events/update/');
+
+        // Two vocabularies for one fact, and both are sent: `payment_method`
+        // is the EMR's older field and `payment.type` is the new block's.
+        self::assertSame('card', $body['payment_method']);
+        self::assertSame(['type' => 'credit_card', 'pre_auth' => false], $body['payment']);
+    }
+
+    public function testADeclinedOrdersFunnelRecordCarriesTheAttemptedSettlement(): void
+    {
+        $this->reporter()->orderDeclined(
+            self::SESSION,
+            $this->totals(10850, 10850),
+            'card',
+            '34660',
+            'Card Declined',
+            new PaymentDescriptor(PaymentDescriptor::TYPE_CREDIT_CARD, true, null, null, null),
+        );
+
+        $body = $this->bodyOf('/checkout-events/update/');
+
+        self::assertTrue($body['payment']['pre_auth']);
+        // Nothing was held, so there is no held amount to report.
+        self::assertArrayNotHasKey('pre_auth_amount', $body['payment']);
+    }
+
+    public function testAnOrderEventWithNoDescriptorSendsNoPaymentKey(): void
+    {
+        $this->reporter()->orderPlaced(self::SESSION, $this->totals(10850, 10850), 'card', ['34660']);
+
+        self::assertArrayNotHasKey('payment', $this->bodyOf('/checkout-events/update/'));
+    }
+
+    public function testADeliverableAddressIsReportedAsTheOneThingThatWasVerified(): void
+    {
+        $this->reporter(verification: $this->verificationAnswering(true))
+            ->treatmentsSynced(self::SESSION, ['34660']);
+
+        // Address is false because this storefront has never verified one:
+        // `normaliseAddress()` has no caller anywhere.
+        self::assertSame(
+            ['email' => true, 'address' => false],
+            $this->bodyOf('/treatments/sync')['verification'],
+        );
+    }
+
+    public function testACheckThatDidNotRunOrDidNotPassSendsNoVerificationKey(): void
+    {
+        // Null is "the check could not run", which passes checkout validation
+        // without verifying anything -- and on this credential the whole
+        // verification resource is refused, so null is the common case.
+        // Reporting `email: false` would be equally wrong: it asserts a check
+        // that ran and failed.
+        $this->reporter(verification: $this->verificationAnswering(null))
+            ->treatmentsSynced(self::SESSION, ['34660']);
+        self::assertArrayNotHasKey('verification', $this->bodyOf('/treatments/sync'));
+
+        $this->reporter(verification: $this->verificationAnswering(false))
+            ->treatmentsSynced(self::SESSION, ['34661']);
+        self::assertArrayNotHasKey('verification', $this->bodyOf('/treatments/sync'));
+    }
+
+    public function testAJourneyWithNoBuyerYetVerifiesNothing(): void
+    {
+        $this->reporter(verification: $this->verificationAnswering(true), buyerEmail: null)
+            ->treatmentsSynced(self::SESSION, ['34660']);
+
+        self::assertArrayNotHasKey('verification', $this->bodyOf('/treatments/sync'));
+    }
+
+    private function reporter(
+        array $overrides = [],
+        bool $reportToEmr = true,
+        ?string $userAgent = 'Mozilla/5.0 (test)',
+        ?VerificationGateway $verification = null,
+        ?string $buyerEmail = 'ada@example.com',
+    ): EmrCheckoutEventReporter {
         $this->http = new FakeEmrHttpClient(self::TOKEN_ROUTE + $overrides + self::OK_ROUTES);
 
         return new EmrCheckoutEventReporter(
@@ -604,8 +746,36 @@ final class EmrCheckoutEventReporterTest extends TestCase
             'USD',
             $reportToEmr,
             $this->http,
-            static fn (): ?string => 'Mozilla/5.0 (test)',
+            static fn (): ?string => $userAgent,
+            $verification,
+            static fn (): ?string => $buyerEmail,
         );
+    }
+
+    /** A verification gateway that is switched on and already knows one answer. */
+    private function verificationAnswering(?bool $deliverable): VerificationGateway
+    {
+        return new class($deliverable) implements VerificationGateway {
+            public function __construct(private readonly ?bool $deliverable)
+            {
+            }
+
+            public function emailIsDeliverable(string $email): ?bool
+            {
+                return $this->deliverable;
+            }
+
+            /** @return array<string, string>|null */
+            public function normaliseAddress(string $address): ?array
+            {
+                return null;
+            }
+
+            public function isEnabled(): bool
+            {
+                return true;
+            }
+        };
     }
 
     private function totals(int $subtotalCents, int $totalCents): Totals
@@ -642,6 +812,34 @@ final class EmrCheckoutEventReporterTest extends TestCase
         self::assertNotSame([], $matching, sprintf('no request was made to "%s"', $needle));
 
         return (array) json_decode((string) $matching[count($matching) - 1]->getBody(), true, 512, JSON_THROW_ON_ERROR);
+    }
+
+    /** The value of one header on the last request whose path contains $needle. */
+    private function headerOf(string $needle, string $header): string
+    {
+        $matching = array_values(array_filter(
+            $this->http->requests,
+            static fn ($request): bool => str_contains($request->getUri()->getPath(), $needle),
+        ));
+
+        self::assertNotSame([], $matching, sprintf('no request was made to "%s"', $needle));
+
+        return $matching[count($matching) - 1]->getHeaderLine($header);
+    }
+
+    /** An order row for the sync to read a stored user agent back off. */
+    private function recordOrder(string $reference, ?string $userAgent): void
+    {
+        (new SessionRepository(fn (): \PDO => $this->pdo))->insert(self::SESSION, [], null);
+        (new OrderRepository(fn (): \PDO => $this->pdo))->insert([
+            'session_uuid' => self::SESSION,
+            'provider_reference' => $reference,
+            'anchor_slug' => 'tirz-5mg',
+            'amount_cents' => 10850,
+            'currency' => 'USD',
+            'status' => 'placed',
+            'user_agent' => $userAgent,
+        ], [], []);
     }
 
     /** @return list<string> */

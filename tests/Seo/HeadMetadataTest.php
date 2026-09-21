@@ -144,13 +144,37 @@ final class HeadMetadataTest extends TestCase
         self::assertStringNotContainsString('<meta name="description" content=""', $body);
     }
 
+    /**
+     * The catalog is stated, not read. This used to render the first product
+     * in the shipped catalog and assert the default description, on the
+     * premise that "every product this EMR syncs carries `description: \"\"`"
+     * -- true of the channel it was written against and false of the next one,
+     * which synced products with real copy and turned a correct render into a
+     * failure.
+     */
     public function testAProductWithNoDescriptionOfItsOwnFallsBackToTheConfiguredOne(): void
     {
-        // Every product this EMR syncs carries `description: ""`, so this is
-        // the case that fires on the real catalog rather than an edge one.
-        $body = $this->body($this->get($this->app(), '/products/' . self::firstProductSlug() . '/'));
+        $app = $this->app(catalog: self::catalogOfOneProduct(''));
+        $body = $this->body($this->get($app, '/products/solo-product/'));
 
         self::assertStringContainsString(
+            '<meta name="description" content="' . htmlspecialchars(self::configured('default_description'), ENT_QUOTES) . '"',
+            $body,
+        );
+    }
+
+    /**
+     * The other branch, which nothing covered end to end while every synced
+     * product happened to have an empty description -- so the chain could have
+     * ignored a product's own copy entirely and this suite would have agreed.
+     */
+    public function testAProductWithADescriptionOfItsOwnRendersItRatherThanTheDefault(): void
+    {
+        $app = $this->app(catalog: self::catalogOfOneProduct('Keto Gummies, 60ct.'));
+        $body = $this->body($this->get($app, '/products/solo-product/'));
+
+        self::assertStringContainsString('<meta name="description" content="Keto Gummies, 60ct."', $body);
+        self::assertStringNotContainsString(
             '<meta name="description" content="' . htmlspecialchars(self::configured('default_description'), ENT_QUOTES) . '"',
             $body,
         );
@@ -256,17 +280,46 @@ final class HeadMetadataTest extends TestCase
     // ------------------------------------------------------------- machinery
 
     /** @param array<string, mixed> $seo */
-    private function app(bool $indexable = false, array $seo = []): App
+    /**
+     * @param array<string, mixed>|null $catalog a stated catalog for the cases
+     *                                           that assert something about one,
+     *                                           or null for the shipped one
+     */
+    private function app(bool $indexable = false, array $seo = [], ?array $catalog = null): App
     {
         return AppFactory::create(dirname(__DIR__, 2), [
             Config::class => $this->configWith([
                 'app' => $this->shippedApp($seo + ($indexable ? ['discourage_indexing' => false] : [])),
                 // The product page in publicPaths() has to render whether or
                 // not this deployment has been synced, so the catalog comes
-                // from the same place the slug did.
-                'products.generated' => ShippedCatalog::catalog(),
+                // from the same place the slug did -- unless the case is about
+                // a particular kind of product, in which case it says so.
+                'products.generated' => $catalog ?? ShippedCatalog::catalog(),
             ]),
         ]);
+    }
+
+    /**
+     * A catalog holding one product, with exactly the description given.
+     *
+     * Cases about the description chain state their product rather than
+     * reaching for the first one in the shipped catalog: whether that product
+     * carries copy of its own is a property of whichever channel was last
+     * synced, and both branches of `[24.4]` have to be provable on any of
+     * them.
+     *
+     * @return array<string, mixed>
+     */
+    private static function catalogOfOneProduct(string $description): array
+    {
+        return ['products' => ['solo-product' => [
+            'slug' => 'solo-product',
+            'name' => 'Solo Product',
+            'kind' => 'otc',
+            'emr_product_id' => 'emr-solo',
+            'description' => $description,
+            'variants' => [['id' => 'solo-product-1', 'name' => 'One', 'price_cents' => 1000]],
+        ]]];
     }
 
     private function get(App $app, string $path): ResponseInterface

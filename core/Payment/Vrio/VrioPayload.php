@@ -24,19 +24,43 @@ use AsterMD\Storefront\Payment\PaymentCredential;
  * shares, so a line is described to the provider the same way whether it is
  * being priced or charged.
  *
- * Placement is single-step -- `action: "process"` creates and charges in one
- * call. The multi-step alternative doubles the round trips inside a request
- * the buyer is waiting on and buys nothing, because the provider offers no
- * idempotency either way: an identical payload posted twice creates two orders
- * and charges both, and `connection_order_id` is ignored on create. The
- * duplicate guard is therefore entirely the storefront's, and this payload
+ * Placement is single-step whichever settlement mode it runs in --
+ * `action: "process"` creates and charges in one call, `action: "authorize"`
+ * creates and reserves in one call. The multi-step alternative
+ * (create, then `POST /orders/{id}/process`) doubles the round trips inside a
+ * request the buyer is waiting on and buys nothing, because the provider
+ * offers no idempotency either way: an identical payload posted twice creates
+ * two orders and charges both, and `connection_order_id` is ignored on create.
+ * The duplicate guard is therefore entirely the storefront's, and this payload
  * deliberately does not carry the idempotency key -- sending it would imply a
  * provider-side guarantee that does not exist.
+ *
+ * **`action` is the only field settlement changes**, and it is the same
+ * single-call shape either way. An `authorize` body is accepted on the same
+ * required fields as a `process` one: it reaches the acquiring gateway and
+ * comes back with the same envelope, the same `transaction_total` and the same
+ * order node. Nothing else in this payload
+ * varies, which is why settlement is a value read here rather than a second
+ * builder ({@see VrioOffers} for what a second builder cost once).
+ *
+ * **`date_auto_capture` is deliberately not sent.** The provider will settle an
+ * authorization on a timestamp or a campaign trigger, and both would put the
+ * decision of *when* money moves inside a payload this storefront writes at
+ * checkout -- before the event that decides it has happened. Capture is an
+ * explicit later call ({@see VrioAdapter::capture()}), so that the record of
+ * what settled an order is a call somebody made rather than a field nobody
+ * re-read.
  */
 final class VrioPayload
 {
     /** The provider's payment-method code for a credit card. */
     private const int PAYMENT_METHOD_CARD = 1;
+
+    /** Create the order and charge it in one call. */
+    private const string ACTION_PROCESS = 'process';
+
+    /** Create the order and reserve the funds; a later capture settles it. */
+    private const string ACTION_AUTHORIZE = 'authorize';
 
     /**
      * @return array<string, mixed> the JSON body
@@ -55,7 +79,7 @@ final class VrioPayload
             'force_campaign_id' => true,
             'offers_restrict' => true,
             'shipping_profile_id' => $shippingProfileId,
-            'action' => 'process',
+            'action' => $order->settlement->isAuthorize() ? self::ACTION_AUTHORIZE : self::ACTION_PROCESS,
 
             'email' => $order->buyer->email,
             'phone' => $order->buyer->phone,

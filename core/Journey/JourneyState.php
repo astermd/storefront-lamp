@@ -73,13 +73,12 @@ final class JourneyState
      * The identity-verification vocabulary (`[22.20]`), and the reason it has
      * three values rather than a boolean.
      *
-     * Recorded live on 2026-08-25: the provider answers HTTP 200 with the
-     * verdict in the body, so a refusal and a malformed request are not
-     * distinguishable by status code and must be told apart by what the code
-     * asked for. `PASSED` and `FAILED` are statements about the buyer.
-     * `INCONCLUSIVE` is not -- it covers the provider answering without
-     * deciding, our own request being rejected as incomplete, and the check
-     * being unreachable, none of which is the buyer's doing.
+     * The provider answers HTTP 200 with the verdict in the body, so a refusal
+     * and a malformed request are not distinguishable by status code and must be
+     * told apart by what the code asked for. `PASSED` and `FAILED` are
+     * statements about the buyer. `INCONCLUSIVE` is not -- it covers the provider
+     * answering without deciding, our own request being rejected as incomplete,
+     * and the check being unreachable, none of which is the buyer's doing.
      *
      * `[20.1]`'s failure policy is what makes the distinction load-bearing:
      * only `FAILED` may ever be shown to a buyer as a failed check, and only

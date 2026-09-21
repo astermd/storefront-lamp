@@ -8,6 +8,8 @@ use AsterMD\Storefront\Payment\Buyer;
 use AsterMD\Storefront\Payment\OrderEnvelope;
 use AsterMD\Storefront\Payment\OrderLine;
 use AsterMD\Storefront\Payment\PaymentCredential;
+use AsterMD\Storefront\Payment\SettlementMode;
+use AsterMD\Storefront\Payment\CardBrand;
 use AsterMD\Storefront\Payment\Vrio\CardScheme;
 use AsterMD\Storefront\Payment\Vrio\VrioCredentials;
 use AsterMD\Storefront\Payment\Vrio\VrioPayload;
@@ -21,8 +23,13 @@ final class VrioPayloadTest extends TestCase
     }
 
     /** @param list<OrderLine>|null $lines */
-    private function envelope(?array $lines = null, int $discountCents = 0, ?string $code = null, ?string $session = 'sess-uuid-1'): OrderEnvelope
-    {
+    private function envelope(
+        ?array $lines = null,
+        int $discountCents = 0,
+        ?string $code = null,
+        ?string $session = 'sess-uuid-1',
+        SettlementMode $settlement = SettlementMode::Capture,
+    ): OrderEnvelope {
         $lines ??= [new OrderLine('tirzepatide-5mg', 'Tirzepatide (5mg/mL)', '337', '3414', 12000, 1)];
         $subtotal = array_sum(array_map(static fn (OrderLine $l): int => $l->lineTotalCents(), $lines));
 
@@ -40,7 +47,59 @@ final class VrioPayloadTest extends TestCase
             userAgent: 'Mozilla/5.0 (probe)',
             idempotencyKey: 'idem-1',
             anchorSlug: 'tirzepatide-5mg',
+            settlement: $settlement,
         );
+    }
+
+    public function testACaptureOrderAsksTheProviderToProcessIt(): void
+    {
+        $body = VrioPayload::forOrder($this->envelope(), $this->card(), $this->credentials(), 1);
+
+        self::assertSame('process', $body['action']);
+    }
+
+    public function testAnAuthorizeOrderAsksTheProviderToAuthorizeInstead(): void
+    {
+        $body = VrioPayload::forOrder(
+            $this->envelope(settlement: SettlementMode::Authorize),
+            $this->card(),
+            $this->credentials(),
+            1,
+        );
+
+        self::assertSame('authorize', $body['action']);
+    }
+
+    public function testSettlementChangesTheActionAndNothingElse(): void
+    {
+        // An authorize body is accepted on exactly the same required fields
+        // as a process one. Asserted as a whole-payload
+        // diff rather than field by field, so a future change that quietly
+        // varies a second field under authorize has to be stated here.
+        $capture = VrioPayload::forOrder($this->envelope(), $this->card(), $this->credentials(), 1);
+        $authorize = VrioPayload::forOrder(
+            $this->envelope(settlement: SettlementMode::Authorize),
+            $this->card(),
+            $this->credentials(),
+            1,
+        );
+
+        self::assertSame(['action'], array_keys(array_diff_assoc(
+            array_map(static fn (mixed $v): mixed => is_array($v) ? json_encode($v) : $v, $authorize),
+            array_map(static fn (mixed $v): mixed => is_array($v) ? json_encode($v) : $v, $capture),
+        )));
+    }
+
+    public function testNoOrderCarriesAnAutoCaptureTimestamp(): void
+    {
+        // Sending one would put the decision of *when* money moves inside a
+        // payload written at checkout, before the event that decides it.
+        foreach ([SettlementMode::Capture, SettlementMode::Authorize] as $mode) {
+            $body = VrioPayload::forOrder($this->envelope(settlement: $mode), $this->card(), $this->credentials(), 1);
+
+            self::assertArrayNotHasKey('date_auto_capture', $body);
+            self::assertArrayNotHasKey('auto_capture_trigger_id', $body);
+        }
     }
 
     private function card(): PaymentCredential
@@ -241,6 +300,31 @@ final class VrioPayloadTest extends TestCase
         // card_type_id 2.
         self::assertSame(2, CardScheme::codeFor('4111111100084444'));
         self::assertSame(2, CardScheme::codeFor('4111111100005555'));
+    }
+
+    public function testTheTwoBrandsThisProviderHasNoCodeForReachTheVisaFallback(): void
+    {
+        // The provider's table runs 1-4 plus wallet, ACH and SEPA. Diners Club
+        // and JCB are absent from it, so they take the same fallback an
+        // unrecognised prefix takes rather than inventing a code.
+        self::assertSame(CardScheme::VISA, CardScheme::codeFor('36227206271667'));
+        self::assertSame(CardScheme::VISA, CardScheme::codeFor('3530111333300000'));
+    }
+
+    public function testEachProviderCodeReadsBackAsTheBrandItStandsFor(): void
+    {
+        self::assertSame(CardBrand::Mastercard, CardScheme::brandFor(CardScheme::MASTERCARD));
+        self::assertSame(CardBrand::Visa, CardScheme::brandFor(CardScheme::VISA));
+        self::assertSame(CardBrand::Discover, CardScheme::brandFor(CardScheme::DISCOVER));
+        self::assertSame(CardBrand::Amex, CardScheme::brandFor(CardScheme::AMEX));
+    }
+
+    public function testACodeOutsideTheCardRangeIsNullRatherThanABrand(): void
+    {
+        // 5, 6 and 7 are the provider's digital-wallet, ACH and SEPA codes.
+        // None of them is a card scheme and none may be reported as one.
+        self::assertNull(CardScheme::brandFor(5));
+        self::assertNull(CardScheme::brandFor(0));
     }
 
     public function testTheIdempotencyKeyIsNotSentToTheProvider(): void

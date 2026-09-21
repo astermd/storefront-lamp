@@ -224,6 +224,72 @@ final class OrderRepositoryTest extends TestCase
     }
 
     /** @return array<string, mixed> */
+    public function testAnOrderWithNoSettlementNamedIsRecordedAsCaptured(): void
+    {
+        // Every row written before settlement existed was charged in full, and
+        // a caller that omits it is saying nothing new. A null here would leave
+        // a reconciler unable to tell "charged" from "we do not know".
+        $pdo = $this->tempPdo();
+        $repository = $this->repository($pdo, withSession: true);
+        $repository->insert($this->order(), [], []);
+
+        self::assertSame('capture', $repository->findByReference('34660')['settlement']);
+    }
+
+    public function testAnAuthorizedOrderKeepsThatOnTheRow(): void
+    {
+        // The column exists so a later capture can tell which orders still owe
+        // money; if it did not round-trip, `payment:capture` would refuse every
+        // order it was handed.
+        $pdo = $this->tempPdo();
+        $repository = $this->repository($pdo, withSession: true);
+        $repository->insert(['settlement' => 'authorize'] + $this->order(), [], []);
+
+        self::assertSame('authorize', $repository->findByReference('34660')['settlement']);
+    }
+
+    public function testTwoRowsSharingAReferenceReadBackAsTheMostRecentOne(): void
+    {
+        // `provider_reference` is not unique and cannot be: one shipped provider
+        // reuses a PARTIAL order for a repeat attempt, so a decline and the
+        // retry that succeeds carry the same reference. Without an ordering the
+        // engine returns the lowest rowid — the decline — and `payment:capture`
+        // would refuse to settle an authorization that is really outstanding.
+        $pdo = $this->tempPdo();
+        $repository = $this->repository($pdo, withSession: true);
+
+        $repository->insert(['status' => 'declined'] + $this->order(), [], []);
+        $repository->insert(['status' => 'placed', 'settlement' => 'authorize'] + $this->order(), [], []);
+
+        $order = $repository->findByReference('34660');
+
+        self::assertSame('placed', $order['status']);
+        self::assertSame('authorize', $order['settlement']);
+    }
+
+    public function testTheBuyersUserAgentIsKeptAgainstTheOrder(): void
+    {
+        $pdo = $this->tempPdo();
+        $repository = $this->repository($pdo, withSession: true);
+        $repository->insert($this->order() + ['user_agent' => 'Mozilla/5.0 (iPhone)'], [], []);
+
+        self::assertSame('Mozilla/5.0 (iPhone)', $repository->findByReference('34660')['user_agent']);
+    }
+
+    public function testAnOrderRecordedWithoutOneKeepsNullRatherThanAnEmptyString(): void
+    {
+        // Null says "we do not have one". An empty string is a value, and the
+        // treatment-sync endpoint rejects an empty User-Agent header, so the
+        // two have to stay apart in the column a replay reads.
+        $pdo = $this->tempPdo();
+        $repository = $this->repository($pdo, withSession: true);
+        $repository->insert($this->order(), [], []);
+        $repository->insert(['provider_reference' => '34661', 'user_agent' => ''] + $this->order(), [], []);
+
+        self::assertNull($repository->findByReference('34660')['user_agent']);
+        self::assertNull($repository->findByReference('34661')['user_agent']);
+    }
+
     private function order(): array
     {
         return [

@@ -69,6 +69,7 @@ use AsterMD\Storefront\Checkout\EmrCheckoutEventReporter;
 use AsterMD\Storefront\Checkout\OrderBumps;
 use AsterMD\Storefront\Checkout\OrderRecorder;
 use AsterMD\Storefront\Checkout\PostChargeGuard;
+use AsterMD\Storefront\Checkout\SettlementPolicy;
 use AsterMD\Storefront\Emr\EmrVerificationGateway;
 use AsterMD\Storefront\Emr\NullVerificationGateway;
 use AsterMD\Storefront\Emr\VerificationGateway;
@@ -81,6 +82,14 @@ use AsterMD\Storefront\Http\Controller\UpsellController;
 use AsterMD\Storefront\Payment\AdapterRegistry;
 use AsterMD\Storefront\Payment\PaymentAdapter;
 use AsterMD\Storefront\Payment\RefusingTransport;
+use AsterMD\CheckoutChampClient\Http\CurlClient as CheckoutChampCurlClient;
+use AsterMD\CheckoutChampClient\Http\HttpClientInterface as CheckoutChampHttpClient;
+use AsterMD\Storefront\Payment\CheckoutChamp\CheckoutChampAdapter;
+use AsterMD\Storefront\Payment\CheckoutChamp\CheckoutChampApiFactory;
+use AsterMD\Storefront\Payment\CheckoutChamp\CheckoutChampAuthorizeMode;
+use AsterMD\Storefront\Payment\CheckoutChamp\CheckoutChampCredentials;
+use AsterMD\Storefront\Payment\CheckoutChamp\CheckoutChampRefusingTransport;
+use AsterMD\Storefront\Payment\CheckoutChamp\CheckoutChampWireLog;
 use AsterMD\Storefront\Payment\Vrio\VrioAdapter;
 use AsterMD\Storefront\Payment\Vrio\VrioApiFactory;
 use AsterMD\Storefront\Payment\Vrio\VrioCredentials;
@@ -645,7 +654,17 @@ final class AppFactory
             (array) $c->get(Config::class)->get('payment.rate_limits', []),
             $c->get(OperatorLog::class),
         ));
-        $container->set(AdapterRegistry::class, static function (Container $c) use ($config, $rootDir): AdapterRegistry {
+        $container->set(AdapterRegistry::class, static function (Container $c) use ($rootDir): AdapterRegistry {
+            // Read from the container rather than from the `$config` captured
+            // above, because `Config::class` is a documented override point and
+            // the category and the credentials have to come from the same
+            // place. Split between the two, a test that varied the channel
+            // moved the category and left the credentials behind -- the
+            // registry then built the named adapter from another provider's
+            // config block, the credential mapper threw, and the resulting
+            // `NullPaymentAdapter` looked like a provider that had not been
+            // configured at all.
+            $config = $c->get(Config::class);
             $registry = new AdapterRegistry($c->get(OperatorLog::class));
 
             // Registered as a factory rather than an instance: a deployment
@@ -688,6 +707,44 @@ final class AppFactory
                 ),
                 $c->get(OperatorLog::class),
                 (int) $config->get('payment.shipping_profile_id', 1),
+            ));
+
+            // The second provider. Registering it costs nothing until a channel
+            // names it (`[14.2]`): the factory is not called, so no credentials
+            // are read and no client is built.
+            $registry->register('checkout_champ', static fn (): PaymentAdapter => new CheckoutChampAdapter(
+                CheckoutChampCredentials::fromChannelConfig(
+                    (array) $config->get('channel.generated.payment_processor.config', []),
+                ),
+                new CheckoutChampApiFactory(
+                    // Composed exactly as the other adapter's transport is, and
+                    // for the same two reasons -- the suite must not be able to
+                    // reach the live provider, and the wire log must wrap
+                    // whatever it finds rather than replace it.
+                    (static function () use ($config, $rootDir): ?CheckoutChampHttpClient {
+                        $inner = $config->get('app.env') === 'test' ? new CheckoutChampRefusingTransport() : null;
+
+                        if ($config->get('app.debug.wire_log') !== true) {
+                            return $inner;
+                        }
+
+                        return new CheckoutChampWireLog(
+                            $inner ?? new CheckoutChampCurlClient(),
+                            $rootDir . '/storage/logs/checkout-champ-wire.log',
+                        );
+                    })(),
+                ),
+                $c->get(OperatorLog::class),
+                // Optional, and shown against the order in the provider's own
+                // dashboard: an operator reconciling one by hand sees which page
+                // it came from rather than only a campaign number.
+                rtrim((string) $config->get('app.url', ''), '/') . '/checkout/',
+                // An unrecognised spelling falls back to the recommended
+                // mechanism rather than the one that reserves nothing.
+                // `config:validate` reports the typo; the runtime keeps holding
+                // the money it was told to hold.
+                CheckoutChampAuthorizeMode::parse($config->get('payment.checkout_champ.authorize_mode'))
+                    ?? CheckoutChampAuthorizeMode::Qa,
             ));
 
             return $registry;
@@ -740,7 +797,20 @@ final class AppFactory
             static fn (): ?string => $c->get(JourneyStore::class)->state()?->attribution?->get('utm_source'),
             (string) $c->get(Config::class)->get('payment.currency', 'USD'),
             $config->get('app.session.analytics') === true,
+            null,
+            null,
+            $c->get(VerificationGateway::class),
+            // Request-scoped like the source above, and for the same reason.
+            static fn (): ?string => $c->get(JourneyStore::class)->state()?->buyer['email'] ?? null,
         )));
+        // The settlement decision, resolved once and shared by the checkout
+        // charge and the upsell charge so the two cannot disagree about whether
+        // this deployment takes money or holds it.
+        $container->set(SettlementPolicy::class, static fn (Container $c): SettlementPolicy => new SettlementPolicy(
+            $c->get(ProductCatalog::class),
+            SettlementPolicy::modeFromConfig($c->get(Config::class)->get('payment.settlement')),
+            $c->get(OperatorLog::class),
+        ));
         $container->set(CheckoutService::class, static fn (Container $c): CheckoutService => new CheckoutService(
             $c->get(CartStore::class),
             $c->get(JourneyStore::class),
@@ -760,6 +830,7 @@ final class AppFactory
             $c->get(OperatorLog::class),
             $c->get(PostChargeGuard::class),
             $c->get(Upsells::class),
+            $c->get(SettlementPolicy::class),
         ));
         $container->set(CheckoutController::class, static fn (Container $c): CheckoutController => new CheckoutController(
             $c->get(CheckoutService::class),
@@ -781,6 +852,7 @@ final class AppFactory
             $c->get(FlowDefinition::class),
             $c->get(Config::class),
             $c->get(OperatorLog::class),
+            $c->get(SettlementPolicy::class),
         ));
         $container->set(UpsellController::class, static fn (Container $c): UpsellController => new UpsellController(
             $c->get(UpsellService::class),

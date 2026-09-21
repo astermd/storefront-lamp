@@ -50,8 +50,7 @@ final class Disqualification
      * {@see \AsterMD\Storefront\Journey\SessionResolver::READ_MODEL_SHAPE} does
      * for a journey's reconciled snapshot.
      *
-     * Still generation 1: the reading was confirmed against the real published
-     * form on 2026-08-23, whose thirteen conditioned alerts are its six hard
+     * Still generation 1: thirteen conditioned alerts compose six hard
      * stops and seven review flags.
      */
     public const int DEFINITION_SHAPE = 1;

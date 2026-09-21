@@ -403,6 +403,313 @@ integer cents.
 Conversion happens once, at the adapter boundary, so nothing above it ever sees
 provider money encoding. Keep it there.
 
+### 17. `action: "authorize"` is accepted; the approved `status_type_id` is the one thing unrecorded
+
+**What the wire does.** `POST /orders` accepts
+`action: "authorize"` on exactly the same required fields as
+`action: "process"` — no extra parameter, no different endpoint, no second
+call. The authorize request built order 36727, reached the acquiring gateway
+and priced the transaction at `120.00`. Nothing else in the payload changed;
+`tests/Payment/Vrio/VrioPayloadTest.php` asserts that as a whole-payload diff so
+a future change that quietly varies a second field has to be stated.
+
+`POST /orders/{id}/capture` takes an **empty body** and captures the most recent
+successful authorization. Capturing an order that never authorized answers a
+typed refusal — `success: false`, `data.error.code` and `validation_code` both
+`order_unauthorized`, message "Order has not been authorized.", and **no
+transaction node**. That is a stated refusal rather than a transport error or a
+silent no-op, which is what lets a failed capture tell an operator which kind of
+failure they have.
+
+The order node carries `date_auto_capture`, and the provider will also settle on
+a campaign-level trigger. **Neither is used.** Both would put the decision of
+when money moves inside a payload written at checkout, before the event that
+decides it has happened.
+
+**What could not be recorded, and why it matters.** The `status_type_id` an
+*approved* authorize returns on this account is **unverified**. The sandbox
+merchant's acquiring gateway was answering `Error 0:Invalid API Key provided`
+with `gateway_response_code: "500"` for every charge at the time — a control run
+with `action: "process"`, the path production uses today, failed identically —
+so an approved authorize could not be taken. A *declined* one was, and it is
+shape-identical to a declined capture: reference at
+`data.error.transaction.order_id`, `success: false`, `response_code: 200`,
+`status_type_id` null.
+
+That gap is why `core/Payment/Vrio/VrioOutcome.php`'s authorize branch is
+the **minimum** change from the capture rule rather than a re-derivation. Item
+11 above — a null status means never charged — inverts under authorize, because
+an order with nothing charged against it is exactly what that action asks for.
+Everything else recorded stays load-bearing: the envelope's `success` flag and
+the presence of a reference still decide, and terminal statuses are still
+terminal, since a cancelled or refunded order is not a live authorization
+waiting to be captured.
+
+**When the gateway credentials are fixed, re-run the probe and pin the real
+status.** If an approved authorize turns out to carry a status in the terminal
+list, this branch is wrong and every authorization will read as a decline.
+
+### 18. The live channel payload stopped carrying `campaign_id`
+
+`channels()->details()` returned a
+`payment_processor.config` with `integration_name`, `api_endpoint`, `api_key`
+and `connection_id` — and **no `campaign_id`**. The synced
+`config/channel.generated.php` still had it, and that file is what the
+application reads, so nothing was broken. A probe that fetched the channel fresh
+instead posted against campaign `0` and was refused with
+`Invalid campaign id : 0`.
+
+The lesson is narrow and worth keeping: **read the synced file, not a fresh
+channel fetch**, when reproducing what the application does. The two are not
+always the same, and `theme:sync`'s merge semantics are what preserve a key the
+payload has stopped sending.
+
+### 19. `card_type_id` comes back on a placement, and its provenance is unsettled
+
+`data.order.customer_card.card_type_id` is present on an approved placement. The
+storefront also **sends** `card_type_id` on the way in
+(`core/Payment/Vrio/VrioPayload.php`), and whether the response derives the
+value or echoes the one it was given is not established.
+
+That matters because the storefront sends `2` for any prefix its own table
+cannot place — the documented Visa fallback — so a `2` in the response cannot be
+read as proof the card is a Visa. `core/Payment/Vrio/VrioOutcome.php` carries
+the value onto the outcome and `core/Payment/CardDescriptor.php` consults it only
+where the number's prefix named no scheme, which is the weakest reading the
+value supports.
+
+Settling it takes one order placed with a prefix outside
+`core/Payment/CardBrand.php`'s table — a UnionPay number, or a sandbox pan — and
+a read of what comes back. If the response names the real scheme, this is a
+genuine second source; if it answers `2`, it is an echo and the fallback should
+be dropped for this provider.
+
+## The second payment provider
+
+Everything above under "The payment provider" is the `vrio` adapter's. This
+section is the `checkout_champ` one, and the two disagree about almost
+everything except the envelope-shaped fact that both disagree with their own
+documentation.
+
+### 20. Placement is two calls, and the second one alone says "Customer not found"
+
+`POST /order/import/` bills a session; `POST /leads/import/` creates the
+customer and answers the `sessionId` it bills against. Calling `/order/import/`
+or `/order/preauth/` without one answers `"Customer not found"`, which is how
+the sequence was established rather than assumed.
+
+The cost is a second round trip inside a request the buyer is waiting on, and a
+lead created for an order that then fails — a CRM row rather than a charge, and
+the provider's own model rather than a choice this storefront made.
+
+### 21. The envelope is two keys, and `message` changes type between them
+
+Every combination of `result` and `message` type occurs, so **`result` is the
+only discriminator** — the obvious reading, string means failure, is wrong in
+both directions:
+
+| `result`  | `message` | recorded example |
+|---|---|---|
+| `SUCCESS` | object | a billed order: `orderId`, `orderStatus: "COMPLETE"`, `totalAmount` |
+| `SUCCESS` | string | `"Card is preauthorized"` |
+| `ERROR`   | string | `"Transaction Declined: Card Declined"` |
+| `ERROR`   | object | `{"shipAddress1": "is a required field", ...}` |
+
+Refusals taken verbatim from the live sandbox, and they are the fixtures under
+`tests/fixtures/checkoutchamp-*.json`:
+
+| Call | `message` |
+|---|---|
+| `/order/import/` with no parameters | `No products exist in the order` |
+| `/order/preauth/` with no parameters | `Customer not found` |
+| `/leads/import/` with only a campaign | `First and last name are required fields.` |
+| `/order/query/` for an unknown order | `No orders matching those parameters could be found` |
+
+Note the first: **an order with no campaign is reported as an empty cart.** A
+configuration fault described as a cart problem is the worst possible place to
+debug one, which is why the adapter refuses an unconfigured campaign before the
+wire rather than letting the provider answer.
+
+`result` is the provider's own verdict field, so unlike the other provider's
+`success` flag it is not derived from the absence of an error key — but it still
+cannot survive a body that never decoded, since a proxy's HTML error page has no
+`result` at all. The check is for the literal `SUCCESS` rather than for the
+absence of `ERROR`.
+
+### 22. Every parameter travels in the query string, including the card and the password
+
+This provider authenticates with `loginId` and `password` as **query
+parameters**, and takes the card number, expiry and security code the same way.
+That is the provider's design and the client follows it.
+
+The consequence is not theoretical and is larger than the collection surface:
+anything on the egress path that records request URLs — a forward proxy, an
+egress gateway, an APM agent, a TLS-inspecting appliance, a crash reporter —
+records cardholder data *and this deployment's provider password* in clear text.
+A URL is the part of a request most things copy by default.
+
+Two things follow in this codebase. `CheckoutChampWireLog` is documented as
+holding credentials as well as card data, so a deployment that switches it on
+treats the file as a secret to destroy rather than a log to ship. And the
+adapter's declared PCI posture says all of this, so `config:validate` prints it
+to an operator before they go live rather than after.
+
+### 23. The campaign is a line's `offer_id`, and the product id is the campaign-scoped one
+
+The EMR channel's `payment_processor.config` for this provider carries no
+campaign, and it does not need to: **the campaign is per line**, carried by the
+catalog as a variant's `provider.offer_id` — the same slot the other provider
+fills with its offer id. A second provider therefore needed no new catalog
+field, which is the strongest evidence `[14.1]` capability 3 was drawn in the
+right place.
+
+The companion `provider.product_id` is the **campaign-scoped** product id, not
+the bare one. A campaign lists each product under two identifiers:
+
+```
+campaignProductId: 15271     <- what the EMR maps, and what an order is placed with
+productId:         14015     <- also shown in parentheses at the front of productName
+productName:       "(14015) NAD+ (500MG)"
+```
+
+Sending the bare `productId` would name a product the campaign does not offer,
+which the provider reports as the cart being empty. The EMR maps the right one
+already.
+
+**Two consequences for the adapter.** The campaign is resolved from the order
+rather than from configuration, so it can be *missing* or *contradictory* in a
+way a configured value could not — a cart whose lines carry two different
+campaigns has no correct single answer, since a cart is one order (`[13.19]`) and
+an order belongs to one campaign. Both cases are refused before the wire, because
+the provider answers either one with "No products exist in the order": a catalog
+fault described as a cart problem, which is the worst possible place to debug one.
+
+**A caution about `campaignQuery`.** Called with no parameters it returns a
+*page*, not the account. Reading that page as the whole account is how campaign
+459 came to look absent from an account that has it — pass `campaignId` to ask
+about one.
+
+### 24. The full flow, and the two calls that are not what their names suggest
+
+Placement, recorded end to end:
+
+```
+POST /leads/import/    -> {"result":"SUCCESS","message":{ "orderId":"D6C8C390A7",
+                                                          "orderStatus":"PARTIAL", ... }}
+POST /order/import/    -> {"result":"SUCCESS","message":{ "orderId":"D6C8C390A7",
+                                                          "orderStatus":"COMPLETE",
+                                                          "totalAmount":"0.30",
+                                                          "customerId":19241, ... }}
+```
+
+**`leads/import` is not only a lead.** It creates a PARTIAL order and answers the
+`orderId` every later call is keyed on. The reference therefore exists *before a
+card is presented*, which is what lets a refused placement still carry one
+(`[13.26]`) even though the refusal envelope contains no order id at all.
+
+**`order/import` is also the capture.** There is no endpoint named for it:
+
+```
+POST /order/preauth/   -> {"result":"SUCCESS","message":"Card is preauthorized"}
+POST /order/import/    -> {"result":"SUCCESS","message":{ "orderStatus":"COMPLETE", ... }}
+```
+
+and the settling call carries the **lines and no card**. Both matter:
+
+- **Without the lines it is refused** — `"No products exist in the order"` — and
+  the order stays PARTIAL *with the funds still held*. An error that leaves money
+  reserved is the worst shape a failure can take here.
+- **The lines cannot be recovered from the provider.** A pre-authorized order's
+  `items` is an empty stub (`productId: null`) until the settling call supplies
+  them, so re-reading the order first returns nothing usable. `order_lines` is the
+  only place they still exist, which is why
+  `Payment\CaptureRequest` carries them and why an unreadable local row is a
+  stated failure rather than something to push past.
+
+Shipping is required on `order/import` as well as on the lead call; omitting it
+answers the field map in item 20.
+
+### 25. A PARTIAL order is reused, so a reference is not unique across attempts
+
+Recorded: a decline leaves its PARTIAL order in place, and the **next lead call
+reuses it** rather than creating a second one. Two attempts then share one
+`orderId` — a decline and the retry that succeeds.
+
+Varying the IP address produced distinct orders while varying only the name,
+email and telephone did not, so the address appears to be at least part of what
+the provider matches on. That has not been characterised further and should not
+be relied on.
+
+**The consequence is local, not remote.** `orders.provider_reference` is not
+unique and cannot be made so. `OrderRepository::findByReference()` therefore
+orders by `id DESC` and answers the newest row: without that, SQLite returns the
+lowest rowid — the declined attempt — and `bin/console payment:capture` reads a
+row saying the order was already captured and refuses to settle an authorization
+that is really outstanding.
+
+The reuse is not itself a problem: it is why a retry after a decline produces no
+orphan order at the provider.
+
+### 26. Two authorization mechanisms, and only one reserves the money
+
+The provider offers two ways to authorize, and they are not two spellings of one
+thing.
+
+**The older one** validates the card and reserves nothing:
+
+```
+POST /order/preauth/   -> {"result":"SUCCESS","message":"Card is preauthorized"}
+POST /order/import/    -> settles, with the lines and no card
+```
+
+It charges a nominal amount and refunds it, so the order's value is never held.
+By the time the settling call runs the funds may be gone and it can decline.
+
+**The newer one** holds the full order amount, and the provider recommends it:
+
+```
+POST /order/import/  + forceQA: 1  -> orderStatus PENDING, reviewStatus PENDING
+POST /order/qa/      + action: APPROVE -> {"result":"SUCCESS","message":"Order QA Approved"}
+```
+
+A read afterwards shows `orderStatus: "COMPLETE"`, `reviewStatus: "APPROVED"`.
+The older mechanism's settled orders carry `reviewStatus: null`, which is how
+the two are told apart after the fact.
+
+Three things about the QA mechanism are easy to get wrong:
+
+- **It authorizes through the *billing* endpoint.** There is no separate
+  authorize call — `forceQA: 1` is what turns a sale into a hold, so the flag
+  rather than the endpoint carries the distinction. Sending it on a charge-now
+  order would put every sale into a review nobody is doing.
+- **The settle parameter is `action`, not `qaStatus`.** The client package's own
+  README documents `qaStatus`; the API answers it `"action is a required value"`.
+  The package's documentation and the live API disagree, and the API wins.
+- **The accepted verbs are `APPROVE` and `DECLINE`**, not `APPROVED`. Passing
+  the wrong one answers
+  `{"action": "Not a valid input. Must be in: 'APPROVE', 'DECLINE'"}`, which is
+  where that set comes from. `DECLINE` is deliberately not wired: it voids the
+  hold, and a call that throws a buyer's reserved funds away needs a caller that
+  has decided to, not a flag on a capture.
+
+Which mechanism runs is `payment.checkout_champ.authorize_mode`, deployment-wide
+and defaulting to `qa`. It is not per product, unlike
+`Payment\SettlementMode`: it is a property of how the deployment is set up with
+its provider, and a cart cannot be half one and half the other.
+
+### 27. What is still not recorded
+
+Two things, both declared `false` on the adapter rather than guessed at:
+
+- **`supportsOrderSearch`.** `orderQuery` works and its projection is rich, but
+  `[21.9a]`'s reverse sweep turns its findings into alerts about money, and the
+  fields it would have to map — which status counts as charged, which as test —
+  have not been established across a real window. Declaring false produces *no
+  sweep*, which the sweep is explicitly built to distinguish from a clean bill of
+  health.
+- **`supportsPromotions`.** The client exposes no discount-quote endpoint, so
+  `[14.4]` hides the control rather than offering a box that can only reject.
+
 ---
 
 ## What to take from all of this

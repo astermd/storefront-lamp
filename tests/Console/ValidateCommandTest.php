@@ -608,11 +608,11 @@ final class ValidateCommandTest extends TestCase
 
     public function testACheckMissingItsRequiredOrNarrowingListIsRefused(): void
     {
-        // Recorded 2026-08-25: called with its required fields alone,
-        // `crosscheck` returns `address_invalid` and `phone_invalid` — it
-        // penalises fields that were never sent. A check with no `narrowing`
-        // is therefore a check configured to fail, and a missing `required` is
-        // an `ApiException` 400 rather than a verdict.
+        // Called with its required fields alone, `crosscheck` returns
+        // `address_invalid` and `phone_invalid` — it penalises fields that were
+        // never sent. A check with no `narrowing` is therefore a check configured
+        // to fail, and a missing `required` is an `ApiException` 400 rather than
+        // a verdict.
         $this->quietDeployment();
         $this->writeVerification(['checks' => [
             ['slug' => 'crosscheck', 'required' => []],

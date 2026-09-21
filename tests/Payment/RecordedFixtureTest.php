@@ -31,6 +31,53 @@ final class RecordedFixtureTest extends TestCase
         return $decoded;
     }
 
+    public function testTheAuthorizeDeclineIsShapedExactlyLikeACaptureDecline(): void
+    {
+        // `action: "authorize"` is accepted by the same endpoint on the same
+        // required fields: it built order 36727, reached the acquiring gateway
+        // and priced the transaction at 120.00. The gateway then refused it,
+        // because this sandbox merchant's acquiring credentials were invalid --
+        // `action: "process"` fails identically against it, so the refusal is
+        // the state of the account and not of this path.
+        //
+        // What is load-bearing here is the *shape*: the reference sits at the
+        // failure path, `success` is false and `status_type_id` is null, so a
+        // failed authorize needs no branch of its own.
+        $envelope = $this->fixture('vrio-order-authorize-declined.json');
+
+        self::assertFalse($envelope['success']);
+        self::assertSame(36727, $envelope['data']['error']['transaction']['order_id']);
+        self::assertSame(200, $envelope['data']['error']['transaction']['response_code']);
+        self::assertNull($envelope['data']['error']['transaction']['order']['status_type_id']);
+        self::assertSame('120.00', $envelope['data']['error']['transaction']['transaction_total']);
+    }
+
+    public function testTheOrderNodeCarriesAnAutoCaptureFieldTheStorefrontDeclinesToUse(): void
+    {
+        // The provider will settle an authorization on its own timestamp. The
+        // field is pinned here because its presence is what makes *not* sending
+        // it a decision rather than an oversight: when money moves is an event
+        // outside this storefront, and a payload written at checkout cannot
+        // know it.
+        $envelope = $this->fixture('vrio-order-authorize-declined.json');
+
+        self::assertArrayHasKey('date_auto_capture', $envelope['data']['error']['transaction']['order']);
+        self::assertNull($envelope['data']['error']['transaction']['order']['date_auto_capture']);
+    }
+
+    public function testACaptureOnAnUnauthorizedOrderIsATypedRefusal(): void
+    {
+        // A stated refusal with a stable code, not a transport error and not
+        // a silent no-op -- which is what lets a failed
+        // capture tell an operator which kind of failure they have.
+        $envelope = $this->fixture('vrio-capture-unauthorized.json');
+
+        self::assertFalse($envelope['success']);
+        self::assertSame('order_unauthorized', $envelope['data']['error']['code']);
+        self::assertSame('order_unauthorized', $envelope['validation_code']);
+        self::assertArrayNotHasKey('transaction', $envelope['data']['error']);
+    }
+
     public function testTheApprovedEnvelopeCarriesItsReferenceAtTheSuccessPath(): void
     {
         $envelope = $this->fixture('vrio-order-approved.json');

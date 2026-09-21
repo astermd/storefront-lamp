@@ -1,7 +1,7 @@
 {# Progress through a multi-step form is always visible ([25.10]). The numbers
    are filled in by the stepper, which is the only thing that knows which page
    is on screen. #}
-<div data-intake-progress class="mx-auto max-w-[480px]">
+<div data-intake-progress class="mx-auto max-w-[480px]{% if field.runtime_class %} {{ field.runtime_class }}{% endif %}">
   <p class="text-center text-xs font-medium tracking-wide text-muted">
     <span data-intake-progress-label>{{ field.label }}</span>
   </p>

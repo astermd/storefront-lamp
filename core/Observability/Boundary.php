@@ -57,4 +57,7 @@ enum Boundary: string
 
     /** Asking the provider what orders it holds, for the reverse sweep (`[21.9a]`). */
     case ProviderOrderSearch = 'provider.order_search';
+
+    /** Settling an order that was authorized rather than charged. */
+    case ProviderCapture = 'provider.capture';
 }

@@ -6,6 +6,531 @@ must say the same thing. `bin/console --version` reads `composer.json`, so it is
 not a fourth copy to keep in step. An update is applied by copying files, so every entry
 names exactly which ones changed.
 
+## [Unreleased — 0.0.3]
+
+Adds authorize-and-capture, so a deployment can hold a buyer's funds instead of
+taking them and settle later, and a second payment provider behind the same
+boundary. Stops `theme:sync` carrying one channel's payment credentials into
+another channel's config file. Renders the three authoring hooks the form builder
+writes and the storefront read none of — a field's own class and id, and the
+form's own stylesheet — and stops `cache:clear` claiming to have cleared a cache
+it could not touch, which is what made the first of those look unfixed after it
+was fixed.
+
+Takes `astermd/sdk` 0.0.3, whose `treatments()->sync()` signature changed, and
+fills the four payload extensions it documents.
+
+**One new configuration key and two new migrations**, all inert until a
+deployment opts in: `payment.settlement` defaults to `capture`, which is exactly
+what every deployment did before, `0006_settlement.php` adds one column with
+that same default, and `0007_user_agent.php` adds one nullable column. `composer.json`
+and `package.json` still say 0.0.2 — bump them together with the tag when this
+is released.
+
+### A second payment provider: CheckoutChamp
+
+`core/Payment/CheckoutChamp/` is the second implementation of `[14.1]`'s boundary,
+which until now had one. Adding it was an adapter plus a registry entry, which is
+what `[14.2]` says it should be — nothing above `PaymentAdapter` changed to
+accommodate it.
+
+It is deliberately not shaped like the first, and that was the point. Placement
+is **two calls**: `POST /leads/import/` creates the customer and answers a
+`sessionId`, `POST /order/import/` bills it, and calling the second alone answers
+"Customer not found". Lines are **numbered parameters** (`product1_id`,
+`product2_id`, …) rather than an array, so an unmappable line is skipped without
+leaving a gap — the provider stops reading at the first missing index, so a hole
+would silently drop every line after it. There is no promotion endpoint, and the
+reusable credential is a single customer id rather than a pair.
+
+Two things it forced, both general rather than provider-specific:
+
+- **Each provider's client declares its own `HttpClientInterface`**, so the
+  test-environment fence had to be per adapter. `tests/Payment/RefusingTransportTest.php`
+  now asserts that *every registered category* is fenced, so a third provider
+  added without one fails there rather than by charging a card.
+- **`AdapterCapabilities::$requiredDeploymentKeys`.** Each adapter now declares
+  which `payment.*` keys it needs and `config:validate` checks the declaration.
+  The hardcoded `shipping_profile_id` check it replaces demanded a key that a
+  provider without one has never heard of. This adapter declares none, and the
+  mechanism still earns its place through the other one.
+
+**Pre-auth works on this provider too, and it has _two_ mechanisms for it**,
+chosen by `payment.checkout_champ.authorize_mode`
+(`PAYMENT_CC_AUTHORIZE_MODE`). They reserve different amounts of money, which is
+the whole reason both exist:
+
+- **`qa`** — the default, and what the provider recommends. `/order/import/`
+  with `forceQA: 1` puts the order in `PENDING` review with the **full order
+  amount held** on the card; `/order/qa/` with `action: "APPROVE"` releases it.
+  Because the money is genuinely reserved, a later capture is far less likely to
+  decline.
+- **`preauth`** — the older mechanism. `/order/preauth/` validates the card by
+  charging a nominal amount and refunding it, and **reserves nothing**; the
+  settling call is `/order/import/` with the lines and no card. By the time you
+  capture, the funds may be gone.
+
+Deployment-wide, never per product, and CheckoutChamp's alone — unlike
+`payment.settlement`, which a single product can escalate. It is a property of
+how the deployment is set up with its provider, and a cart cannot be half one and
+half the other. A settled order tells you which ran: the QA mechanism leaves
+`reviewStatus: "APPROVED"`, the older one leaves it null.
+
+Two traps recorded while wiring it. The settle parameter is **`action`, not
+`qaStatus`** — the client package's README documents the latter and the API
+answers it `"action is a required value"`. And the verbs are **`APPROVE` /
+`DECLINE`**, not `APPROVED`. `DECLINE` is deliberately not wired: it voids the
+hold, and a call that throws a buyer's reserved funds away needs a caller that
+has decided to, not a flag on a capture.
+
+That forced the one interface change. `PaymentAdapter::capture()` now takes a
+`CaptureRequest` rather than a bare reference, because **a pre-authorized order
+at this provider carries no line items until the settling call supplies them**,
+and re-reading the order returns the same empty list. `order_lines` is the only
+place they still exist. Settling without them is refused with "No products exist
+in the order" and leaves the order partial *with the funds still held* — an error
+that leaves money reserved. The other adapter ignores the lines.
+
+It also reversed a rule in `bin/console payment:capture`: an unreadable local row
+used to be waved through, on the reasoning that a hold must not lapse because a
+SELECT failed. That assumed every provider can settle from the reference alone.
+For the one that cannot, going on without the lines reaches the same outcome more
+slowly and reports it as a cart problem, so it is now a stated failure.
+
+**Two capabilities are still declared false**, each for a stated reason rather
+than as a stub: `supportsPromotions`, because the client exposes no
+discount-quote endpoint and `[14.4]` prefers hiding the control to offering a box
+that can only reject; and `supportsOrderSearch`, because `orderQuery` works but
+the fields `[21.9a]`'s sweep would have to map have not been established across a
+real window, and that sweep turns its findings into alerts about money.
+
+**This provider takes every parameter in the query string**, including the card
+number, the security code and the account password. `CheckoutChampWireLog`
+therefore holds credentials as well as cardholder data while it is on, and the
+declared PCI posture says so — so `config:validate` puts it in front of an
+operator before they go live rather than after.
+
+**Recorded against the live sandbox, end to end, through the shipped adapter:** a
+charge, a decline, and an authorization settled by a later capture under *both*
+mechanisms. The
+fixtures under `tests/fixtures/checkoutchamp-*.json` are those responses.
+
+Three of the recordings corrected an assumption this adapter was first written
+on:
+
+- **`leads/import` is not only a lead.** It creates a PARTIAL order and answers
+  the `orderId` every later call is keyed on — so the reference exists before a
+  card is presented, which is what lets a refused placement still carry one
+  (`[13.26]`) even though the refusal envelope has no order id in it.
+- **`result` is the only discriminator.** All four combinations of
+  `result` and `message`-type occur, including `SUCCESS` with a plain string
+  (`"Card is preauthorized"`) and `ERROR` with a field map. The first draft read
+  the type as the verdict and would have declined every successful
+  pre-authorization.
+- **A PARTIAL order is reused by the next attempt**, so a decline and the retry
+  that succeeds share one `orderId`. `orders.provider_reference` is therefore not
+  unique, and `OrderRepository::findByReference()` now orders by `id DESC`:
+  without that, SQLite answers the lowest rowid — the declined attempt — and
+  `payment:capture` would read a row saying the order was already captured and
+  refuse to settle an authorization that is really outstanding.
+
+`docs/INTEGRATION-NOTES.md` items 20–27 carry the full list.
+
+New configuration: `payment.checkout_champ.authorize_mode` above, and nothing
+else. In particular the campaign this provider needs on every order is a
+variant's `provider.offer_id` in the catalog, and its `provider.product_id` is
+the campaign-scoped product id — which is how the EMR already maps them, so a
+second provider needed no new catalog field at all. The campaign therefore
+arrives with the order rather than from configuration, which moves where a fault
+shows up: a cart whose lines carry two different campaigns has no correct single
+answer and is refused before the wire, rather than being placed under one that
+does not offer half of it.
+
+`salesUrl` is sent on the lead call — the storefront's own checkout URL, which
+the provider shows against the order in its dashboard so an operator reconciling
+one by hand sees where it came from rather than only a campaign number.
+
+- `core/Payment/CheckoutChamp/` (new, eight classes),
+  `core/Payment/CaptureRequest.php` (new), `composer.json`
+  (`astermd/checkoutchamp-client`)
+- `core/Payment/PaymentAdapter.php`, `NullPaymentAdapter.php`,
+  `core/Payment/Vrio/VrioAdapter.php`,
+  `core/Observability/InstrumentedPaymentAdapter.php`,
+  `core/Console/CaptureOrderCommand.php`, `core/Repository/OrderRepository.php`
+- `core/Payment/AdapterCapabilities.php`, `core/Payment/Vrio/VrioAdapter.php`,
+  `core/Console/ValidateCommand.php`, `core/Bootstrap/AppFactory.php`,
+  `bin/console`
+
+### `theme:sync` no longer carries one channel's credentials into another's file
+
+`config/channel.generated.php` was written with merge-keep-extra semantics so a
+hand-added operational key survived a re-sync. The merge cannot see *who wrote*
+an existing key, so it treated the previous provider's own credentials exactly
+like an operator's hand-addition and kept them.
+
+Point a deployment at a channel on a different payment processor and re-sync,
+and the result was a `payment_processor.config` holding the new provider's
+username and password **beside the previous provider's live API key**, plus its
+campaign and connection ids. Two providers' secrets in one file — in the block
+`AdapterRegistry`'s chosen adapter reads its credentials from — and a set of
+routing hints meaning nothing to the provider now configured.
+
+Two rules now, both about not letting one channel's data outlive it:
+
+- **A different `channel.id` replaces the file wholesale.** It is describing a
+  different deployment target and nothing in the old file describes it.
+- **`payment_processor` is replaced on every sync.** It is generated data end to
+  end: every key in it is one provider's own vocabulary, written by the EMR, and
+  nothing in this codebase reads a hand-added key from it —
+  `payment.shipping_profile_id` comes from `config/payment.php`, the wire-log
+  switch from `app.debug.wire_log`. Merging it could only ever preserve a key the
+  configured provider has no use for. This also **heals a file that was already
+  polluted**: a plain re-sync now cleans it.
+
+Hand-added keys elsewhere in the tree still survive a re-sync of the same
+channel, which is what the merge was for.
+
+- `core/Console/SyncCommand.php`, `config/channel.generated.example.php`
+
+### Two tests stopped asserting whatever the last sync contained
+
+Both resolved the payment adapter from the shipped configuration, so both
+silently depended on the synced channel being one with an adapter. Pointing a
+deployment at a channel on another processor turned each into a
+`ReflectionException` about `NullPaymentAdapter::$inner` — which reads as a
+broken test rather than as a test whose premise had moved.
+
+`tests/Support/WireLogTest.php` asserts that no provider transcript is written
+unless the switch is on; `tests/Payment/RefusingTransportTest.php` asserts the
+suite cannot reach a live provider. Neither claim is about which provider a
+deployment synced, so both now supply the channel they need through
+`tests/Support/ConfigVariant.php`. `RefusingTransportTest` also dropped a skip
+that let a fresh clone pass it by reaching nothing — the vacuous pass the fence
+exists to prevent.
+
+Fixing them exposed a real half-seam: `AppFactory`'s `AdapterRegistry` binding
+read a closed-over `$config` while the category came from the container, so a
+`Config::class` override moved the provider and left its credentials behind. The
+registry then built the named adapter from another provider's config block, the
+credential mapper threw, and the caught failure surfaced as "no provider
+configured". Both now read from the container.
+
+- `core/Bootstrap/AppFactory.php`, `tests/Support/WireLogTest.php`,
+  `tests/Payment/RefusingTransportTest.php`, `tests/Console/SyncCommandTest.php`
+
+### Settlement: hold the funds, or take them
+
+A storefront could only ever charge in full at checkout. It can now authorize
+instead — reserve the money on the card and leave it there — with
+`bin/console payment:capture <reference>` taking it once whatever the deployment
+is waiting on has happened.
+
+**What decides *when* an authorization settles is deliberately outside this
+storefront.** A prescriber approving a treatment is not a checkout concern, and
+a storefront that scheduled its own captures would be guessing at a decision it
+cannot see. So there is no scheduler and no sweep here; the command is the seam
+the system that owns that event calls.
+
+**Two configuration layers, because they answer different questions.**
+`payment.settlement` in `config/payment.php` (or `PAYMENT_SETTLEMENT`) is the
+deployment default — a commercial arrangement with one provider. A per-product
+`'settlement' => 'authorize'` in `config/products.overrides.php` is a clinical
+or fulfilment fact about one product and varies inside one deployment. Like
+`geo_blocks`, the per-product key is override-layer only: the EMR channel
+payload has no concept of settlement, so `theme:sync` neither writes it nor can
+overwrite it, and a re-sync cannot silently start charging a product marked to
+hold.
+
+**A cart is one order (`[13.19]`), so a cart resolves to one action — and
+authorize wins.** Adding a hold-until-event product changes how the *other*
+products in that cart settle. That is intended: capturing a product a deployment
+marked hold-until-event is a charge nobody asked for, while authorizing one
+marked charge-now defers a charge by a step that has to happen anyway. Only the
+first needs a refund to undo. A product marked `capture` therefore cannot pull
+an authorize deployment back to charging; it only declines to ask for a hold.
+
+**An authorized order is *placed*, not a fourth state.** The order exists at the
+provider, the funnel advances, the EMR is told, the buyer gets a receipt — only
+the debit is outstanding. A fourth `PlacementOutcome` state would have been read
+as "not placed" by every existing `match` and would have stranded buyers whose
+cards were validly reserved, so settlement hangs off a placed outcome beside the
+charge discrepancy. `orders.settlement` is a column for the same reason: a
+fourth `status` value would have made every query reading `status = 'placed'`
+stop counting authorized orders, including both reconciliation sweeps.
+
+**A provider that cannot authorize is never asked to charge instead.**
+`AdapterCapabilities::$supportsAuthorizeCapture` is the one capability whose
+absence stops a checkout rather than adapting a page — everything else here
+degrades, and this has no degraded form. An order resolving to authorize against
+an adapter that declares false is refused before the wire, the idempotency claim
+goes back, and `config:validate` reports the same disagreement as an error so it
+is found before a buyer finds it.
+
+**The receipt says which one happened.** The thank-you page carried a flat "Your
+card has been charged" — true then, and a lie on an authorize deployment, where
+a buyer would go looking for a debit that is not on their statement and may never
+be. The wording is resolved from the placed order rows, so a journey that
+captured a checkout and authorized an upsell takes the cautious sentence.
+
+Established on the wire: `action: "authorize"` is accepted on the same
+required fields as `action: "process"`, and `POST /orders/{id}/capture` answers a
+typed `order_unauthorized` refusal on an order that never authorized. What could
+**not** be recorded is the `status_type_id` an *approved* authorize returns —
+the sandbox merchant's acquiring gateway was rejecting every charge, `process`
+included — and `docs/INTEGRATION-NOTES.md` says so rather than implying the
+mapping is verified. `date_auto_capture` is deliberately not sent.
+
+- `core/Payment/SettlementMode.php` and `core/Payment/CaptureOutcome.php` (new),
+  `core/Checkout/SettlementPolicy.php` (new),
+  `core/Console/CaptureOrderCommand.php` (new),
+  `database/migrations/0006_settlement.php` (new)
+- `core/Payment/PaymentAdapter.php`, `AdapterCapabilities.php`,
+  `OrderEnvelope.php`, `PlacementOutcome.php`, `NullPaymentAdapter.php`,
+  `core/Payment/Vrio/VrioPayload.php`, `VrioOutcome.php`, `VrioAdapter.php`
+- `core/Checkout/CheckoutService.php`, `DatabaseOrderRecorder.php`,
+  `core/Upsell/UpsellService.php`, `core/Completion/Receipt.php`,
+  `ReceiptViewModel.php`, `core/Repository/OrderRepository.php`
+- `core/Observability/Boundary.php`, `InstrumentedPaymentAdapter.php`,
+  `core/Console/ValidateCommand.php`, `core/Bootstrap/AppFactory.php`,
+  `bin/console`
+- `theme/templates/pages/thank-you.twig`, `config/payment.php`,
+  `config/products.overrides.php`, `.env.example`
+
+### A field's authored class and id are rendered
+
+`properties.runtimeClassName` and `properties.runtimeId` were read by nothing,
+so a class set in the builder reached the page as neither markup nor an error.
+
+**`runtimeId`** goes on the field wrapper, away from wiring that cannot move:
+`intake-<name>` is what the label points at, what an error is described by, and
+what a choice group names itself from, so an authored id sits beside that and
+never displaces it. Reach the control with `#my-id input`.
+
+**`runtimeClassName`** goes on the wrapper *and* on the element the field
+actually draws — the `<h2>`, the `<input>`, the alert, the choice group. The
+wrapper alone was not enough, and the failure looked exactly like the class
+never being applied: the theme puts its own utility classes on that inner
+element, so `.head-cls{color:red}` painted the wrapper and left the heading its
+own `text-heading` colour. Keeping it on the wrapper too is what makes
+`.hide-this{display:none}` still take a field's label with it.
+
+One consequence worth knowing: a box rule applies twice. `.mine{margin:20px}`
+margins the wrapper and the element inside it. Use a rule that does not
+compound, or target one of them — `.mine input{}` or `div.mine{}`.
+
+The authored class is appended to the layout class rather than replacing it, so
+naming a class does not cost a field its grid cell. A blank value counts as
+absent: the builder writes an empty string for a value typed and then cleared,
+and `id=""` matches no selector ever written.
+
+- `core/Forms/FieldViewModel.php`, `theme/templates/partials/intake/field.twig`
+  and every `field-*.twig` that draws an element
+
+### The form's own stylesheet is rendered
+
+`settings.injectCss` was dropped, which is why the hooks above had nothing to
+name. It is rendered into a `<style>` block on the intake page, last, so an
+author's rule wins over the theme's without needing `!important`. Both
+renderers get it, so mode A and mode C do not diverge.
+
+It is emitted raw, because escaping would break it — `>` is the child
+combinator and a quote appears in every attribute selector. What makes that
+safe is narrow: inside `<style>` the HTML parser interprets no tags, and the
+only thing that ends the element is a closing tag, so that one sequence is
+removed and nothing else is. The guard tolerates the whitespace the parser
+tolerates, since `</ style>` closes the element just as well.
+
+Removal repeats until the text stops changing. Doing it once is not enough:
+`</sty</stylele>` holds exactly one closing tag, in the middle, and deleting it
+splices the surviving halves into a working one.
+
+- `core/Forms/InjectedCss.php` (new), `core/Http/Controller/IntakeController.php`,
+  `theme/templates/pages/intake/form.twig`,
+  `theme/templates/pages/intake/form-js-engine.twig`
+
+### `cache:clear` reports what it actually removed
+
+It reported a success it did not have. The count rose once per entry *walked*
+while both removals were `@`-suppressed, so a cache directory owned by the
+web-server user and cleared by a shell user printed
+`Cache cleared (12 entries removed).` and removed nothing — after which the
+operator had the one piece of evidence they most needed to be true, and ruled
+the cache out.
+
+That is how a stale questionnaire definition went on being served through a
+clear that reported success: `storage/cache/teleforms` still held the old copy,
+so the storefront skipped the `teleforms/view-url` fetch entirely and the form
+rendered from a definition nobody could see.
+
+The answer from `rmdir`/`unlink` is now read. The count is of entries removed,
+surviving files are listed with their owner — deleting a file needs write
+permission on the directory holding it, not on the file, so ownership is almost
+always the cause — and the command exits **1**.
+
+```
+Cache cleared (1 entry removed).
+
+ERROR: 2 cache entries could not be removed:
+  storage/cache/teleforms/abc123.json (owned by www-data)
+  ...
+
+The cache was NOT fully cleared. Whatever it was holding is still being served.
+```
+
+- `core/Console/CacheClearCommand.php`
+
+### The SDK's 0.0.3 payload: how an order was paid for, and which variant was bought
+
+`astermd/sdk` moves to `^0.0.3`. One breaking change and three documented
+extensions.
+
+**`treatments()->sync()` changed shape.** `$userAgent` moved to the third
+position and became required and non-empty; `$payment` and `$verification` were
+added. The old call passed `(session, orderIds, utmSource, userAgent)`, so on the
+new signature `utm_source` would have gone out as the `User-Agent` header and the
+real agent as the attribution — which is why the dependency bump and the rewrite
+are one commit rather than two.
+
+The header is now resolved in three steps, closest to the buyer first: the
+ambient request, then the agent stored against the order, then the constant
+`AsterMD-Storefront`. The middle step is what `0007_user_agent.php` exists for.
+Two of the three callers have no request of their own — the receipt batch and
+`bin/console reconcile:forward` — and until now had no way to name the device an
+order was actually placed from. Never the empty string, because the SDK throws
+on one and this class swallows every throwable into a warning line: the sync
+would simply have stopped happening.
+
+- `core/Checkout/EmrCheckoutEventReporter.php`, `database/migrations/0007_user_agent.php`,
+  `core/Repository/OrderRepository.php`, `core/Checkout/DatabaseOrderRecorder.php`
+
+**A `payment` block now rides the treatment sync and both order events.**
+`type`, `pre_auth`, and — only when a reservation actually used the provider's QA
+mechanism — `pre_auth_qa`, plus the held amount in dollars and a `card` object.
+An absent optional is an absent key rather than a `false`: `pre_auth_qa: false`
+asserts that the mechanism was available and not used, which is not what a Vrio
+order or a plain capture means.
+
+It sits *beside* the EMR's existing `payment_method` and does not replace it.
+The two fields take different vocabularies — `card` against `credit_card` — and
+collapsing them would silently change what the older one means to everything
+already reading it.
+
+A decline carries the block too, with the settlement it *attempted*:
+`PlacementOutcome::declined()` carries no settlement and falls back to capture,
+so reading it off the outcome would report every refused authorization as an
+attempt to charge. It carries no held amount, because nothing was held.
+
+- `core/Payment/PaymentDescriptor.php`, `core/Payment/CardDescriptor.php`,
+  `core/Checkout/CheckoutService.php`, `core/Checkout/CheckoutEventReporter.php`
+  and its four implementations
+
+**The card's bin and expiry come off the form; only its brand may come from a
+provider.** `CardBrand` is now the single BIN table and `Vrio\CardScheme` maps
+onto it rather than keeping a second copy of the ranges — two tables drift, and
+the one that drifts is the one nobody is looking at. Where a prefix names no
+scheme, the payment provider's own reading answers instead: CheckoutChamp's
+`message.cardType`, or Vrio's `card_type_id`. Where neither answers, `card`
+ships without `type` and keeps its bin and expiry rather than discarding two
+fields that are not in doubt.
+
+Nothing else is read back from a provider. CheckoutChamp returns `cardBin` and
+`cardExpiryDate` beside the brand and both are ignored: a CRM changes its
+response shape and sometimes omits a field it documents, so a value the buyer
+supplied directly is not re-sourced from one.
+
+Vrio's `card_type_id` may be an echo of the one the order was sent with rather
+than the provider's own reading — the storefront sends `2` for any prefix it
+cannot place, so a `2` coming back proves nothing. `docs/INTEGRATION-NOTES.md`
+item 19 says so and names the probe that would settle it.
+
+- `core/Payment/CardBrand.php`, `core/Payment/Vrio/CardScheme.php`,
+  `core/Payment/CheckoutChamp/CheckoutChampCardType.php`, `core/Payment/PlacementOutcome.php`
+
+**Cart items carry `variant_id`.** One product with several strengths is one
+`product_id` and several plans; without it the EMR could see what was bought and
+not which of them. `CartLine` already held the id — the mirror simply dropped it.
+
+- `core/Emr/CartMirror.php`
+
+**`verification` is sent only when something was actually verified.** Today that
+is one thing: an email the provider confirmed deliverable. `address` is `false`
+because no address has ever been verified here, and a journey with nothing
+verified sends no key at all rather than a row of falses describing checks that
+did not run. `emailIsDeliverable()` answers null for "could not run" — on this
+storefront's own credential the whole verification resource is refused — so only
+a literal true counts. The gateway now memoises per address, because the verdict
+is read twice in one request and the buyer should not pay for two round trips to
+learn the same thing.
+
+`verification.id` is deliberately not sent: the API requires the verified value —
+the SSN or date of birth actually checked — and that would mean keeping PHI in
+session storage. Session-level `verification` is likewise not wired; at session
+creation nothing has been verified yet.
+
+- `core/Emr/EmrVerificationGateway.php`, `core/Checkout/EmrCheckoutEventReporter.php`
+
+### A picked date is sent as `YYYY-MM-DD`
+
+A `picker-date` field collects `MM / DD / YYYY`, because that is what the control
+writes and what has to go back into the box when the form re-renders. The EMR
+stores ISO. Both outbound boundaries convert — the intake submission and the
+opportunity record — and the stored answer is left exactly as the visitor typed
+it, the same way money is integer cents everywhere and converts only at a
+protocol boundary.
+
+Month is read first, matching the field's placeholder and `theme/js/datepicker.js`,
+which both writes and parses that order. A date that does not exist converts to
+nothing rather than to the nearest one that does: a permissive parser rolls 31
+February into March, which turns a typo into a plausible wrong date of birth on a
+clinical record. An unreadable value passes through untouched — judging an answer
+is the validator's job, and a boundary that blanked one would delete the
+clinician's only copy of it.
+
+- `core/Forms/DateAnswer.php`, `core/Forms/AnswerEncoder.php`,
+  `core/Forms/RecordMapper.php`, `core/Forms/FieldTypes.php`
+
+### The instrumentation decorator dropped an argument
+
+`InstrumentedCheckoutEventReporter` accepted the new payment descriptor on all
+three methods and forwarded none of them. It is what `AppFactory` wraps the EMR
+reporter in, so in production the block was discarded before it reached the wire:
+both `treatments/sync` and `checkout-events/update` went out without it while
+every test of the inner reporter stayed green.
+
+The gap that hid it is worth more than the fix. `tests/Http/CheckoutFunnelTest.php`
+substituted the inner reporter directly and so took the decorator out of the
+stack it is wrapped in — the one end-to-end test that should have caught this was
+the one test guaranteed not to. It now wraps its substitute the way `AppFactory`
+does, and asserts the payment block on both payloads.
+
+- `core/Observability/InstrumentedCheckoutEventReporter.php`, `tests/Http/CheckoutFunnelTest.php`,
+  `tests/Observability/RecordingCheckoutEventReporter.php`
+
+### Tests
+
+`vendor/bin/phpunit` is green at **2277 tests / 7671 assertions**, up from
+2044 / 7102, and at 2277 / 7612 on a clone with no synced catalog. Every field type that draws an element is covered by name, so a
+partial added later without the hook fails rather than silently ignoring it.
+The two `cache:clear` permission cases skip as root, where the refusal they
+arrange cannot happen.
+
+Two SEO cases were re-argued rather than repaired. Both asserted that every
+product in the shipped catalog carries an empty description — true of the
+channel they were written against, and one of them said so as a premise to be
+revisited if a sync ever brought real copy. A sync did. The claim about what a
+catalog contains was never the rule: the rule is that a product's own copy
+wins and an absent one falls back, so each branch is now a stated case against
+a catalog the test supplies. What still sweeps the real catalog asserts only
+what survives a re-sync — that nothing resolves to an empty description. The
+branch where a product *has* copy had no end-to-end coverage at all until now,
+because no synced product had ever exercised it.
+
+- `tests/Seo/MetaResolverTest.php`, `tests/Seo/HeadMetadataTest.php`
+
+The EMR's hosted engine reads none of these three properties, so there was no
+reference renderer to match — the storefront defines the behaviour, and mode A
+is handed the same stylesheet so the two cannot drift.
+
 ## [0.0.2]
 
 Lets a buyer pay with the questionnaire still outstanding — this deployment

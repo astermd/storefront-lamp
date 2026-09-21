@@ -10,7 +10,10 @@ use AsterMD\Storefront\Payment\Buyer;
 use AsterMD\Storefront\Payment\OrderEnvelope;
 use AsterMD\Storefront\Payment\OrderLine;
 use AsterMD\Storefront\Payment\PaymentCredential;
+use AsterMD\Storefront\Payment\CaptureOutcome;
+use AsterMD\Storefront\Payment\CaptureRequest;
 use AsterMD\Storefront\Payment\PlacementOutcome;
+use AsterMD\Storefront\Payment\SettlementMode;
 use AsterMD\Storefront\Payment\Vrio\VrioAdapter;
 use AsterMD\Storefront\Payment\Vrio\VrioApiFactory;
 use AsterMD\Storefront\Payment\Vrio\VrioCredentials;
@@ -31,8 +34,12 @@ final class VrioAdapterTest extends TestCase
     }
 
     /** @param list<OrderLine>|null $lines */
-    private function envelope(?array $lines = null, ?string $code = null, int $discountCents = 0): OrderEnvelope
-    {
+    private function envelope(
+        ?array $lines = null,
+        ?string $code = null,
+        int $discountCents = 0,
+        SettlementMode $settlement = SettlementMode::Capture,
+    ): OrderEnvelope {
         $lines ??= [new OrderLine('tirzepatide-5mg', 'Tirzepatide (5mg/mL)', '337', '3414', 12000, 1)];
         $subtotal = array_sum(array_map(static fn (OrderLine $l): int => $l->lineTotalCents(), $lines));
 
@@ -50,7 +57,87 @@ final class VrioAdapterTest extends TestCase
             userAgent: 'probe/1.0',
             idempotencyKey: 'idem-1',
             anchorSlug: 'tirzepatide-5mg',
+            settlement: $settlement,
         );
+    }
+
+    public function testTheAdapterDeclaresItCanAuthorizeAndCapture(): void
+    {
+        // Declared rather than assumed: CheckoutService refuses an authorize
+        // order before the wire when this is false, so the declaration is what
+        // decides whether a hold-until-event product can be sold at all.
+        self::assertTrue($this->adapter(new FakeVrioTransport())->capabilities()->supportsAuthorizeCapture);
+    }
+
+    public function testAnAuthorizePlacementSendsTheAuthorizeActionAndReportsItBack(): void
+    {
+        $transport = new FakeVrioTransport();
+        $transport->queueFixture('vrio-order-approved.json');
+
+        $outcome = $this->adapter($transport)->place(
+            $this->envelope(settlement: SettlementMode::Authorize),
+            PaymentCredential::card('4111111100084444', '12', '2030', '123'),
+        );
+
+        self::assertSame('authorize', $transport->body(0)['action']);
+        self::assertTrue($outcome->isPlaced());
+        self::assertTrue($outcome->isAuthorizedOnly());
+    }
+
+    public function testACaptureSettlesTheOrderAtTheProvider(): void
+    {
+        // This provider settles from the reference alone: the authorization it
+        // holds already knows what it is for, so the lines a CaptureRequest may
+        // carry for the other adapter are ignored here.
+        $transport = new FakeVrioTransport();
+        $transport->queue(200, json_encode(['order_id' => 36727], JSON_THROW_ON_ERROR));
+
+        $outcome = $this->adapter($transport)->capture(new CaptureRequest('36727'));
+
+        self::assertTrue($outcome->isCaptured());
+        self::assertSame('36727', $outcome->reference);
+        self::assertStringContainsString('/orders/36727/capture', (string) $transport->requests[0]->getUrl());
+    }
+
+    public function testCapturingAnOrderThatWasNeverAuthorizedCarriesTheProvidersOwnCode(): void
+    {
+        // A typed refusal rather than a transport error or a silent no-op,
+        // and the code is what tells an operator which kind of failure they
+        // are looking at.
+        $transport = new FakeVrioTransport();
+        $transport->queueFixture('vrio-capture-unauthorized.json');
+        $log = new CapturedLog();
+
+        $outcome = $this->adapter($transport, $log)->capture(new CaptureRequest('36727'));
+
+        self::assertSame(CaptureOutcome::FAILED, $outcome->state);
+        self::assertSame('order_unauthorized', $outcome->reason);
+        self::assertSame('payment.capture_refused', $log->lastError()['event'] ?? null);
+    }
+
+    public function testACaptureThatCannotReachTheProviderFailsRatherThanThrows(): void
+    {
+        // Nothing on this path may throw: it runs with no buyer in front of it
+        // and against money already reserved on somebody's card, so an
+        // unrecorded result is a hold that expires silently.
+        $transport = new FakeVrioTransport();
+        $transport->queue(0, '', 'Could not resolve host');
+
+        $outcome = $this->adapter($transport)->capture(new CaptureRequest('36727'));
+
+        self::assertSame(CaptureOutcome::FAILED, $outcome->state);
+        self::assertSame('transport_error', $outcome->reason);
+    }
+
+    public function testAnEmptyReferenceNeverReachesTheWire(): void
+    {
+        // `/orders//capture` is a different endpoint entirely.
+        $transport = new FakeVrioTransport();
+
+        $outcome = $this->adapter($transport)->capture(new CaptureRequest('   '));
+
+        self::assertSame('missing_reference', $outcome->reason);
+        self::assertSame([], $transport->requests);
     }
 
     public function testARecordedApprovalPlacesTheOrder(): void

@@ -7,7 +7,7 @@
    draws for it points at nothing the visitor can act on -- it read as a text
    box drawn around the section title. Keyboard focus rings elsewhere are
    untouched; nothing can tab to this. #}
-<h2 tabindex="-1" class="font-heading text-lg font-bold leading-tight text-heading focus:outline-none">{{ field.label }}</h2>
+<h2 tabindex="-1" class="font-heading text-lg font-bold leading-tight text-heading focus:outline-none{% if field.runtime_class %} {{ field.runtime_class }}{% endif %}">{{ field.label }}</h2>
 {% if field.description %}
   <p class="mt-1 text-sm leading-relaxed text-muted">{{ field.description }}</p>
 {% endif %}

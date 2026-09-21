@@ -7,6 +7,7 @@ namespace AsterMD\Storefront\Tests\Http;
 use AsterMD\Storefront\Forms\Definition;
 use AsterMD\Storefront\Forms\FieldViewModel;
 use AsterMD\Storefront\Forms\RuleEvaluator;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Slim\Views\Twig;
 
@@ -224,6 +225,127 @@ final class IntakeRenderTest extends TestCase
         self::assertStringContainsString('sm:col-span-1', $half, 'cols: 2 means two per row, so one cell each');
         self::assertStringContainsString('sm:col-span-2', $full, 'cols: 1 means the field has the row to itself');
         self::assertStringNotContainsString('col-span-{', $half, 'a class name built by interpolation is never compiled');
+    }
+
+    /**
+     * The author's own class and id land on the field wrapper, which is the
+     * one element every field type has — a heading and an alert have no
+     * control to put them on, and the wrapper is also what a layout rule
+     * wants to target.
+     *
+     * Putting the id here rather than on the input is what keeps the
+     * label -> input -> error wiring intact: those ids are derived from the
+     * field name and are load-bearing for a screen reader, so an authored id
+     * must not be able to displace one.
+     */
+    public function testAnAuthoredClassAndIdLandOnTheFieldWrapper(): void
+    {
+        $html = self::render([
+            'fieldId' => 'first_name', 'name' => 'first_name', 'type' => 'text', 'label' => 'First Name',
+            'properties' => ['cols' => 2, 'runtimeClassName' => 'my-class', 'runtimeId' => 'my-id'],
+        ]);
+
+        self::assertMatchesRegularExpression('/<div class="[^"]*\bmy-class\b[^"]*"/', $html);
+        self::assertStringContainsString('id="my-id"', $html);
+
+        // The authored class is added to the layout class, not substituted for
+        // it: a field that names a class must still take its grid cell.
+        self::assertMatchesRegularExpression('/<div class="[^"]*sm:col-span-1[^"]*"/', $html);
+
+        // And the control keeps the id the label points at.
+        self::assertStringContainsString('id="intake-first_name"', $html);
+        self::assertStringContainsString('for="intake-first_name"', $html);
+    }
+
+    /** A field naming neither emits neither attribute, rather than an empty one. */
+    public function testAFieldNamingNoClassOrIdEmitsNeitherAttribute(): void
+    {
+        $html = self::render(['fieldId' => 'a', 'name' => 'a', 'type' => 'text', 'label' => 'A']);
+
+        self::assertStringNotContainsString('id=""', $html);
+        self::assertDoesNotMatchRegularExpression('/<div class="[^"]*\s"/', $html, 'no trailing space where a class would have gone');
+    }
+
+    /**
+     * The authored class also reaches the element the field actually draws,
+     * and this is the case that says why the wrapper alone was not enough.
+     *
+     * The theme puts its own utility classes on that inner element, so a rule
+     * written against the wrapper loses for exactly the properties an author
+     * reaches for: `.head-cls{color:red}` painted the wrapper red and left the
+     * heading its own `text-heading` colour, which reads as the class not
+     * having been applied at all.
+     *
+     * Asserted on the markup *after* the wrapper's own tag, so a class that
+     * only ever reached the wrapper cannot satisfy it.
+     *
+     * @param array<string, mixed> $extra
+     */
+    #[DataProvider('fieldsThatDrawSomething')]
+    public function testTheAuthoredClassAlsoReachesTheElementTheFieldDraws(string $type, array $extra): void
+    {
+        $html = self::render([
+            'fieldId' => 'f', 'name' => 'f', 'type' => $type, 'label' => 'A label',
+            'properties' => ['runtimeClassName' => 'mine'] + $extra,
+        ]);
+
+        $inner = substr($html, (int) strpos($html, '>') + 1);
+
+        self::assertMatchesRegularExpression(
+            '/class="[^"]*\bmine\b[^"]*"/',
+            $inner,
+            sprintf('%s draws an element the authored class never reached', $type),
+        );
+    }
+
+    /** @return iterable<string, array{string, array<string, mixed>}> */
+    public static function fieldsThatDrawSomething(): iterable
+    {
+        yield 'heading' => ['heading', []];
+        yield 'paragraph' => ['paragraph', []];
+        yield 'divider' => ['divider', []];
+        yield 'alert' => ['alert', ['alertType' => 'danger', 'alertText' => 'No.']];
+        yield 'image' => ['image', ['imageUrl' => '/assets/img/t1.png']];
+        yield 'form-progress' => ['form-progress', []];
+        yield 'text' => ['text', []];
+        yield 'number' => ['number', []];
+        yield 'textarea' => ['textarea', []];
+        yield 'picker-date' => ['picker-date', []];
+        yield 'dropdown' => ['dropdown', ['options' => [['value' => 'a', 'label' => 'A']]]];
+        yield 'terms' => ['terms', []];
+        yield 'button' => ['button', ['buttonAction' => 'next_page']];
+        yield 'radio group' => ['choice-multi', ['choiceInputType' => 'radio', 'multiSelect' => false, 'options' => [['value' => 'a', 'label' => 'A']]]];
+        yield 'checkbox group' => ['choice-multi', ['choiceInputType' => 'checkbox', 'multiSelect' => true, 'options' => [['value' => 'a', 'label' => 'A']]]];
+    }
+
+    /** And it is still on the wrapper, so hiding a field still takes its label with it. */
+    public function testTheAuthoredClassIsStillOnTheWrapperSoHidingTakesTheWholeField(): void
+    {
+        $html = self::render([
+            'fieldId' => 'a', 'name' => 'a', 'type' => 'text', 'label' => 'A',
+            'properties' => ['runtimeClassName' => 'hide-this'],
+        ]);
+
+        self::assertMatchesRegularExpression('/<div class="[^"]*\bhide-this\b[^"]*"/', $html);
+    }
+
+    /**
+     * The value is an attribute, and an author who types a quote into the
+     * builder must not be able to close it and add attributes of their own.
+     */
+    public function testAnAuthoredValueCannotBreakOutOfItsAttribute(): void
+    {
+        $html = self::render([
+            'fieldId' => 'a', 'name' => 'a', 'type' => 'text', 'label' => 'A',
+            'properties' => ['runtimeId' => '" onfocus="alert(1)'],
+        ]);
+
+        // The quote is escaped, so the value stays inside the attribute it was
+        // given. Asserted as "no attribute was created" rather than "the text
+        // does not appear": the escaped value still reads `onfocus=&quot;`,
+        // which is inert text inside id="…" and not a handler.
+        self::assertStringNotContainsString('onfocus="', $html);
+        self::assertStringContainsString('id="&quot; onfocus=&quot;alert(1)"', $html);
     }
 
     /** A field that declares no `cols` at all gets the row, which is the safe way to be wrong. */

@@ -8,6 +8,7 @@ namespace AsterMD\Storefront\Observability;
 
 use AsterMD\Storefront\Checkout\CheckoutEventReporter;
 use AsterMD\Storefront\Checkout\Totals;
+use AsterMD\Storefront\Payment\PaymentDescriptor;
 
 /**
  * `[20.9]` over the treatment sync and the §17 funnel events.
@@ -35,6 +36,14 @@ use AsterMD\Storefront\Checkout\Totals;
  * Totals travel as integer cents and are logged as such. Order references are
  * counted, not listed: the count is what an outage asks about, and the
  * references belong to the order rows.
+ *
+ * **Every argument is forwarded, and the timing payload is a separate
+ * decision.** What this class chooses is what to *measure* -- a count rather
+ * than an order list, no provider sentence -- and never what the inner port
+ * receives. An argument accepted here and not passed on is an argument that
+ * silently never reaches the EMR, because production wires this in front of
+ * {@see \AsterMD\Storefront\Checkout\EmrCheckoutEventReporter} and nothing
+ * exercising that class directly can see the gap.
  */
 final class InstrumentedCheckoutEventReporter implements CheckoutEventReporter
 {
@@ -51,13 +60,13 @@ final class InstrumentedCheckoutEventReporter implements CheckoutEventReporter
         ], fn () => $this->inner->checkoutVisited($sessionUuid, $totals));
     }
 
-    public function orderPlaced(?string $sessionUuid, Totals $totals, string $paymentMethod, array $orderReferences): void
+    public function orderPlaced(?string $sessionUuid, Totals $totals, string $paymentMethod, array $orderReferences, ?PaymentDescriptor $payment = null): void
     {
         $this->report(Boundary::CheckoutEvent, 'order_placed', $sessionUuid, [
             'total_cents' => $totals->totalCents,
             'payment_method' => $paymentMethod,
             'orders' => count($orderReferences),
-        ], fn () => $this->inner->orderPlaced($sessionUuid, $totals, $paymentMethod, $orderReferences));
+        ], fn () => $this->inner->orderPlaced($sessionUuid, $totals, $paymentMethod, $orderReferences, $payment));
     }
 
     public function orderDeclined(
@@ -66,6 +75,7 @@ final class InstrumentedCheckoutEventReporter implements CheckoutEventReporter
         string $paymentMethod,
         ?string $reference,
         string $reason,
+        ?PaymentDescriptor $payment = null,
     ): void {
         // `$reason` is the provider's own sentence and is deliberately absent:
         // see the class docblock of {@see InstrumentedPaymentAdapter}. The
@@ -74,14 +84,14 @@ final class InstrumentedCheckoutEventReporter implements CheckoutEventReporter
             'total_cents' => $totals->totalCents,
             'payment_method' => $paymentMethod,
             'reference' => $reference,
-        ], fn () => $this->inner->orderDeclined($sessionUuid, $totals, $paymentMethod, $reference, $reason));
+        ], fn () => $this->inner->orderDeclined($sessionUuid, $totals, $paymentMethod, $reference, $reason, $payment));
     }
 
-    public function treatmentsSynced(?string $sessionUuid, array $orderReferences): void
+    public function treatmentsSynced(?string $sessionUuid, array $orderReferences, ?PaymentDescriptor $payment = null): void
     {
         $this->report(Boundary::TreatmentSync, 'treatments_synced', $sessionUuid, [
             'orders' => count($orderReferences),
-        ], fn () => $this->inner->treatmentsSynced($sessionUuid, $orderReferences));
+        ], fn () => $this->inner->treatmentsSynced($sessionUuid, $orderReferences, $payment));
     }
 
     public function upsellOffered(?string $sessionUuid, string $slug, string $name): void

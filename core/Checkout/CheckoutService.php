@@ -20,11 +20,14 @@ use AsterMD\Storefront\Funnel\FurthestStep;
 use AsterMD\Storefront\Journey\CartStore;
 use AsterMD\Storefront\Journey\JourneyState;
 use AsterMD\Storefront\Journey\JourneyStore;
+use AsterMD\Storefront\Payment\CardDescriptor;
 use AsterMD\Storefront\Payment\OrderEnvelope;
 use AsterMD\Storefront\Payment\OrderLine;
 use AsterMD\Storefront\Payment\PaymentAdapter;
 use AsterMD\Storefront\Payment\PaymentCredential;
+use AsterMD\Storefront\Payment\PaymentDescriptor;
 use AsterMD\Storefront\Payment\PlacementOutcome;
+use AsterMD\Storefront\Payment\SettlementMode;
 use AsterMD\Storefront\Repository\CheckoutAttemptRepository;
 use AsterMD\Storefront\Support\CardScrubber;
 use AsterMD\Storefront\Support\Config;
@@ -186,6 +189,7 @@ final class CheckoutService
         private readonly OperatorLog $log,
         private readonly PostChargeGuard $postCharge,
         private readonly Upsells $upsells,
+        private readonly SettlementPolicy $settlement,
         ?\Closure $clock = null,
     ) {
         $this->clock = $clock ?? static fn (): string => gmdate('c');
@@ -436,7 +440,43 @@ final class CheckoutService
             userAgent: $context?->userAgent,
             idempotencyKey: $key,
             anchorSlug: self::anchorSlug($cart),
+            // Resolved from the cart that is about to be charged rather than
+            // from the one the page was rendered against: a bump accepted on
+            // the checkout page is a line like any other, and a bump that
+            // holds funds has to make the order it joined hold them too.
+            settlement: $this->settlement->forSlugs(...array_map(
+                static fn (CartLine $line): string => $line->slug,
+                $cart->lines(),
+            )),
         );
+
+        // 6b. The provider has to be able to honour the settlement mode this
+        //     order resolved to. An adapter that cannot authorize has no
+        //     degraded form to fall back on: charging instead would take money
+        //     the deployment said to hold, which is the one failure this whole
+        //     mechanism exists to make impossible. So the order stops here,
+        //     before the claim is marked sent and before anything reaches a
+        //     provider.
+        //
+        //     The buyer is told the item cannot be bought right now rather than
+        //     anything about settlement, because nothing about this is theirs
+        //     to fix — it is a deployment whose configuration and whose payment
+        //     provider disagree, and `bin/console config:validate` reports the
+        //     same disagreement without waiting for a buyer to find it.
+        if ($envelope->settlement->isAuthorize() && !$this->adapter->capabilities()->supportsAuthorizeCapture) {
+            $this->releaseQuietly($key, $claimedAt);
+            $this->log->error('checkout.settlement_unsupported', [
+                'provider' => $this->adapter->capabilities()->providerCategory,
+                'settlement' => $envelope->settlement->value,
+                'anchor' => $envelope->anchorSlug,
+            ]);
+
+            return new CheckoutResult(
+                outcome: PlacementOutcome::declined(null, self::UNAVAILABLE_LINE, 'settlement_unsupported'),
+                totals: $totals,
+                notice: self::UNAVAILABLE_LINE,
+            );
+        }
 
         // 7. Written before the call rather than after it, because the width
         //    of one network round trip is all it takes: a request that dies
@@ -483,13 +523,25 @@ final class CheckoutService
             //    deliberately *not* released, because the provider has already
             //    created an order and has no idempotency of its own — giving
             //    the key back would let the next submit create a second one.
-            return $this->stopped($state, $totals, $outcome, sprintf(self::PENDING_ACTION_NOTICE, (string) $outcome->reference));
+            return $this->stopped(
+                $state,
+                $totals,
+                $outcome,
+                sprintf(self::PENDING_ACTION_NOTICE, (string) $outcome->reference),
+                self::paymentDescriptor($credential, $envelope->settlement, $outcome, $totals, held: false),
+            );
         }
 
         if (!$outcome->isPlaced()) {
             // 10. `[13.30]`: cart intact, buyer on checkout, the provider's own
             //     reason shown verbatim (`[13.28]`).
-            return $this->stopped($state, $totals, $outcome, $outcome->reason);
+            return $this->stopped(
+                $state,
+                $totals,
+                $outcome,
+                $outcome->reason,
+                self::paymentDescriptor($credential, $envelope->settlement, $outcome, $totals, held: false),
+            );
         }
 
         return $this->placed($state, $cart, $envelope, $outcome, $credential, $totals, $recorded['records']);
@@ -763,6 +815,7 @@ final class CheckoutService
             $totals,
             self::PAYMENT_METHOD,
             [$reference],
+            self::paymentDescriptor($credential, $outcome->settlement, $outcome, $totals, held: true),
         ));
 
         $this->log->info('checkout.order_placed', ['reference' => $reference, 'anchor' => $envelope->anchorSlug]);
@@ -782,6 +835,42 @@ final class CheckoutService
     }
 
     /**
+     * How this order was paid for, for the reporting boundary.
+     *
+     * **The settlement is the argument, not `$outcome->settlement`.** A decline
+     * carries none -- {@see PlacementOutcome::declined()} leaves it at
+     * {@see SettlementMode::Capture} -- so reading it off the outcome would
+     * report every refused authorization as an attempt to charge. The placed
+     * path passes the outcome's, which is what the provider did; the declined
+     * path passes the envelope's, which is what was asked for.
+     *
+     * `$held` is false on a decline for the same reason there is no
+     * `pre_auth_qa` there: nothing was reserved, so there is no reserved
+     * amount to report.
+     *
+     * The card's brand comes from the number's own prefix, falling back to the
+     * provider's reading only where the prefix named no scheme. Its bin and
+     * expiry are always the buyer's own -- see {@see CardDescriptor}.
+     */
+    private static function paymentDescriptor(
+        PaymentCredential $credential,
+        SettlementMode $settlement,
+        PlacementOutcome $outcome,
+        Totals $totals,
+        bool $held,
+    ): PaymentDescriptor {
+        $authorize = $settlement->isAuthorize();
+
+        return new PaymentDescriptor(
+            PaymentDescriptor::TYPE_CREDIT_CARD,
+            $authorize,
+            $outcome->preAuthQa,
+            $held && $authorize ? $totals->totalCents : null,
+            CardDescriptor::fromCredential($credential, $outcome->providerCardBrand),
+        );
+    }
+
+    /**
      * A decline or a challenge: the buyer stays on checkout with the cart
      * untouched, and the card they typed is forgotten.
      *
@@ -793,6 +882,7 @@ final class CheckoutService
         Totals $totals,
         PlacementOutcome $outcome,
         ?string $notice,
+        ?PaymentDescriptor $payment = null,
     ): CheckoutResult {
         $state?->wipePaymentCredential();
 
@@ -826,6 +916,7 @@ final class CheckoutService
             self::PAYMENT_METHOD,
             $outcome->reference,
             (string) ($outcome->reason ?? $outcome->rawStatus),
+            $payment,
         ));
 
         return new CheckoutResult(

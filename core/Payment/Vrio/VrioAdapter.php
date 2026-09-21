@@ -7,6 +7,8 @@ declare(strict_types=1);
 namespace AsterMD\Storefront\Payment\Vrio;
 
 use AsterMD\Storefront\Payment\AdapterCapabilities;
+use AsterMD\Storefront\Payment\CaptureOutcome;
+use AsterMD\Storefront\Payment\CaptureRequest;
 use AsterMD\Storefront\Payment\OrderEnvelope;
 use AsterMD\Storefront\Payment\OrderSearch;
 use AsterMD\Storefront\Payment\OrderSearchResult;
@@ -65,6 +67,8 @@ final class VrioAdapter implements PaymentAdapter
             routingHintKeys: ['campaign_id', 'connection_id'],
             pciPosture: 'Reduced scope via reference-order reuse: the card is collected by the storefront once, at checkout, and is never held afterwards — later charges on the same journey name the instrument the provider already holds in its own vault. The collection surface is still the storefront\'s own, so the checkout request itself remains in scope; nothing beyond it is.',
             supportsOrderSearch: true,
+            supportsAuthorizeCapture: true,
+            requiredDeploymentKeys: ['shipping_profile_id'],
         );
     }
 
@@ -72,11 +76,11 @@ final class VrioAdapter implements PaymentAdapter
      * `[21.9a]`: the orders this provider holds inside a window.
      *
      * **Both filters are applied server-side, and that was verified rather
-     * than assumed.** Negative controls recorded on 2026-08-25: a 1990 window
-     * returns 0 orders and a nonexistent campaign returns 0, while the real
-     * campaign over three days returns exactly the known orders out of the
-     * 143 the account took in that span. Reading the account and filtering
-     * here would page every campaign on a shared merchant to find our own.
+     * than assumed.** A 1990 window returns 0 orders and a nonexistent campaign
+     * returns 0, while the real campaign over three days returns exactly the
+     * known orders out of the 143 the account took in that span. Reading the
+     * account and filtering here would page every campaign on a shared merchant
+     * to find our own.
      *
      * **The campaign is checked again on the way back.** The filter works
      * today; the cost of it silently becoming inert is that every other
@@ -215,7 +219,7 @@ final class VrioAdapter implements PaymentAdapter
             return PlacementOutcome::declined(null, VrioOutcome::GENERIC_DECLINE, 'exception');
         }
 
-        $outcome = VrioOutcome::from(is_array($envelope) ? $envelope : [], $order->totalCents);
+        $outcome = VrioOutcome::from(is_array($envelope) ? $envelope : [], $order->totalCents, $order->settlement);
 
         // Every non-success response is logged in full for operator review; a
         // successful one is not (`[13.29]`). These logs echo the submitted
@@ -283,6 +287,110 @@ final class VrioAdapter implements PaymentAdapter
         }
 
         return self::quoteFrom($code, $response);
+    }
+
+    /**
+     * Settle an order this adapter authorized: `POST /orders/{id}/capture`.
+     *
+     * **An empty body, deliberately.** This provider captures the most recent
+     * successful authorization on the order and needs nothing else, so
+     * {@see CaptureRequest::$lines} is ignored here -- it is carried for the
+     * other shipped adapter, which cannot settle without it. Naming an amount
+     * would let a partial capture be requested by a caller that has no figure to
+     * offer; what is being settled is the authorization the provider holds, and
+     * this storefront's own total was reconciled against it at placement
+     * ({@see VrioOutcome}).
+     *
+     * **A refusal is typed.** Capturing an order that never authorized answers
+     * `success: false` with `data.error.code` and `validation_code` both
+     * `order_unauthorized` and the message "Order has not been authorized." --
+     * a stated refusal with no transaction node, not a transport error and not
+     * a silent no-op. That code is carried through as the reason so an operator
+     * reading a failed capture learns which kind it was.
+     *
+     * **Nothing throws** ({@see \AsterMD\Storefront\Payment\PaymentAdapter::capture()}
+     * for why that matters more here than at placement). A transport failure, a
+     * rejected request and a body that will not decode are all a failed
+     * outcome.
+     *
+     * **The reason is scrubbed.** The failure paths reach the same gateway free
+     * text the placement paths do, and this string is written to an operator
+     * log rather than shown to anyone -- which makes it more likely to be
+     * pasted into a ticket, not less.
+     */
+    public function capture(CaptureRequest $request): CaptureOutcome
+    {
+        $reference = trim($request->reference);
+
+        if ($reference === '') {
+            // Never reaches the wire: the provider's route would be
+            // `/orders//capture`, which is a different endpoint entirely.
+            $this->log->error('payment.capture_without_reference', []);
+
+            return CaptureOutcome::failed(null, 'missing_reference');
+        }
+
+        try {
+            $envelope = $this->apiFactory->create($this->credentials)->captureOrder($reference, [])->getInArray()['response'];
+        } catch (\Throwable $e) {
+            $this->log->error('payment.capture_threw', [
+                'reference' => $reference,
+                'exception' => $e::class,
+                'status' => $e->getCode(),
+            ]);
+
+            return CaptureOutcome::failed($reference, 'exception');
+        }
+
+        if (!is_array($envelope) || isset($envelope['curlError'])) {
+            $this->log->error('payment.capture_unreachable', ['reference' => $reference]);
+
+            return CaptureOutcome::failed($reference, 'transport_error');
+        }
+
+        if (($envelope['success'] ?? false) !== true) {
+            $reason = self::captureFailureReason($envelope);
+
+            // Error level, not warning: money is reserved on somebody's card
+            // and the hold expires on the acquirer's clock, so an unsettled
+            // capture has a deadline that nothing here can extend.
+            $this->log->error('payment.capture_refused', [
+                'reference' => $reference,
+                'reason' => $reason,
+            ]);
+
+            return CaptureOutcome::failed($reference, $reason);
+        }
+
+        $this->log->info('payment.captured', ['reference' => $reference]);
+
+        return CaptureOutcome::captured($reference);
+    }
+
+    /**
+     * The provider's own code for a refused capture, else its message.
+     *
+     * The code is preferred because it is a fixed vocabulary an operator can
+     * act on -- `order_unauthorized` is recorded -- while the message is free
+     * text that changes without notice. Both are scrubbed on the way out.
+     *
+     * @param array<string, mixed> $envelope
+     */
+    private static function captureFailureReason(array $envelope): string
+    {
+        $candidates = [
+            $envelope['data']['error']['code'] ?? null,
+            $envelope['validation_code'] ?? null,
+            $envelope['message'] ?? null,
+        ];
+
+        foreach ($candidates as $candidate) {
+            if (is_string($candidate) && trim($candidate) !== '') {
+                return (string) CardScrubber::scrub(trim($candidate));
+            }
+        }
+
+        return 'rejected';
     }
 
     /**

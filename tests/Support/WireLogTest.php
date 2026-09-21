@@ -31,6 +31,29 @@ use PHPUnit\Framework\TestCase;
  */
 final class WireLogTest extends TestCase
 {
+    use ConfigVariant;
+
+    /**
+     * A channel on the provider whose wire log this file is about.
+     *
+     * Placeholders throughout: nothing here reaches a network — the suite binds
+     * {@see \AsterMD\Storefront\Payment\RefusingTransport} underneath — and
+     * what the cases inspect is which *decorator* the transport slot holds.
+     */
+    private const array VRIO_CHANNEL = [
+        'channel' => ['id' => 'wire-log-test-channel', 'name' => 'Wire Log Test'],
+        'payment_processor' => [
+            'provider_category' => 'vrio',
+            'name' => 'Wire Log Test Processor',
+            'config' => [
+                'api_endpoint' => 'https://api.vrio.app',
+                'api_key' => 'not-a-real-key',
+                'campaign_id' => '147',
+                'connection_id' => '1',
+            ],
+        ],
+    ];
+
     private const string PAN = '4111111100084444';
 
     /** Distinct from every other digit run in this fixture, so a containment check cannot pass by luck. */
@@ -166,21 +189,13 @@ final class WireLogTest extends TestCase
     }
 
     /**
-     * The real container, over an environment this test controls.
-     *
-     * `channel.generated.php` has to exist for a provider adapter to resolve at
-     * all, so a deployment that has never synced cannot answer the provider half
-     * of this question — it is skipped rather than asserted vacuously.
+     * The real container, over an environment and a channel this test controls.
      *
      * @param array<string, string> $env
      */
     private function containerFor(array $env): \Psr\Container\ContainerInterface
     {
         $root = dirname(__DIR__, 2);
-
-        if (!is_file($root . '/config/channel.generated.php')) {
-            self::markTestSkipped('needs a synced channel for a provider adapter to resolve');
-        }
 
         // Set explicitly rather than unset. `AppFactory::create()` loads the
         // deployment's own `.env` through an *immutable* Dotenv, which will not
@@ -192,7 +207,19 @@ final class WireLogTest extends TestCase
         $_ENV['WIRE_LOG'] = $env['WIRE_LOG'] ?? 'false';
 
         try {
-            $container = AppFactory::create($root, [\PDO::class => new \PDO('sqlite::memory:')])->getContainer();
+            $container = AppFactory::create($root, [
+                \PDO::class => new \PDO('sqlite::memory:'),
+                // The channel is stated rather than read. This case needs a
+                // provider whose adapter has a transport to inspect, and which
+                // provider that is used to depend on whatever `theme:sync` last
+                // wrote — so a deployment pointed at a channel on a different
+                // processor failed this with a ReflectionException about
+                // `NullPaymentAdapter::$inner`, which reads as a broken test
+                // rather than as a test whose premise had moved.
+                \AsterMD\Storefront\Support\Config::class => $this->configWith([
+                    'channel.generated' => self::VRIO_CHANNEL,
+                ]),
+            ])->getContainer();
         } finally {
             if ($restore === null) {
                 unset($_ENV['WIRE_LOG']);

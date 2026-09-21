@@ -16,8 +16,22 @@
    it reads source text, not rendered output -- so the rule was never compiled
    and every field collapsed into a single cell whatever the markup claimed. A
    class name that is built at render time is a class name that does not
-   exist. #}
-<div class="{{ field.cols > 1 ? 'sm:col-span-1' : 'sm:col-span-2' }}"
+   exist.
+
+   `runtime_class` and `runtime_id` are the form author's own hooks, set in the
+   builder for the CSS they write in `settings.injectCss`. They land here, on
+   the wrapper, for two reasons: it is the one element every field type has --
+   a heading and an alert have no control to carry them -- and the ids further
+   down are load-bearing. `intake-<name>` is what the label points at, what an
+   error is described by and what a choice group names itself from, so an
+   authored id must be able to sit beside that wiring and never displace it.
+
+   The authored class is appended to the layout class rather than replacing it:
+   naming a class must not cost a field its grid cell. Tailwind never sees
+   these values either, which is correct -- they are the author's selectors,
+   defined in the author's own CSS, not utilities for this build to compile. #}
+<div class="{{ field.cols > 1 ? 'sm:col-span-1' : 'sm:col-span-2' }}{% if field.runtime_class %} {{ field.runtime_class }}{% endif %}"
+     {%- if field.runtime_id %} id="{{ field.runtime_id }}"{% endif %}
      data-intake-field="{{ field.name }}"
      data-intake-type="{{ field.type }}"
      data-intake-required="{{ field.required ? '1' : '0' }}"

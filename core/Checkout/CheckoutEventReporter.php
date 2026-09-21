@@ -6,6 +6,8 @@ declare(strict_types=1);
 
 namespace AsterMD\Storefront\Checkout;
 
+use AsterMD\Storefront\Payment\PaymentDescriptor;
+
 /**
  * Where a checkout's funnel events go (§17), behind one port.
  *
@@ -25,6 +27,12 @@ namespace AsterMD\Storefront\Checkout;
  * representation of money this codebase has. Converting to the decimal dollars
  * one API documents is the implementation's business and happens at that
  * boundary alone.
+ *
+ * `$payment` is how the order was paid for, in the API's own payment
+ * vocabulary and *beside* — never instead of — `$paymentMethod`, which is the
+ * EMR's older and differently-spelled field for the same fact. It is optional
+ * because only the checkout-time call has a card in hand: the receipt batch
+ * and the reconciliation sweep run without one and send no payment block.
  */
 interface CheckoutEventReporter
 {
@@ -39,9 +47,10 @@ interface CheckoutEventReporter
     public function checkoutVisited(?string $sessionUuid, Totals $totals): void;
 
     /**
-     * @param list<string> $orderReferences the provider's own references for the orders placed
+     * @param list<string>       $orderReferences the provider's own references for the orders placed
+     * @param ?PaymentDescriptor $payment         how it was paid for, or null when the caller has no card
      */
-    public function orderPlaced(?string $sessionUuid, Totals $totals, string $paymentMethod, array $orderReferences): void;
+    public function orderPlaced(?string $sessionUuid, Totals $totals, string $paymentMethod, array $orderReferences, ?PaymentDescriptor $payment = null): void;
 
     /**
      * A decline, with the reference the provider created before it failed the
@@ -53,6 +62,7 @@ interface CheckoutEventReporter
         string $paymentMethod,
         ?string $reference,
         string $reason,
+        ?PaymentDescriptor $payment = null,
     ): void;
 
     /**
@@ -76,7 +86,7 @@ interface CheckoutEventReporter
      *
      * @param list<string> $orderReferences the provider's own references, in the order they were placed
      */
-    public function treatmentsSynced(?string $sessionUuid, array $orderReferences): void;
+    public function treatmentsSynced(?string $sessionUuid, array $orderReferences, ?PaymentDescriptor $payment = null): void;
 
     /** An offer was shown (`[16.7]`): the product identifier and the name the buyer read. */
     public function upsellOffered(?string $sessionUuid, string $slug, string $name): void;

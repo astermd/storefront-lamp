@@ -6,6 +6,8 @@ declare(strict_types=1);
 
 namespace AsterMD\Storefront\Payment\Vrio;
 
+use AsterMD\Storefront\Payment\CardBrand;
+
 /**
  * `[14.12]`: the card scheme is derived from the number's prefix and submitted
  * as this provider's own type code.
@@ -22,6 +24,13 @@ namespace AsterMD\Storefront\Payment\Vrio;
  * the provider treats the field as a hint beside the number it will itself
  * validate, and blocking a legitimate card on a prefix table this file cannot
  * keep current would be the worse failure.
+ *
+ * **The prefixes themselves live in {@see CardBrand} and not here.** This file
+ * holds the mapping onto one provider's integers, which is the only part of it
+ * that is about this provider. Two copies of a BIN table drift, and the copy
+ * that drifts is the one nobody is looking at. Diners Club and JCB have no code
+ * in the provider's table, so they reach the same Visa fallback an unknown
+ * prefix does.
  */
 final class CardScheme
 {
@@ -35,23 +44,34 @@ final class CardScheme
 
     public static function codeFor(string $cardNumber): int
     {
-        $digits = preg_replace('/\D/', '', $cardNumber) ?? '';
-
-        if ($digits === '') {
-            return self::VISA;
-        }
-
-        $two = (int) substr($digits, 0, 2);
-        $four = (int) substr($digits, 0, 4);
-
-        return match (true) {
-            str_starts_with($digits, '4') => self::VISA,
-            $two >= 51 && $two <= 55 => self::MASTERCARD,
-            $four >= 2221 && $four <= 2720 => self::MASTERCARD,
-            $two === 34 || $two === 37 => self::AMEX,
-            str_starts_with($digits, '6011') || $two === 65 => self::DISCOVER,
-            $four >= 6440 && $four <= 6499 => self::DISCOVER,
+        return match (CardBrand::fromNumber($cardNumber)) {
+            CardBrand::Mastercard => self::MASTERCARD,
+            CardBrand::Amex => self::AMEX,
+            CardBrand::Discover => self::DISCOVER,
+            // Visa, an unrecognised prefix, an empty string, and the two
+            // brands this provider's table has no code for.
             default => self::VISA,
+        };
+    }
+
+    /**
+     * The brand one of this provider's codes stands for, or null when the code
+     * is not a card scheme at all.
+     *
+     * The inverse of {@see self::codeFor()} and lossy in the way that inverse
+     * must be: `VISA` is also what an unrecognised prefix is sent as, so a
+     * response echoing `2` cannot be read as proof the card is a Visa. The
+     * provider's wallet, ACH and SEPA codes answer null because none of them
+     * names a scheme.
+     */
+    public static function brandFor(int $code): ?CardBrand
+    {
+        return match ($code) {
+            self::MASTERCARD => CardBrand::Mastercard,
+            self::VISA => CardBrand::Visa,
+            self::DISCOVER => CardBrand::Discover,
+            self::AMEX => CardBrand::Amex,
+            default => null,
         };
     }
 }

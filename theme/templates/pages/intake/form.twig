@@ -112,6 +112,16 @@
       </div>
     </form>
   </section>
+
+    {# The form author's own stylesheet ({@see AsterMD\Storefront\Forms\InjectedCss}).
+       Rendered raw because escaping would break it -- `>` is the child
+       combinator and `"` appears in every attribute selector -- which is safe
+       only because the one sequence that could end this block early has
+       already been removed. Placed last so an author's rule wins over the
+       theme's without needing !important. #}
+    {% if injected_css %}
+    <style data-intake-injected-css>{{ injected_css|raw }}</style>
+    {% endif %}
 {% endblock %}
 {% block scripts %}
 <script src="{{ asset('script.js') }}" defer></script>

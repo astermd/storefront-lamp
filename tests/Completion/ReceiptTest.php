@@ -38,6 +38,71 @@ final class ReceiptTest extends TestCase
         self::assertSame(['rx', 'otc'], array_column($receipt->lines, 'kind'));
     }
 
+    public function testAReceiptForCapturedOrdersSaysTheMoneyMoved(): void
+    {
+        $receipt = Receipt::fromOrderRows(
+            [self::row('34788', 'placed', amountCents: 12000)],
+            self::buyer(),
+            'USD',
+        );
+
+        self::assertFalse($receipt->isAuthorizedOnly());
+    }
+
+    public function testAReceiptForAnAuthorizedOrderSaysTheMoneyIsOnlyHeld(): void
+    {
+        $receipt = Receipt::fromOrderRows(
+            [self::row('34788', 'placed', amountCents: 12000, settlement: 'authorize')],
+            self::buyer(),
+            'USD',
+        );
+
+        self::assertTrue($receipt->isAuthorizedOnly());
+    }
+
+    public function testAJourneyThatCapturedOneOrderAndAuthorizedAnotherTakesTheCautiousWording(): void
+    {
+        // A checkout and an upsell settle independently, so a journey can hold
+        // both. The total on the page then includes an amount that has not
+        // moved, and telling the buyer they were charged all of it would send
+        // them looking for a debit that is not on their statement.
+        $receipt = Receipt::fromOrderRows(
+            [
+                self::row('34788', 'placed', amountCents: 12000),
+                self::row('34790', 'placed', amountCents: 4900, settlement: 'authorize'),
+            ],
+            self::buyer(),
+            'USD',
+        );
+
+        self::assertTrue($receipt->isAuthorizedOnly());
+    }
+
+    public function testAStoredReceiptFromBeforeSettlementExistedReadsBackAsCaptured(): void
+    {
+        // Unlike `pendingReview`, the absent case here has a true answer: a
+        // receipt written before this key existed belongs to an order that was
+        // charged, because the storefront had no other mode.
+        $stored = Receipt::fromOrderRows([self::row('34788', 'placed', amountCents: 12000)], self::buyer(), 'USD')->toArray();
+        unset($stored['settlement']);
+
+        self::assertFalse(Receipt::fromArray($stored)->isAuthorizedOnly());
+    }
+
+    public function testAnAuthorizedReceiptSurvivesTheRoundTripThroughJourneyState(): void
+    {
+        // The receipt is stored and re-read on every refresh, so a mode that
+        // did not survive `toArray()` would show the right wording once and the
+        // wrong wording on reload.
+        $receipt = Receipt::fromOrderRows(
+            [self::row('34788', 'placed', amountCents: 12000, settlement: 'authorize')],
+            self::buyer(),
+            'USD',
+        );
+
+        self::assertTrue(Receipt::fromArray($receipt->toArray())->isAuthorizedOnly());
+    }
+
     public function testADeclinedOrderIsNamedButIsNotMoneyTheBuyerPaid(): void
     {
         // [13.26]: a declined placement still creates a provider reference and
@@ -229,6 +294,7 @@ final class ReceiptTest extends TestCase
         int $amountCents,
         int $discountCents = 0,
         array $lines = [],
+        string $settlement = 'capture',
     ): array {
         return [
             'id' => 1,
@@ -249,6 +315,7 @@ final class ReceiptTest extends TestCase
             'idempotency_key' => 'key-' . $reference,
             'provider_category' => 'vrio',
             'placed_at' => '2026-08-24T12:00:00+00:00',
+            'settlement' => $settlement,
             'created_at' => '2026-08-24T12:00:00+00:00',
             'updated_at' => '2026-08-24T12:00:00+00:00',
             'lines' => $lines,

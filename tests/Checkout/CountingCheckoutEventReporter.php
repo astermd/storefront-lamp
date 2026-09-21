@@ -6,6 +6,7 @@ namespace AsterMD\Storefront\Tests\Checkout;
 
 use AsterMD\Storefront\Checkout\CheckoutEventReporter;
 use AsterMD\Storefront\Checkout\Totals;
+use AsterMD\Storefront\Payment\PaymentDescriptor;
 
 /**
  * A reporter that counts what reached the EMR, so a case can assert on the
@@ -25,15 +26,22 @@ final class CountingCheckoutEventReporter implements CheckoutEventReporter
     /** @var list<list<string>> */
     public array $placements = [];
 
+    /** How the last placed order said it was paid for. */
+    public ?PaymentDescriptor $lastPlacedPayment = null;
+
+    /** How the last refused order said it was being paid for. */
+    public ?PaymentDescriptor $lastDeclinedPayment = null;
+
     public function checkoutVisited(?string $sessionUuid, Totals $totals): void
     {
         ++$this->visits;
     }
 
     /** @param list<string> $orderReferences */
-    public function orderPlaced(?string $sessionUuid, Totals $totals, string $paymentMethod, array $orderReferences): void
+    public function orderPlaced(?string $sessionUuid, Totals $totals, string $paymentMethod, array $orderReferences, ?PaymentDescriptor $payment = null): void
     {
         $this->placements[] = $orderReferences;
+        $this->lastPlacedPayment = $payment;
     }
 
     public function orderDeclined(
@@ -42,12 +50,14 @@ final class CountingCheckoutEventReporter implements CheckoutEventReporter
         string $paymentMethod,
         ?string $reference,
         string $reason,
+        ?PaymentDescriptor $payment = null,
     ): void {
         $this->declines[] = ['reference' => $reference, 'reason' => $reason];
+        $this->lastDeclinedPayment = $payment;
     }
 
     /** @param list<string> $orderReferences */
-    public function treatmentsSynced(?string $sessionUuid, array $orderReferences): void
+    public function treatmentsSynced(?string $sessionUuid, array $orderReferences, ?PaymentDescriptor $payment = null): void
     {
     }
 

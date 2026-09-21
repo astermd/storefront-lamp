@@ -37,6 +37,19 @@
  * - `requires_prequalification`: `true` gives this product a dedicated
  *   eligibility step before intake. The default is false — pre-qualification
  *   questions are otherwise folded into the intake form itself.
+ * - `settlement`: `'authorize'` holds the funds for this product instead of
+ *   charging them, leaving `bin/console payment:capture <reference>` to take
+ *   the money once whatever event the deployment is waiting on has happened.
+ *   `'capture'` is the default and is what `config/payment.php` ships. Like
+ *   `geo_blocks`, this is an override-layer field: the EMR channel payload has
+ *   no concept of settlement, so `theme:sync` neither writes it nor can
+ *   overwrite it. NOTE that this applies to the **whole order** a buyer places,
+ *   not to this one line — a cart is one order ([13.19]), so a cart holding
+ *   anything marked `authorize` authorizes every line in it. Marking a product
+ *   `'capture'` therefore cannot force a charge; it only declines to ask for a
+ *   hold. The configured payment provider must support authorize-and-capture
+ *   or an order carrying this is refused before it reaches the provider —
+ *   `bin/console config:validate` reports that combination as an error.
  * - `prequalification_teleform_id`: which questionnaire that dedicated
  *   eligibility step should collect. Only consulted when
  *   `requires_prequalification` is true. Absent means there is no separate

@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace AsterMD\Storefront\Tests\Payment\Vrio;
 
 use AsterMD\Storefront\Checkout\CheckoutAttempt;
+use AsterMD\Storefront\Payment\CardBrand;
 use AsterMD\Storefront\Payment\PlacementOutcome;
+use AsterMD\Storefront\Payment\SettlementMode;
 use AsterMD\Storefront\Payment\Vrio\VrioOutcome;
 use PHPUnit\Framework\TestCase;
 
@@ -20,6 +22,72 @@ final class VrioOutcomeTest extends TestCase
         $decoded = json_decode($raw, true, 512, JSON_THROW_ON_ERROR);
 
         return $decoded;
+    }
+
+    public function testAnApprovedCaptureReportsThatTheMoneyMoved(): void
+    {
+        $outcome = VrioOutcome::from($this->fixture('vrio-order-approved.json'));
+
+        self::assertSame(SettlementMode::Capture, $outcome->settlement);
+        self::assertFalse($outcome->isAuthorizedOnly());
+    }
+
+    public function testAnOrderContainerWithNoChargeIsPlacedWhenItWasOnlyMeantToBeAuthorized(): void
+    {
+        // The one branch settlement changes, and the inversion is the point:
+        // for a capture a null `status_type_id` means the card was never
+        // charged and is therefore a decline, while for an authorize an order
+        // with nothing charged against it is exactly what was asked for.
+        // Reading the capture rule here would decline every successful
+        // authorization.
+        $envelope = $this->fixture('vrio-order-approved.json');
+        $envelope['data']['order']['status_type_id'] = null;
+
+        $captured = VrioOutcome::from($envelope);
+        $authorized = VrioOutcome::from($envelope, null, SettlementMode::Authorize);
+
+        self::assertSame(PlacementOutcome::DECLINED, $captured->state);
+        self::assertTrue($authorized->isPlaced());
+        self::assertTrue($authorized->isAuthorizedOnly());
+    }
+
+    public function testATerminalStatusStaysADeclineUnderAuthorizeToo(): void
+    {
+        // A cancelled or refunded order is not a live authorization waiting to
+        // be captured. Reading one as placed would tell a buyer their order
+        // stands and leave an operator a capture that can only fail.
+        $envelope = $this->fixture('vrio-order-approved.json');
+        $envelope['data']['order']['status_type_id'] = 5;
+
+        $outcome = VrioOutcome::from($envelope, null, SettlementMode::Authorize);
+
+        self::assertSame(PlacementOutcome::DECLINED, $outcome->state);
+    }
+
+    public function testTheRecordedAuthorizeDeclineIsShapeIdenticalToACaptureDecline(): void
+    {
+        // Taken against a sandbox whose acquiring gateway refuses every
+        // charge -- `action: "process"` fails identically, so this is the
+        // account and not the authorize path. What it pins is that a *failed*
+        // authorize needs no special handling: reference at
+        // data.error.transaction.order_id, success false, and the envelope's
+        // own success check refuses it before the settlement branch is reached.
+        $outcome = VrioOutcome::from($this->fixture('vrio-order-authorize-declined.json'), null, SettlementMode::Authorize);
+
+        self::assertSame(PlacementOutcome::DECLINED, $outcome->state);
+        self::assertSame('36727', $outcome->reference);
+        self::assertNotNull($outcome->reason);
+    }
+
+    public function testAnAuthorizeWithNoReferenceIsStillADecline(): void
+    {
+        // Settlement relaxes the status rule and nothing else. A body that
+        // never decoded reads as a success with no data, and requiring the
+        // reference is what still catches it.
+        $outcome = VrioOutcome::from(['success' => true, 'data' => null], null, SettlementMode::Authorize);
+
+        self::assertSame(PlacementOutcome::DECLINED, $outcome->state);
+        self::assertSame('no_reference', $outcome->rawStatus);
     }
 
     public function testTheRecordedApprovalIsPlaced(): void
@@ -299,5 +367,30 @@ final class VrioOutcomeTest extends TestCase
         $decoded = json_decode($raw, true, 512, JSON_THROW_ON_ERROR);
 
         return $decoded;
+    }
+
+    public function testTheProvidersStoredCardCodeIsCarriedOnThePlacement(): void
+    {
+        // `data.order.customer_card.card_type_id`. See `CardScheme::brandFor()`
+        // for why a 2 is not by itself proof the card is a Visa.
+        self::assertSame(
+            CardBrand::Visa,
+            VrioOutcome::from($this->fixture('vrio-order-approved.json'))->providerCardBrand,
+        );
+    }
+
+    public function testAResponseWithNoStoredCardCarriesNoBrand(): void
+    {
+        $envelope = $this->fixture('vrio-order-approved.json');
+        unset($envelope['data']['order']['customer_card']);
+
+        self::assertNull(VrioOutcome::from($envelope)->providerCardBrand);
+    }
+
+    public function testThisProviderHasNoOpinionAboutAQaHold(): void
+    {
+        // Null rather than false: it has no such mechanism, so "did not use it"
+        // would describe a choice it never had.
+        self::assertNull(VrioOutcome::from($this->fixture('vrio-order-approved.json'))->preAuthQa);
     }
 }

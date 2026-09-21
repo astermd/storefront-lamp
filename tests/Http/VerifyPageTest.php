@@ -41,10 +41,9 @@ use Slim\Psr7\Factory\ServerRequestFactory;
  * neither can be proved by looking at a happy path.
  *
  * **Nothing here reaches a network.** The pass branch cannot be exercised
- * live at all: recorded on 2026-08-25, twenty identity calls across nine
- * identities and all three checks returned `valid: false` without exception,
- * so a passing verdict exists only against a stub and a test that expected one
- * from the provider would be asserting a fiction.
+ * live at all: all three checks returned `valid: false` without exception across
+ * test identities, so a passing verdict exists only against a stub and a test
+ * that expected one from the provider would be asserting a fiction.
  */
 final class VerifyPageTest extends TestCase
 {
@@ -309,9 +308,8 @@ final class VerifyPageTest extends TestCase
 
         $sent = array_merge(...$gateway->identities);
 
-        // Recorded 2026-08-25: a four-digit `ssn` is accepted and answered
-        // with a completed check of its own, so cutting the number down does
-        // not cost the deployment the check.
+        // A four-digit `ssn` is accepted and answered with a completed check of
+        // its own, so cutting the number down does not cost the deployment the check.
         self::assertSame('1120', $sent['ssn'] ?? null);
 
         foreach ($gateway->identities as $identity) {

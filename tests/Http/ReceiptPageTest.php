@@ -97,8 +97,12 @@ final class ReceiptPageTest extends TestCase
      * @param ?string $promotionCode the code that earned it, if any
      */
     /** @param array<string, mixed> $overrides merged into the container, for the cases that vary configuration */
-    private function appWithReceipt(int $discountCents = 2450, ?string $promotionCode = 'WELCOME10', array $overrides = []): \Slim\App
-    {
+    private function appWithReceipt(
+        int $discountCents = 2450,
+        ?string $promotionCode = 'WELCOME10',
+        array $overrides = [],
+        string $settlement = 'capture',
+    ): \Slim\App {
         $pdo = $this->tempPdo();
 
         // The session row goes in first: `orders.session_uuid` carries a foreign
@@ -140,6 +144,7 @@ final class ReceiptPageTest extends TestCase
                 'promotion_code' => $promotionCode,
                 'payment_method' => 'card',
                 'card_last_four' => '4242',
+                'settlement' => $settlement,
             ],
             [
                 ['slug' => 'tirzepatide', 'name' => 'Tirzepatide (5mg/mL)', 'kind' => 'rx', 'unit_price_cents' => 24500, 'quantity' => 1],
@@ -157,6 +162,7 @@ final class ReceiptPageTest extends TestCase
                 'currency' => 'USD',
                 'status' => 'placed',
                 'is_upsell' => true,
+                'settlement' => $settlement,
             ],
             [['slug' => 'travel-case', 'name' => 'Travel Case', 'kind' => 'otc', 'unit_price_cents' => 899, 'quantity' => 1]],
             [],
@@ -349,14 +355,28 @@ final class ReceiptPageTest extends TestCase
         self::assertStringNotContainsString('#EB001B', $body);
     }
 
-    public function testReceiptSaysTheCardWasChargedRatherThanAuthorized(): void
+    public function testACapturedReceiptSaysTheCardWasChargedRatherThanAuthorized(): void
     {
-        // The provider charges in one step, so the mockup's "you will not be
-        // charged unless your prescription is approved" is false here.
+        // On a capture deployment the charge is single-step and the money has
+        // already moved, so the mockup's "you will not be charged unless your
+        // prescription is approved" is false and must not be rendered.
         $body = $this->receiptBody($this->appWithReceipt());
 
         self::assertStringContainsString('Your card has been charged $229.49', $body);
         self::assertStringNotContainsString('authorized', $body);
+    }
+
+    public function testAnAuthorizedReceiptSaysTheMoneyIsHeldRatherThanTaken(): void
+    {
+        // The opposite deployment, and the reason the wording is conditional at
+        // all: a buyer told they were charged will look for a debit that is not
+        // on their statement and may never be, which is a support call the page
+        // creates for itself.
+        $body = $this->receiptBody($this->appWithReceipt(settlement: 'authorize'));
+
+        self::assertStringContainsString('Your card has been authorized for $229.49', $body);
+        self::assertStringContainsString('You have not been charged yet', $body);
+        self::assertStringNotContainsString('Your card has been charged', $body);
     }
 
     public function testDiscountRowRendersOnlyWhenThereIsADiscount(): void

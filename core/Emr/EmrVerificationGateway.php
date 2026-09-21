@@ -33,6 +33,20 @@ use Psr\Http\Client\ClientInterface;
  */
 final class EmrVerificationGateway implements VerificationGateway
 {
+    /**
+     * One answer per address, for the life of this request.
+     *
+     * The verdict is read twice — once to validate the checkout form, and once
+     * to say what was verified on the order that follows it — and without this
+     * the buyer waits for two round trips to learn the same thing. Keyed on the
+     * address and keeping the null verdict as well, because "the check could
+     * not run" is an answer and asking again inside one request will not
+     * produce a better one.
+     *
+     * @var array<string, ?bool>
+     */
+    private array $emailVerdicts = [];
+
     /** The provider's verdict for a deliverable address. */
     private const string EMAIL_VALID = 'valid';
 
@@ -58,15 +72,19 @@ final class EmrVerificationGateway implements VerificationGateway
      */
     public function emailIsDeliverable(string $email): ?bool
     {
+        if (array_key_exists($email, $this->emailVerdicts)) {
+            return $this->emailVerdicts[$email];
+        }
+
         try {
             $result = $this->client()->verification()->verifyEmail($email)->data()['result'] ?? null;
         } catch (\Throwable $e) {
             $this->unavailable('email', $e);
 
-            return null;
+            return $this->emailVerdicts[$email] = null;
         }
 
-        return match (is_string($result) ? strtolower(trim($result)) : '') {
+        return $this->emailVerdicts[$email] = match (is_string($result) ? strtolower(trim($result)) : '') {
             self::EMAIL_VALID => true,
             self::EMAIL_INVALID => false,
             default => null,

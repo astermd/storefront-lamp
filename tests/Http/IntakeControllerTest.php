@@ -183,6 +183,61 @@ final class IntakeControllerTest extends TestCase
         return array_map(trim(...), $matches[1]);
     }
 
+    /**
+     * `settings.injectCss` is the form author's own stylesheet, and the
+     * counterpart to the per-field `runtimeClassName` / `runtimeId` hooks:
+     * without it those hooks name selectors nothing defines.
+     */
+    public function testTheFormsAuthoredStylesheetIsRendered(): void
+    {
+        $this->seedCart();
+        $body = (string) $this->app(self::formWithInjectedCss('.hide-this{display:none}'))
+            ->handle($this->get('/intake/medical/'))->getBody();
+
+        self::assertStringContainsString('.hide-this{display:none}', $body);
+    }
+
+    /**
+     * It is rendered raw, because escaping would break it -- `>` is the child
+     * combinator -- so the one sequence that could end the block early is
+     * removed first ({@see \AsterMD\Storefront\Forms\InjectedCss}). Asserted
+     * end to end rather than only on that class, because the danger is a
+     * template that forgets to call it.
+     */
+    public function testAnAuthoredStylesheetCannotCloseItsOwnStyleBlock(): void
+    {
+        $this->seedCart();
+        $body = (string) $this->app(self::formWithInjectedCss('.a{}</style><script>alert(1)</script>'))
+            ->handle($this->get('/intake/medical/'))->getBody();
+
+        // The payload is still in the page as text, and that is the correct
+        // outcome rather than a miss: inside `<style>` the parser interprets no
+        // tags, so `<script>` there is inert. What must not happen is the block
+        // ending early, which is the only thing that would turn it into an
+        // element. So the assertion is about where it sits, not whether it
+        // appears -- searching the page for the payload would fail a rendering
+        // that is perfectly safe.
+        $open = strpos($body, '<style data-intake-injected-css>');
+        self::assertNotFalse($open, 'the authored stylesheet was not rendered at all');
+
+        $close = strpos($body, '</style>', $open);
+        self::assertNotFalse($close);
+
+        $block = substr($body, $open, $close - $open);
+        self::assertStringContainsString('alert(1)', $block, 'the payload never escaped the style element');
+        self::assertDoesNotMatchRegularExpression('#</\s*style#i', $block, 'nothing inside the block can close it');
+    }
+
+    /** A form that authors none renders no empty style block. */
+    public function testAFormWithNoAuthoredStylesheetRendersNoStyleBlock(): void
+    {
+        $this->seedCart();
+        $body = (string) $this->app(self::formWithInjectedCss(null))
+            ->handle($this->get('/intake/medical/'))->getBody();
+
+        self::assertStringNotContainsString('data-intake-injected-css', $body);
+    }
+
     public function testADefinitionThatCannotBeResolvedIsAStatedOutageRatherThanACrash(): void
     {
         // `[10.3]`: the null gateway resolves no metadata at all, which is the
@@ -655,6 +710,19 @@ final class IntakeControllerTest extends TestCase
      *
      * @return array<string, mixed>
      */
+    /**
+     * A minimal form carrying (or not carrying) an authored stylesheet.
+     *
+     * @return array<string, mixed>
+     */
+    private static function formWithInjectedCss(?string $css): array
+    {
+        $form = self::contactForm();
+        $form['settings'] = $css === null ? [] : ['injectCss' => $css];
+
+        return $form;
+    }
+
     private static function contactForm(): array
     {
         return [

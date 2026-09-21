@@ -1,0 +1,9 @@
+{
+    "result": "ERROR",
+    "message": {
+        "shipAddress1": "is a required field",
+        "shipCity": "is a required field",
+        "shipPostalCode": "is a required field",
+        "shipCountry": "is a required field"
+    }
+}

@@ -11,6 +11,7 @@ use AsterMD\Storefront\Checkout\Totals;
 use AsterMD\Storefront\Completion\Completion;
 use AsterMD\Storefront\Journey\JourneyState;
 use AsterMD\Storefront\Journey\JourneyStore;
+use AsterMD\Storefront\Payment\PaymentDescriptor;
 use AsterMD\Storefront\Repository\OrderRepository;
 use AsterMD\Storefront\Tests\Support\UnreadableOrdersPdo;
 use AsterMD\Storefront\Repository\SessionRepository;
@@ -546,7 +547,7 @@ final class RecordingCheckoutEventReporter implements CheckoutEventReporter
     }
 
     /** @param list<string> $orderReferences */
-    public function orderPlaced(?string $sessionUuid, Totals $totals, string $paymentMethod, array $orderReferences): void
+    public function orderPlaced(?string $sessionUuid, Totals $totals, string $paymentMethod, array $orderReferences, ?PaymentDescriptor $payment = null): void
     {
     }
 
@@ -556,11 +557,12 @@ final class RecordingCheckoutEventReporter implements CheckoutEventReporter
         string $paymentMethod,
         ?string $reference,
         string $reason,
+        ?PaymentDescriptor $payment = null,
     ): void {
     }
 
     /** @param list<string> $orderReferences */
-    public function treatmentsSynced(?string $sessionUuid, array $orderReferences): void
+    public function treatmentsSynced(?string $sessionUuid, array $orderReferences, ?PaymentDescriptor $payment = null): void
     {
         $this->guard();
         $this->lastSyncUtmSource = ($this->utmSource)();

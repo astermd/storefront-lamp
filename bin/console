@@ -30,6 +30,7 @@ use AsterMD\Storefront\Console\FormsRecordCommand;
 use AsterMD\Storefront\Console\MediaPruneCommand;
 use AsterMD\Storefront\Console\MigrateCommand;
 use AsterMD\Storefront\Console\PingCommand;
+use AsterMD\Storefront\Console\CaptureOrderCommand;
 use AsterMD\Storefront\Console\ProviderPingCommand;
 use AsterMD\Storefront\Console\PruneCommand;
 use AsterMD\Storefront\Console\ReconcileCommand;
@@ -55,6 +56,10 @@ use AsterMD\Storefront\Retention\RetentionPolicy;
 use AsterMD\Storefront\Retention\RetentionSweep;
 use AsterMD\Storefront\Payment\AdapterRegistry;
 use AsterMD\Storefront\Payment\PaymentAdapter;
+use AsterMD\Storefront\Payment\CheckoutChamp\CheckoutChampAdapter;
+use AsterMD\Storefront\Payment\CheckoutChamp\CheckoutChampApiFactory;
+use AsterMD\Storefront\Payment\CheckoutChamp\CheckoutChampAuthorizeMode;
+use AsterMD\Storefront\Payment\CheckoutChamp\CheckoutChampCredentials;
 use AsterMD\Storefront\Payment\Vrio\VrioAdapter;
 use AsterMD\Storefront\Payment\Vrio\VrioApiFactory;
 use AsterMD\Storefront\Payment\Vrio\VrioCredentials;
@@ -127,6 +132,16 @@ $resolveAdapter = static function () use ($config, $rootDir): PaymentAdapter {
         $log,
         (int) $config->get('payment.shipping_profile_id', 1),
     ));
+    $registry->register('checkout_champ', static fn (): PaymentAdapter => new CheckoutChampAdapter(
+        CheckoutChampCredentials::fromChannelConfig(
+            (array) $config->get('channel.generated.payment_processor.config', []),
+        ),
+        new CheckoutChampApiFactory(),
+        $log,
+        rtrim((string) $config->get('app.url', ''), '/') . '/checkout/',
+        CheckoutChampAuthorizeMode::parse($config->get('payment.checkout_champ.authorize_mode'))
+            ?? CheckoutChampAuthorizeMode::Qa,
+    ));
 
     return $registry->for((string) ($config->get('payment.adapter')
         ?? $config->get('channel.generated.payment_processor.provider_category', '')));
@@ -173,6 +188,12 @@ $application->addCommand(new ReconcileCommand(new ForwardReconciliation(
     ),
     $operatorLog,
 )));
+
+// The settle half of authorize-and-capture. Not a scheduled job and not
+// registered with them: nothing in this codebase decides when an authorization
+// settles -- that event is outside the storefront -- so this is what the system
+// that does owns it calls, with the reference it is settling.
+$application->addCommand(new CaptureOrderCommand($resolveAdapter, new OrderRepository($connect)));
 
 // `[21.9a]`'s reverse sweep: orders the provider holds that no local row does.
 // The adapter is resolved lazily inside the command for the same reason

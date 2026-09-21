@@ -6,6 +6,7 @@ namespace AsterMD\Storefront\Tests\Reconciliation;
 
 use AsterMD\Storefront\Checkout\CheckoutEventReporter;
 use AsterMD\Storefront\Checkout\Totals;
+use AsterMD\Storefront\Payment\PaymentDescriptor;
 use AsterMD\Storefront\Repository\OrderRepository;
 
 /**
@@ -40,7 +41,7 @@ final class RecordingTreatmentReporter implements CheckoutEventReporter
     ) {
     }
 
-    public function treatmentsSynced(?string $sessionUuid, array $orderReferences): void
+    public function treatmentsSynced(?string $sessionUuid, array $orderReferences, ?PaymentDescriptor $payment = null): void
     {
         $this->syncs[] = ['session' => $sessionUuid, 'references' => $orderReferences];
 
@@ -72,11 +73,11 @@ final class RecordingTreatmentReporter implements CheckoutEventReporter
     }
 
     /** @param list<string> $orderReferences */
-    public function orderPlaced(?string $sessionUuid, Totals $totals, string $paymentMethod, array $orderReferences): void
+    public function orderPlaced(?string $sessionUuid, Totals $totals, string $paymentMethod, array $orderReferences, ?PaymentDescriptor $payment = null): void
     {
     }
 
-    public function orderDeclined(?string $sessionUuid, Totals $totals, string $paymentMethod, ?string $reference, string $reason): void
+    public function orderDeclined(?string $sessionUuid, Totals $totals, string $paymentMethod, ?string $reference, string $reason, ?PaymentDescriptor $payment = null): void
     {
     }
 

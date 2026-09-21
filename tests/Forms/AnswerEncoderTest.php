@@ -34,6 +34,36 @@ final class AnswerEncoderTest extends TestCase
         ]], $encoded);
     }
 
+    public function testADateIsSubmittedAsAnIsoDateRatherThanAsItWasTyped(): void
+    {
+        $definition = self::definition([
+            ['fieldId' => 'dob', 'name' => 'date_of_birth', 'type' => 'picker-date', 'label' => 'DOB'],
+        ]);
+
+        $encoded = AnswerEncoder::encode($definition, AnswerSet::fromArray(['date_of_birth' => '02 / 28 / 1990']));
+
+        self::assertSame([[
+            'id' => 'dob',
+            'name' => 'date_of_birth',
+            'label' => 'DOB',
+            'type' => 'picker-date',
+            // The field still declares itself a `picker-date`; what changes is
+            // the value's format, not the record of what was asked.
+            'value' => [['value' => '1990-02-28']],
+        ]], $encoded);
+    }
+
+    public function testADateThatCannotBeReadIsSubmittedUntouched(): void
+    {
+        $definition = self::definition([
+            ['fieldId' => 'dob', 'name' => 'date_of_birth', 'type' => 'picker-date', 'label' => 'DOB'],
+        ]);
+
+        $encoded = AnswerEncoder::encode($definition, AnswerSet::fromArray(['date_of_birth' => '31/31/1990']));
+
+        self::assertSame([['value' => '31/31/1990']], $encoded[0]['value']);
+    }
+
     public function testAMultiSelectEncodesOneEntryPerSelectionCarryingItsOptionLabel(): void
     {
         $definition = self::definition([[

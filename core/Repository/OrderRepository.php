@@ -6,6 +6,8 @@ declare(strict_types=1);
 
 namespace AsterMD\Storefront\Repository;
 
+use AsterMD\Storefront\Payment\SettlementMode;
+
 /**
  * The `orders`, `order_lines` and `order_consents` tables: the storefront's
  * own record of what was bought, for how much, and what the buyer agreed to.
@@ -78,7 +80,7 @@ final class OrderRepository
      * accumulated anywhere, so an upsell that failed to be marked would be
      * counted as part of the total the buyer agreed to on a form.
      *
-     * @param array{session_uuid?: ?string, provider_reference: string, anchor_slug: string, amount_cents: int, currency: string, status: string, buyer_email?: ?string, buyer_name?: ?string, buyer_territory?: ?string, discount_cents?: int, promotion_code?: ?string, payment_method?: ?string, card_last_four?: ?string, idempotency_key?: ?string, provider_category?: ?string, placed_at?: ?string, is_upsell?: bool} $order
+     * @param array{session_uuid?: ?string, provider_reference: string, anchor_slug: string, amount_cents: int, currency: string, status: string, buyer_email?: ?string, buyer_name?: ?string, buyer_territory?: ?string, discount_cents?: int, promotion_code?: ?string, payment_method?: ?string, card_last_four?: ?string, idempotency_key?: ?string, provider_category?: ?string, placed_at?: ?string, is_upsell?: bool, settlement?: string} $order
      * @param list<array{slug: string, name: string, kind?: string, provider_offer?: ?string, provider_item?: ?string, unit_price_cents: int, quantity: int, sent_to_provider?: bool}>                                                                                                                                            $lines
      * @param list<array{key: string, granted: bool, copy_version: string, copy_shown: string, at: string}>                                                                                                                                                                                                                     $consents in {@see \AsterMD\Storefront\Checkout\ConsentRecord::toArray()}'s shape
      */
@@ -94,8 +96,8 @@ final class OrderRepository
                     session_uuid, provider_reference, anchor_slug, amount_cents, currency, status,
                     buyer_email, buyer_name, buyer_territory, discount_cents, promotion_code,
                     payment_method, card_last_four, idempotency_key, provider_category, placed_at,
-                    is_upsell, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                    is_upsell, settlement, user_agent, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
             )->execute([
                 $order['session_uuid'] ?? null,
                 (string) $order['provider_reference'],
@@ -114,6 +116,15 @@ final class OrderRepository
                 $order['provider_category'] ?? null,
                 $order['placed_at'] ?? $now,
                 ($order['is_upsell'] ?? false) === true ? 1 : 0,
+                // Defaulted here as well as in the schema, so a caller that
+                // omits it records the behaviour the storefront has always had
+                // rather than leaning on a column default a future engine might
+                // not apply the same way.
+                (string) ($order['settlement'] ?? SettlementMode::Capture->value),
+                // Null rather than an empty string: the treatment-sync endpoint
+                // rejects an empty User-Agent header, so "sent blank" and "not
+                // sent" must stay distinguishable in the column a replay reads.
+                trim((string) ($order['user_agent'] ?? '')) === '' ? null : (string) $order['user_agent'],
                 $now,
                 $now,
             ]);
@@ -176,11 +187,24 @@ final class OrderRepository
      * buyer sees on the receipt, what appears in the provider's dashboard, and
      * what a support call arrives quoting.
      *
-     * @return array{id: int, session_uuid: ?string, provider_reference: string, anchor_slug: string, amount_cents: int, currency: string, status: string, treatment_reference: ?string, buyer_email: ?string, buyer_name: ?string, buyer_territory: ?string, discount_cents: int, promotion_code: ?string, payment_method: ?string, card_last_four: ?string, idempotency_key: ?string, provider_category: ?string, placed_at: ?string, is_upsell: bool, created_at: string, updated_at: string, lines: list<array{slug: string, name: string, kind: string, provider_offer: ?string, provider_item: ?string, unit_price_cents: int, quantity: int, sent_to_provider: bool}>, consents: list<array{key: string, granted: bool, copy_version: string, copy_shown: string, at: string}>}|null
+     * @return array{id: int, session_uuid: ?string, provider_reference: string, anchor_slug: string, amount_cents: int, currency: string, status: string, treatment_reference: ?string, buyer_email: ?string, buyer_name: ?string, buyer_territory: ?string, discount_cents: int, promotion_code: ?string, payment_method: ?string, card_last_four: ?string, idempotency_key: ?string, provider_category: ?string, placed_at: ?string, is_upsell: bool, settlement: string, created_at: string, updated_at: string, lines: list<array{slug: string, name: string, kind: string, provider_offer: ?string, provider_item: ?string, unit_price_cents: int, quantity: int, sent_to_provider: bool}>, consents: list<array{key: string, granted: bool, copy_version: string, copy_shown: string, at: string}>}|null
      */
     public function findByReference(string $reference): ?array
     {
-        $statement = $this->pdo()->prepare('SELECT * FROM orders WHERE provider_reference = ?');
+        // **Most recent wins, and the ordering is load-bearing.**
+        // `provider_reference` is not unique and cannot be: one shipped provider
+        // reuses a PARTIAL order for a repeat attempt rather than creating a
+        // second one, so a decline and the retry that succeeds carry the *same*
+        // reference and produce two rows.
+        //
+        // Without an ORDER BY the engine decides, and on SQLite it decides
+        // lowest rowid — the declined attempt. `bin/console payment:capture`
+        // would then read a row saying the order was captured, and refuse to
+        // settle an authorization that is really outstanding.
+        //
+        // The newest row is the one that stands: it is the attempt whose outcome
+        // the provider is currently holding.
+        $statement = $this->pdo()->prepare('SELECT * FROM orders WHERE provider_reference = ? ORDER BY id DESC');
         $statement->execute([$reference]);
         $row = $statement->fetch();
 
@@ -210,6 +234,12 @@ final class OrderRepository
             'provider_category' => self::nullableString($row['provider_category'] ?? null),
             'placed_at' => self::nullableString($row['placed_at'] ?? null),
             'is_upsell' => (int) ($row['is_upsell'] ?? 0) === 1,
+            // A row written before 0006 has no column to read, and every one of
+            // those was charged in full -- the storefront had no other mode.
+            'settlement' => (string) ($row['settlement'] ?? SettlementMode::Capture->value),
+            // Null on a row written before 0007, and on one placed by a caller
+            // that had no request to read an agent from.
+            'user_agent' => self::nullableString($row['user_agent'] ?? null),
             'created_at' => (string) $row['created_at'],
             'updated_at' => (string) $row['updated_at'],
             'lines' => $this->linesFor($id),

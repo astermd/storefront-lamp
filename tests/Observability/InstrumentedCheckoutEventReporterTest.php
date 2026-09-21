@@ -8,6 +8,7 @@ use AsterMD\Storefront\Checkout\CheckoutEventReporter;
 use AsterMD\Storefront\Checkout\Totals;
 use AsterMD\Storefront\Observability\BoundaryTimer;
 use AsterMD\Storefront\Observability\Instrumentation;
+use AsterMD\Storefront\Payment\PaymentDescriptor;
 use AsterMD\Storefront\Support\OperatorLog;
 use PHPUnit\Framework\TestCase;
 
@@ -71,13 +72,39 @@ final class InstrumentedCheckoutEventReporterTest extends TestCase
     {
         $inner = new RecordingCheckoutEventReporter();
         $totals = Totals::of(19_900, null);
+        $payment = new PaymentDescriptor(PaymentDescriptor::TYPE_CREDIT_CARD, false, null, null, null);
 
-        $this->reporter($inner)->orderPlaced('sess-1', $totals, 'card', ['ref-a', 'ref-b']);
+        $this->reporter($inner)->orderPlaced('sess-1', $totals, 'card', ['ref-a', 'ref-b'], $payment);
 
         self::assertSame(
-            [['orderPlaced', 'sess-1', $totals, 'card', ['ref-a', 'ref-b']]],
+            [['orderPlaced', 'sess-1', $totals, 'card', ['ref-a', 'ref-b'], $payment]],
             $inner->calls,
         );
+    }
+
+    public function testTheDeclineCallReachesTheInnerPortWithItsPaymentBlock(): void
+    {
+        $inner = new RecordingCheckoutEventReporter();
+        $totals = Totals::of(19_900, null);
+        $payment = new PaymentDescriptor(PaymentDescriptor::TYPE_CREDIT_CARD, true, null, null, null);
+
+        $this->reporter($inner)->orderDeclined('sess-1', $totals, 'card', 'ref-a', 'Card Declined', $payment);
+
+        self::assertSame($payment, $inner->calls[0][6]);
+    }
+
+    public function testTheSyncCallReachesTheInnerPortWithItsPaymentBlock(): void
+    {
+        // This decorator is what production wires in front of the EMR
+        // reporter, so an argument it accepts and does not forward is an
+        // argument that never reaches the wire — and nothing testing the inner
+        // port directly can see that.
+        $inner = new RecordingCheckoutEventReporter();
+        $payment = new PaymentDescriptor(PaymentDescriptor::TYPE_CREDIT_CARD, false, null, null, null);
+
+        $this->reporter($inner)->treatmentsSynced('sess-1', ['ref-a'], $payment);
+
+        self::assertSame($payment, $inner->calls[0][3]);
     }
 
     /**
@@ -133,7 +160,7 @@ final class InstrumentedCheckoutEventReporterTest extends TestCase
         $this->reporter($inner)->orderDeclined('sess-1', $totals, 'card', 'ref-declined', self::DECLINE_REASON);
 
         self::assertSame(
-            [['orderDeclined', 'sess-1', $totals, 'card', 'ref-declined', self::DECLINE_REASON]],
+            [['orderDeclined', 'sess-1', $totals, 'card', 'ref-declined', self::DECLINE_REASON, null]],
             $inner->calls,
         );
     }
@@ -205,7 +232,7 @@ final class InstrumentedCheckoutEventReporterTest extends TestCase
     public function testAnInnerFailurePassesThroughUnchangedAndIsStillRecorded(): void
     {
         $inner = new class extends RecordingCheckoutEventReporter {
-            public function orderPlaced(?string $sessionUuid, Totals $totals, string $paymentMethod, array $orderReferences): void
+            public function orderPlaced(?string $sessionUuid, Totals $totals, string $paymentMethod, array $orderReferences, ?PaymentDescriptor $payment = null): void
             {
                 throw new \RuntimeException('the EMR did not answer');
             }

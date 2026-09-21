@@ -7,6 +7,7 @@ declare(strict_types=1);
 namespace AsterMD\Storefront\Completion;
 
 use AsterMD\Storefront\Payment\PlacementOutcome;
+use AsterMD\Storefront\Payment\SettlementMode;
 
 /**
  * The retained order receipt (`[4.17]`).
@@ -84,7 +85,14 @@ final class Receipt
         public readonly ?string $paymentMethod,
         public readonly ?string $placedAt,
         public readonly bool $pendingReview,
+        public readonly string $settlement = SettlementMode::Capture->value,
     ) {
+    }
+
+    /** Whether the money on this receipt is reserved rather than taken. */
+    public function isAuthorizedOnly(): bool
+    {
+        return $this->settlement === SettlementMode::Authorize->value;
     }
 
     /**
@@ -165,7 +173,30 @@ final class Receipt
             paymentMethod: self::firstOf($placed, 'payment_method'),
             placedAt: self::firstOf($placed, 'placed_at'),
             pendingReview: true,
+            settlement: self::settlementOf($placed),
         );
+    }
+
+    /**
+     * What the buyer's card actually had done to it, across every placed row.
+     *
+     * The same "authorize wins" rule the cart resolves with
+     * ({@see SettlementMode::strictest()}), applied a second time here because
+     * a journey can place more than one order -- a checkout and then an upsell
+     * -- and they settle independently. If any one of them is only holding
+     * funds, the receipt must not tell the buyer they have been charged the
+     * total; the total includes an amount that has not moved.
+     *
+     * @param list<array<string, mixed>> $placed
+     */
+    private static function settlementOf(array $placed): string
+    {
+        $modes = [];
+        foreach ($placed as $row) {
+            $modes[] = SettlementMode::parse($row['settlement'] ?? null) ?? SettlementMode::Capture;
+        }
+
+        return SettlementMode::strictest(...$modes)->value;
     }
 
     /**
@@ -197,6 +228,7 @@ final class Receipt
             'payment_method' => $this->paymentMethod,
             'placed_at' => $this->placedAt,
             'pending_review' => $this->pendingReview,
+            'settlement' => $this->settlement,
         ];
     }
 
@@ -241,6 +273,11 @@ final class Receipt
             // release that had more of them, and "not pending review" is not a
             // claim this code can currently substantiate.
             pendingReview: true,
+            // Read back, unlike `pendingReview`, and for the opposite reason: a
+            // receipt stored before this key existed belongs to an order that
+            // *was* charged, so the absent case has a true answer rather than an
+            // unsubstantiable one.
+            settlement: SettlementMode::parse($stored['settlement'] ?? null)?->value ?? SettlementMode::Capture->value,
         );
     }
 
