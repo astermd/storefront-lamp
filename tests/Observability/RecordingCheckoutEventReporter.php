@@ -31,7 +31,7 @@ class RecordingCheckoutEventReporter implements CheckoutEventReporter
 
     public function orderPlaced(?string $sessionUuid, Totals $totals, string $paymentMethod, array $orderReferences, ?PaymentDescriptor $payment = null): void
     {
-        $this->calls[] = ['orderPlaced', $sessionUuid, $totals, $paymentMethod, $orderReferences];
+        $this->calls[] = ['orderPlaced', $sessionUuid, $totals, $paymentMethod, $orderReferences, $payment];
     }
 
     public function orderDeclined(
@@ -42,12 +42,12 @@ class RecordingCheckoutEventReporter implements CheckoutEventReporter
         string $reason,
         ?PaymentDescriptor $payment = null,
     ): void {
-        $this->calls[] = ['orderDeclined', $sessionUuid, $totals, $paymentMethod, $reference, $reason];
+        $this->calls[] = ['orderDeclined', $sessionUuid, $totals, $paymentMethod, $reference, $reason, $payment];
     }
 
     public function treatmentsSynced(?string $sessionUuid, array $orderReferences, ?PaymentDescriptor $payment = null): void
     {
-        $this->calls[] = ['treatmentsSynced', $sessionUuid, $orderReferences];
+        $this->calls[] = ['treatmentsSynced', $sessionUuid, $orderReferences, $payment];
     }
 
     public function upsellOffered(?string $sessionUuid, string $slug, string $name): void
