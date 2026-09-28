@@ -84,7 +84,7 @@ final class AnswerEncoderTest extends TestCase
         );
     }
 
-    public function testExcludesDisplayOnlyFieldsAndFieldsTheFormWithholdsFromTheProvider(): void
+    public function testExcludesDisplayOnlyFieldsButNotFieldsTheFormWithholdsFromTheProvider(): void
     {
         $definition = self::definition([
             ['fieldId' => 'notice', 'name' => 'notice', 'type' => 'alert', 'label' => 'Notice'],
@@ -96,7 +96,11 @@ final class AnswerEncoderTest extends TestCase
             'notice' => 'shown', 'utm' => 'spring', 'first_name' => 'Dana',
         ]));
 
-        self::assertSame(['first_name'], array_column($encoded, 'name'), '[10.12]');
+        self::assertSame(
+            ['utm', 'first_name'],
+            array_column($encoded, 'name'),
+            '[10.12] excludes the display-only element; sendToProvider gates the EMR record via RecordMapper, not this draft',
+        );
     }
 
     public function testExcludesUnansweredFieldsAndEncodesAnEmptySetAsAnEmptyList(): void

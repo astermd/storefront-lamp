@@ -20,13 +20,19 @@ namespace AsterMD\Storefront\Forms;
  * same reason: `value` is a slug the form author chose and `label` is the
  * sentence the visitor actually read.
  *
- * Three exclusions, all of them `[10.12]`: a display-only element has no
- * answer to send, a field the form marked `sendToProvider: false` was asked for
- * the storefront's own purposes rather than the record's, and an unanswered
- * field is left out entirely rather than sent as an empty string — a blank in
- * the record reads as "answered, and the answer was nothing". An answer set
- * with nothing to send encodes as `[]`, which is what the API expects rather
- * than an omitted key.
+ * Two exclusions: a display-only element has no answer to send (`[10.12]`),
+ * and an unanswered field is left out entirely rather than sent as an empty
+ * string — a blank in the record reads as "answered, and the answer was
+ * nothing". An answer set with nothing to send encodes as `[]`, which is what
+ * the API expects rather than an omitted key.
+ *
+ * `sendToProvider: false` is deliberately **not** a third exclusion here: it
+ * governs whether {@see RecordMapper} writes a field into the EMR's clinical
+ * record — that class gates on `db_field` instead, and a field with no
+ * `db_field` never reaches the record regardless of this flag. This encoder
+ * feeds the intake-submission draft, the visitor's own in-progress answers,
+ * and withholding a storefront-only field from that draft has no spec behind
+ * it — the draft is the visitor's answers, not the clinical record.
  */
 final class AnswerEncoder
 {
@@ -38,7 +44,7 @@ final class AnswerEncoder
         $encoded = [];
 
         foreach ($definition->fields() as $field) {
-            if ($field->isDisplayOnly() || !$field->sendToProvider) {
+            if ($field->isDisplayOnly()) {
                 continue;
             }
 

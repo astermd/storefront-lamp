@@ -6,7 +6,32 @@ must say the same thing. `bin/console --version` reads `composer.json`, so it is
 not a fourth copy to keep in step. An update is applied by copying files, so every entry
 names exactly which ones changed.
 
-## [Unreleased — 0.0.3]
+## [0.0.4]
+
+Stops the intake-submission draft silently dropping any field the form marks
+`sendToProvider: false`. That flag governs whether `RecordMapper` writes a
+field into the EMR's clinical record — it gates on `db_field` there instead —
+and has no bearing on the visitor's own in-progress draft; `AnswerEncoder` was
+excluding it from that draft anyway, citing `[10.12]`, which covers only
+display-only elements and says nothing about this flag. Only a display-only
+element and a genuinely unanswered field are excluded now.
+
+Writes `clinical.medications` and `clinical.allergies` as a list rather than a
+bare string, however the form collects them — the EMR refuses those two paths
+written as a string. The whole free-text answer becomes a one-element list
+rather than being split on commas, which would guess at a delimiter the
+visitor never agreed to.
+
+**Two new field properties**, both authored in the teleform builder.
+`properties.hidden` renders a field as a native `<input type="hidden">`
+carrying its value without ever drawing a control, for an answer that comes
+from elsewhere and only needs to travel with the submission.
+`properties.hasDefaultValue` and `properties.defaultValue` fill in an
+otherwise-unanswered field with an authored default, including marking a
+choice field's own option selected — a visitor's own answer, even an empty
+one, is never overwritten by it.
+
+## [0.0.3]
 
 Adds authorize-and-capture, so a deployment can hold a buyer's funds instead of
 taking them and settle later, and a second payment provider behind the same
@@ -23,9 +48,10 @@ fills the four payload extensions it documents.
 **One new configuration key and two new migrations**, all inert until a
 deployment opts in: `payment.settlement` defaults to `capture`, which is exactly
 what every deployment did before, `0006_settlement.php` adds one column with
-that same default, and `0007_user_agent.php` adds one nullable column. `composer.json`
-and `package.json` still say 0.0.2 — bump them together with the tag when this
-is released.
+that same default, and `0007_user_agent.php` adds one nullable column. Tagged
+`v0.0.3` without bumping `composer.json` and `package.json` to match; they go
+straight from 0.0.2 to 0.0.4 with the next tag instead of a 0.0.3 that was
+never really theirs.
 
 ### A second payment provider: CheckoutChamp
 

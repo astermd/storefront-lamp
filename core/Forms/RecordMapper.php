@@ -25,6 +25,10 @@ use AsterMD\Storefront\Support\OperatorLog;
  * Passing a delta would make the second save look like an instruction to clear
  * everything the first one had filled in.
  *
+ * `clinical.medications` and `clinical.allergies` write as a one-element list
+ * however the form collected them, because the EMR refuses those two paths
+ * written as a bare string — see {@see self::LIST_TARGET}.
+ *
  * Only the `opportunity` root is written (`[11.3]`, `[11.11]`). Another root is
  * a target this storefront has no call to write, so it is skipped — but skipped
  * *loudly*, once per distinct root, because a silently dropped mapping is a
@@ -49,6 +53,17 @@ final class RecordMapper
     private const string HEIGHT_TARGET = '/(^|\.)height(\.value)?$/';
 
     private const string WEIGHT_TARGET = '/(^|\.)weight(\.value)?$/';
+
+    /**
+     * Targets the record stores as a list even though the form collects them
+     * as one free-text answer. The EMR rejects `clinical.medications` and
+     * `clinical.allergies` written as a bare string; wrapping the whole
+     * answer in a single-element list is the safe conversion, because
+     * splitting it on commas would guess at a delimiter the visitor never
+     * agreed to and could turn "please call before refilling, I travel a
+     * lot" into two medications.
+     */
+    private const string LIST_TARGET = '/(^|\.)(medications|allergies)$/';
 
     private const float INCHES_TO_CENTIMETRES = 2.54;
 
@@ -175,6 +190,10 @@ final class RecordMapper
         // control that collected it already says what it is.
         if ($field?->type === FieldTypes::PICKER_DATE && is_scalar($value)) {
             return DateAnswer::iso((string) $value) ?? $value;
+        }
+
+        if (preg_match(self::LIST_TARGET, $target) === 1) {
+            return is_array($value) ? array_values($value) : [$value];
         }
 
         if (!is_scalar($value) || !is_numeric(trim((string) $value))) {

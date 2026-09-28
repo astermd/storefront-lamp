@@ -180,6 +180,73 @@ final class FieldViewModelTest extends TestCase
         self::assertSame('text', self::viewModel(['fieldId' => 'a', 'name' => 'a', 'type' => 'text', 'label' => 'A'])['input_type']);
     }
 
+    /**
+     * `properties.hidden` asks for a value that travels with the submission
+     * without ever being drawn as a control — the answer comes from
+     * elsewhere (a default, a prefilled value), not from a visitor looking at
+     * a box.
+     */
+    public function testAFieldMarkedHiddenInPropertiesRendersAsANativeHiddenInput(): void
+    {
+        $model = self::viewModel([
+            'fieldId' => 'last_name', 'name' => 'last_name', 'type' => 'text', 'label' => 'Last Name',
+            'properties' => ['hidden' => true],
+        ]);
+
+        self::assertSame('hidden', $model['input_type']);
+        self::assertSame('field-text.twig', $model['template'], 'the field type still decides which partial renders it');
+    }
+
+    public function testAFieldWithNoHiddenPropertyKeepsItsOrdinaryInputType(): void
+    {
+        self::assertSame('text', self::viewModel(['fieldId' => 'a', 'name' => 'a', 'type' => 'text', 'label' => 'A'])['input_type']);
+    }
+
+    /** `hasDefaultValue` fills in an otherwise-unanswered field with the form author's authored default. */
+    public function testAnUnansweredFieldWithADeclaredDefaultValueUsesIt(): void
+    {
+        $model = self::viewModel([
+            'fieldId' => 'bmi_height_unit', 'name' => 'bmi_height_unit', 'type' => 'text', 'label' => 'height_unit',
+            'properties' => ['hidden' => true, 'hasDefaultValue' => true, 'defaultValue' => 'in'],
+        ]);
+
+        self::assertSame('in', $model['value']);
+    }
+
+    /** A visitor's own answer, even an empty one, is never overwritten by the authored default. */
+    public function testAnAnsweredFieldKeepsItsOwnAnswerOverTheDeclaredDefault(): void
+    {
+        $model = self::viewModel([
+            'fieldId' => 'a', 'name' => 'a', 'type' => 'text', 'label' => 'A',
+            'properties' => ['hasDefaultValue' => true, 'defaultValue' => 'in'],
+        ], 'cm');
+
+        self::assertSame('cm', $model['value']);
+    }
+
+    public function testAFieldWithNoDeclaredDefaultIsUnaffected(): void
+    {
+        self::assertSame('', self::viewModel(['fieldId' => 'a', 'name' => 'a', 'type' => 'text', 'label' => 'A'])['value']);
+    }
+
+    /** The default also has to reach a choice field's selection, not only a text field's value. */
+    public function testADeclaredDefaultMarksAChoiceFieldsOptionSelected(): void
+    {
+        $model = self::viewModel([
+            'fieldId' => 'age_confirmation', 'name' => 'age_confirmation', 'type' => 'choice-multi', 'label' => 'Age',
+            'properties' => [
+                'options' => [['value' => 'yes', 'label' => 'Yes'], ['value' => 'no', 'label' => 'No']],
+                'choiceInputType' => 'radio',
+                'multiSelect' => false,
+                'hasDefaultValue' => true,
+                'defaultValue' => 'yes',
+            ],
+        ]);
+
+        self::assertTrue($model['options'][0]['selected']);
+        self::assertFalse($model['options'][1]['selected']);
+    }
+
     public function testBuildsAStableErrorIdSoTheInputCanPointAtItsMessage(): void
     {
         $model = self::viewModel(['fieldId' => 'first_name', 'name' => 'first_name', 'type' => 'text', 'label' => 'A'], null, 'Required.');

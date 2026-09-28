@@ -90,7 +90,7 @@ final class RecordMapperTest extends TestCase
             self::definition(),
         );
 
-        self::assertSame(['clinical' => ['medications' => '02/28/1990']], $payload);
+        self::assertSame(['clinical' => ['medications' => ['02/28/1990']]], $payload);
     }
 
     public function testExpandsDottedTargetsIntoANestedPayload(): void
@@ -104,7 +104,33 @@ final class RecordMapperTest extends TestCase
             self::definition(),
         );
 
-        self::assertSame(['first_name' => 'Dana', 'clinical' => ['medications' => 'metformin']], $payload);
+        self::assertSame(['first_name' => 'Dana', 'clinical' => ['medications' => ['metformin']]], $payload);
+    }
+
+    /**
+     * The EMR refuses `clinical.medications` and `clinical.allergies` written
+     * as a bare string. Wrapping the whole free-text answer in a
+     * single-element list is the safe conversion — splitting on commas would
+     * guess at a delimiter the visitor never agreed to.
+     */
+    public function testMedicationsAndAllergiesReachTheRecordAsAListEvenAsOneFreeTextAnswer(): void
+    {
+        $payload = $this->mapper()->build(
+            self::metadata([
+                'other_medications_details' => 'opportunity.clinical.medications',
+                'known_allergies_details' => 'opportunity.clinical.allergies',
+            ]),
+            AnswerSet::fromArray([
+                'other_medications_details' => 'GLP1, metformin',
+                'known_allergies_details' => 'Almond',
+            ]),
+            self::definition(),
+        );
+
+        self::assertSame(
+            ['clinical' => ['medications' => ['GLP1, metformin'], 'allergies' => ['Almond']]],
+            $payload,
+        );
     }
 
     public function testOmitsFieldsWithNoAnswerOrAnEmptyAnswer(): void

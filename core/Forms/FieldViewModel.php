@@ -89,7 +89,7 @@ final class FieldViewModel
     public static function for(Field $field, FieldState $state, mixed $answer, ?string $error): array
     {
         $composite = $field->type === 'bmi' && is_array($answer) ? $answer : [];
-        $own = $composite === [] ? $answer : ($composite[$field->name] ?? null);
+        $own = self::withDefault($field, $composite === [] ? $answer : ($composite[$field->name] ?? null));
 
         return [
             'id' => $field->id,
@@ -99,7 +99,7 @@ final class FieldViewModel
             'description' => $field->description,
             'placeholder' => $field->placeholder,
             'template' => self::template($field),
-            'input_type' => self::INPUT_TYPES[$field->type] ?? 'text',
+            'input_type' => self::inputType($field),
             'required' => $state->required,
             'hidden' => !$state->visible,
             'disabled' => $state->disabled,
@@ -144,6 +144,26 @@ final class FieldViewModel
     }
 
     /**
+     * `properties.hidden` asks for a field that carries a value without ever
+     * being drawn as a control a visitor sees — the value comes from
+     * somewhere else (a prefilled answer, a default) and only needs to travel
+     * with the submission. Overriding `input_type` to `hidden` is enough: the
+     * partial that would otherwise draw a text box renders a bare
+     * `<input type="hidden">` instead, from the same authored `type`. This is
+     * distinct from the `hidden` a condition produces on `$state`: that one
+     * conceals a control a visitor could otherwise see and answer; this one
+     * says the form never intended one.
+     */
+    private static function inputType(Field $field): string
+    {
+        if (($field->properties['hidden'] ?? false) === true) {
+            return 'hidden';
+        }
+
+        return self::INPUT_TYPES[$field->type] ?? 'text';
+    }
+
+    /**
      * An unsupported type is checked before the table rather than after, so a
      * type that merely happens to share a name with a partial on disk cannot
      * sneak past the default-deny vocabulary (`[10.13]`).
@@ -164,6 +184,28 @@ final class FieldViewModel
         }
 
         return 'field-' . (self::TEMPLATE_ALIASES[$field->type] ?? $field->type) . '.twig';
+    }
+
+    /**
+     * `properties.defaultValue` fills in only when nothing has been answered
+     * (`$answer === null`, {@see AnswerSet::value()}): a visitor who answered
+     * and then cleared the box gets their empty answer back, not the form
+     * author's default overwriting it. Guarded by `hasDefaultValue` rather
+     * than by `defaultValue` alone, so a default of `""` or `"0"` — a real,
+     * intentional value — is still applied rather than read as absent. Never
+     * applies to a `bmi` composite: its value is a computed score, not
+     * something a form author writes in ahead of time. Resolved once, ahead
+     * of both {@see self::value()} and {@see self::options()}, so a default
+     * choice reaches the page both as the value a hidden input carries and as
+     * the option `options()` marks selected.
+     */
+    private static function withDefault(Field $field, mixed $answer): mixed
+    {
+        if ($answer === null && $field->type !== 'bmi' && ($field->properties['hasDefaultValue'] ?? false) === true) {
+            return $field->properties['defaultValue'] ?? null;
+        }
+
+        return $answer;
     }
 
     /**
