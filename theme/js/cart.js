@@ -34,9 +34,14 @@
   function guardAgainstDoublePost(form) {
     form.addEventListener('submit', function () {
       form.setAttribute('aria-busy', 'true');
-      form.querySelectorAll('button[type="submit"]').forEach(function (button) {
-        button.disabled = true;
-      });
+
+      // Deferred one tick: a button disabled before the body is built is not
+      // posted, which drops the pressed button's `intent`.
+      window.setTimeout(function () {
+        form.querySelectorAll('button[type="submit"]').forEach(function (button) {
+          button.disabled = true;
+        });
+      }, 0);
     });
   }
 
