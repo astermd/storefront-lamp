@@ -308,32 +308,47 @@ final class CartControllerTest extends TestCase
     }
 
     /**
-     * `[8.0h]` allows a second prescription to replace the first *because* the
-     * replacement is visible. An accepted add redirects to the funnel's next
-     * step, which for a prescription with no plan chosen yet is the home page,
-     * so that is where the sentence has to appear — and reading it off the Twig
-     * global would not have noticed that no template there rendered it.
+     * `[8.0h]`: a second prescription joins the first. With two in the cart
+     * nothing is asked on the storefront (`[8.0i]`), so even the assessment
+     * button's own post — no `intent=checkout` — is routed to checkout.
      */
-    public function testTheReplacementNoticeIsVisibleOnThePageAnAcceptedAddLandsOn(): void
+    public function testASecondPrescriptionJoinsTheCartAndRoutesToCheckout(): void
     {
-        $app = $this->app();
+        $app = $this->journeyApp([]);
         $token = $this->csrfToken($app);
+        $this->addTheRxLine($app, $token);
 
-        $this->post($app, '/cart/add/', ['_csrf' => $token, 'slug' => 'ramelteon']);
-        $response = $this->post($app, '/cart/add/', ['_csrf' => $token, 'slug' => 'semaglutide']);
+        $response = $this->post($app, '/cart/add/', [
+            '_csrf' => $token,
+            'slug' => 'med-2',
+            'variant_id' => 'med-2-1m',
+            'intent' => 'assessment',
+        ], self::SESSION);
 
         self::assertSame(303, $response->getStatusCode());
-        self::assertSame('/', $response->getHeaderLine('Location'));
+        self::assertSame('/checkout/', $response->getHeaderLine('Location'));
+        self::assertSame(2, $this->cartAfterGet($app)['count']);
+    }
 
-        $landing = $app->handle((new ServerRequestFactory())->createServerRequest('GET', '/'));
-        $body = (string) $landing->getBody();
+    /**
+     * A questionnaire URL typed in with two prescriptions in the cart has
+     * nothing to ask, and forwards to checkout rather than drawing a form the
+     * storefront no longer collects.
+     */
+    public function testTheQuestionnaireForwardsToCheckoutWithTwoPrescriptions(): void
+    {
+        $app = $this->journeyApp([]);
+        $token = $this->csrfToken($app);
+        $this->addTheRxLine($app, $token);
+        $this->post($app, '/cart/add/', ['_csrf' => $token, 'slug' => 'med-2', 'variant_id' => 'med-2-1m'], self::SESSION);
 
-        self::assertSame(200, $landing->getStatusCode());
-        self::assertStringContainsString(
-            sprintf(CartRules::RX_REPLACED, 'Ramelteon', 'Semaglutide'),
-            $body,
+        $response = $app->handle(
+            (new ServerRequestFactory())->createServerRequest('GET', '/intake/medical/')
+                ->withCookieParams(['amd_session' => self::SESSION]),
         );
-        self::assertStringContainsString('role="status"', $body);
+
+        self::assertContains($response->getStatusCode(), [302, 303]);
+        self::assertSame('/checkout/', $response->getHeaderLine('Location'));
     }
 
     /**
@@ -778,6 +793,11 @@ final class CartControllerTest extends TestCase
                     'slug' => 'med-1', 'name' => 'Med One', 'kind' => 'rx', 'emr_product_id' => null,
                     'teleform_id' => 'tf-medical',
                     'variants' => [['id' => 'med-1-1m', 'name' => 'Monthly', 'price_cents' => 5000]],
+                ],
+                'med-2' => [
+                    'slug' => 'med-2', 'name' => 'Med Two', 'kind' => 'rx', 'emr_product_id' => null,
+                    'teleform_id' => 'tf-medical-2',
+                    'variants' => [['id' => 'med-2-1m', 'name' => 'Monthly', 'price_cents' => 4000]],
                 ],
                 'accessory' => [
                     'slug' => 'accessory', 'name' => 'Accessory', 'kind' => 'otc', 'emr_product_id' => null,

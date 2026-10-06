@@ -87,11 +87,23 @@
           <input type="hidden" name="variant_id" id="product-variant-id" value="{{ product.variants is defined and product.variants is not empty ? product.variants[0].id : '' }}" />
           <input type="hidden" name="return_to" value="{{ current_path }}" />
           <div class="mt-8 flex flex-col gap-4">
+            {# With a different prescription already in the cart, the assessments
+               are completed after checkout rather than here, so checkout is the
+               only way on. #}
+            {% if assessment_available %}
             <button type="submit" name="intent" value="assessment" class="inline-flex w-full items-center justify-center gap-2 rounded-sm bg-primary h-[41px] px-5 text-base font-medium sm:h-auto sm:py-3 text-primary-foreground transition-colors hover:bg-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-hover">
               Start Assessment
               <i data-lucide="arrow-right" class="size-[18px]"></i>
             </button>
+            {% else %}
+            {% include 'partials/post-checkout-steps.twig' %}
+            {% endif %}
+            {# Alone, checkout takes the primary style the assessment button had. #}
+            {% if assessment_available %}
             <button type="submit" name="intent" value="checkout" class="inline-flex w-full items-center justify-center gap-2 rounded-sm border border-border bg-background h-[41px] px-5 text-base font-medium sm:h-auto sm:py-3 text-heading transition-colors hover:border-primary hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
+            {% else %}
+            <button type="submit" name="intent" value="checkout" class="inline-flex w-full items-center justify-center gap-2 rounded-sm bg-primary h-[41px] px-5 text-base font-medium sm:h-auto sm:py-3 text-primary-foreground transition-colors hover:bg-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-hover">
+            {% endif %}
               Proceed to Checkout
               <i data-lucide="shopping-cart" class="size-[17px]"></i>
             </button>

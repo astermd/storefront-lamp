@@ -34,6 +34,26 @@ final class StepPreconditionsTest extends TestCase
         return $cart;
     }
 
+    /**
+     * A cart whose lines carry the kind the catalog gives them. The case that
+     * matters is an `otc` line beside a prescription: built as two `rx` lines
+     * it would be a two-prescription cart, which collects nothing on the
+     * storefront (`[8.0i]`) and would satisfy every questionnaire gate for a
+     * reason the case is not about.
+     *
+     * @param array<string, array<string, mixed>> $products
+     */
+    private static function cartFrom(array $products, string ...$slugs): Cart
+    {
+        $cart = new Cart();
+        foreach ($slugs as $slug) {
+            $kind = (string) ($products[$slug]['kind'] ?? 'rx');
+            $cart->put(new CartLine($slug, ucfirst($slug), $kind, 'emr-' . $slug, null, 1, 5000, $slug . '-1m'));
+        }
+
+        return $cart;
+    }
+
     // ---- not_disqualified ---------------------------------------------------
 
     /**
@@ -235,13 +255,14 @@ final class StepPreconditionsTest extends TestCase
         // the router does not invent it the visitor ping-pongs between
         // /checkout/ and /intake/eligibility/ forever -- a different URL each
         // hop, so no browser ever detects the loop.
-        $preconditions = self::preconditions([
+        $products = [
             'wants-step' => ['slug' => 'wants-step', 'kind' => 'otc', 'requires_prequalification' => true],
             'names-form' => ['slug' => 'names-form', 'kind' => 'rx', 'prequalification_teleform_id' => self::PREQUAL_FORM],
-        ]);
+        ];
+        $preconditions = self::preconditions($products);
 
         self::assertTrue(
-            $preconditions->satisfied('prequalification_satisfied', self::cartOf('wants-step', 'names-form'), new JourneyState()),
+            $preconditions->satisfied('prequalification_satisfied', self::cartFrom($products, 'wants-step', 'names-form'), new JourneyState()),
             '[8.2]: both declarations have to come from the same line',
         );
     }
@@ -253,34 +274,36 @@ final class StepPreconditionsTest extends TestCase
         // second line's opt-in, so /intake/eligibility/ and /checkout/ both
         // served 200 while the router still considered the real form
         // outstanding.
-        $preconditions = self::preconditions([
+        $products = [
             'already-done' => ['slug' => 'already-done', 'kind' => 'otc', 'prequalification_teleform_id' => 'tf-done'],
             'still-owed' => [
                 'slug' => 'still-owed', 'kind' => 'rx',
                 'requires_prequalification' => true,
                 'prequalification_teleform_id' => self::PREQUAL_FORM,
             ],
-        ]);
+        ];
+        $preconditions = self::preconditions($products);
         $state = new JourneyState();
         $state->markFormCompleted('tf-done');
 
         self::assertFalse(
-            $preconditions->satisfied('prequalification_satisfied', self::cartOf('already-done', 'still-owed'), $state),
+            $preconditions->satisfied('prequalification_satisfied', self::cartFrom($products, 'already-done', 'still-owed'), $state),
             'the eligibility questionnaire this cart actually calls for is still outstanding',
         );
     }
 
     public function testAFinishedIntakeOnOneLineDoesNotSatisfyAnOutstandingOneOnAnother(): void
     {
-        $preconditions = self::preconditions([
+        $products = [
             'already-done' => ['slug' => 'already-done', 'kind' => 'otc', 'teleform_id' => 'tf-done'],
             'still-owed' => ['slug' => 'still-owed', 'kind' => 'rx', 'teleform_id' => self::INTAKE_FORM],
-        ]);
+        ];
+        $preconditions = self::preconditions($products);
         $state = new JourneyState();
         $state->markFormCompleted('tf-done');
 
         self::assertFalse(
-            $preconditions->satisfied('intake_satisfied', self::cartOf('already-done', 'still-owed'), $state),
+            $preconditions->satisfied('intake_satisfied', self::cartFrom($products, 'already-done', 'still-owed'), $state),
             'first-match-wins let a finished form stand in for an unfinished one',
         );
     }
@@ -302,7 +325,7 @@ final class StepPreconditionsTest extends TestCase
             $state->markFormCompleted($formId);
         }
 
-        $cart = self::cartOf(...$slugs);
+        $cart = self::cartFrom($products, ...$slugs);
         $preconditions = self::preconditions($products);
         $routed = (new FunnelRouter(new FakeCatalog($products)))->nextStep($cart, $state);
 
@@ -347,6 +370,19 @@ final class StepPreconditionsTest extends TestCase
                 ],
                 ['already-done', 'still-owed'],
                 ['tf-done'],
+            ],
+            'two prescriptions with every questionnaire outstanding' => [
+                [
+                    'first-rx' => [
+                        'slug' => 'first-rx', 'kind' => 'rx',
+                        'requires_prequalification' => true,
+                        'prequalification_teleform_id' => self::PREQUAL_FORM,
+                        'teleform_id' => self::INTAKE_FORM,
+                    ],
+                    'second-rx' => ['slug' => 'second-rx', 'kind' => 'rx', 'teleform_id' => 'tf-second'],
+                ],
+                ['first-rx', 'second-rx'],
+                [],
             ],
         ];
     }

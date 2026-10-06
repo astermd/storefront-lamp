@@ -406,7 +406,10 @@ final class AppFactory
         );
         $container->set(
             ProductDetailController::class,
-            static fn (Container $c): ProductDetailController => new ProductDetailController($c->get(CatalogProvider::class)),
+            static fn (Container $c): ProductDetailController => new ProductDetailController(
+                $c->get(CatalogProvider::class),
+                $c->get(CartStore::class),
+            ),
         );
         $container->set(
             TemplateGlobalsMiddleware::class,

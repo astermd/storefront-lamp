@@ -92,9 +92,9 @@ final class NotEligibleController
     public function startOver(ServerRequestInterface $request, ResponseInterface $response): ResponseInterface
     {
         $state = $this->journeys->state();
+        $teleformId = $state?->disqualifiedTeleform;
 
         if ($state !== null) {
-            $teleformId = $state->disqualifiedTeleform;
             $state->clearDisqualification();
 
             if ($teleformId !== null) {
@@ -103,16 +103,20 @@ final class NotEligibleController
             }
         }
 
-        $this->clearTriggeringLine($request);
+        $this->clearTriggeringLine($request, $teleformId);
 
         return $response->withStatus(303)->withHeader('Location', $this->flow->pathFor('home'));
     }
 
     /**
      * Removes the prescription the disqualification was about, leaving any
-     * independently purchasable line behind (`[10.47]`).
+     * independently purchasable line behind (`[10.47]`) — and, with several
+     * prescriptions in the cart, every one the stop was not about.
+     *
+     * The verdict is read before {@see self::startOver()} clears it, so the
+     * form that produced it is passed in.
      */
-    private function clearTriggeringLine(ServerRequestInterface $request): void
+    private function clearTriggeringLine(ServerRequestInterface $request, ?string $teleformId): void
     {
         try {
             $cart = $this->carts->cart();
@@ -122,7 +126,7 @@ final class NotEligibleController
             return;
         }
 
-        $rx = $cart->rxLine();
+        $rx = $this->funnel->prescriptionStoppedBy($cart, $teleformId);
         if ($rx === null) {
             return;
         }
@@ -204,6 +208,6 @@ final class NotEligibleController
             return null;
         }
 
-        return $cart->rxLine()?->name;
+        return $this->funnel->prescriptionStoppedBy($cart, $this->journeys->state()?->disqualifiedTeleform)?->name;
     }
 }

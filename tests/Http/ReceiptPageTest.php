@@ -96,12 +96,16 @@ final class ReceiptPageTest extends TestCase
      * @param int     $discountCents the checkout order's discount
      * @param ?string $promotionCode the code that earned it, if any
      */
-    /** @param array<string, mixed> $overrides merged into the container, for the cases that vary configuration */
+    /**
+     * @param array<string, mixed> $overrides merged into the container, for the cases that vary configuration
+     * @param list<array<string, mixed>>|null $checkoutLines the checkout order's lines, when a case needs to state them
+     */
     private function appWithReceipt(
         int $discountCents = 2450,
         ?string $promotionCode = 'WELCOME10',
         array $overrides = [],
         string $settlement = 'capture',
+        ?array $checkoutLines = null,
     ): \Slim\App {
         $pdo = $this->tempPdo();
 
@@ -146,7 +150,7 @@ final class ReceiptPageTest extends TestCase
                 'card_last_four' => '4242',
                 'settlement' => $settlement,
             ],
-            [
+            $checkoutLines ?? [
                 ['slug' => 'tirzepatide', 'name' => 'Tirzepatide (5mg/mL)', 'kind' => 'rx', 'unit_price_cents' => 24500, 'quantity' => 1],
                 ['slug' => 'wellness-journal', 'name' => 'Wellness Journal', 'kind' => 'otc', 'unit_price_cents' => 0, 'quantity' => 2],
             ],
@@ -210,6 +214,23 @@ final class ReceiptPageTest extends TestCase
      * whatever `theme:sync` last wrote, and a case that asserts a particular
      * image has to state the catalog it expects.
      */
+    /**
+     * `[8.0i]`: an order with two or more prescriptions had its assessments
+     * left for the patient portal, and the receipt says so softly. The default
+     * order here holds one, which is the precondition the second half needs.
+     */
+    public function testThePostCheckoutStepsNoteShowsOnlyForAnOrderWithTwoPrescriptions(): void
+    {
+        $single = $this->receiptBody($this->appWithReceipt());
+        $double = $this->receiptBody($this->appWithReceipt(checkoutLines: [
+            ['slug' => 'tirzepatide', 'name' => 'Tirzepatide (5mg/mL)', 'kind' => 'rx', 'unit_price_cents' => 24500, 'quantity' => 1],
+            ['slug' => 'ramelteon', 'name' => 'Ramelteon', 'kind' => 'rx', 'unit_price_cents' => 5000, 'quantity' => 1],
+        ]));
+
+        self::assertStringNotContainsString('data-post-checkout-steps', $single);
+        self::assertStringContainsString('data-post-checkout-steps', $double);
+    }
+
     public function testEachReceiptLineShowsItsProductPhotoFromTheCatalog(): void
     {
         $body = $this->receiptBody($this->appWithReceipt(overrides: [

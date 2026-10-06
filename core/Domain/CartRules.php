@@ -15,15 +15,18 @@ namespace AsterMD\Storefront\Domain;
  * whose cart view was bypassed entirely (`[8.0c]`: removing a view must never
  * remove a rule).
  *
- * Three rules here are the ones that cost money when they are wrong. A
+ * Two rules here are the ones that cost money when they are wrong. A
  * `free-addon` line is priced at zero whatever the catalog says its
  * standalone price is (`[7.14a]`), because a supply appearing as a charge on
- * a receipt is a refund request. A second prescription replaces the first
- * rather than joining it (`[8.0f]`, `[8.0h]`), because a cart holding two
- * prescriptions collects one intake and produces a paid order no clinician
- * assessed. And an attachment that cannot be added blocks its parent with a
+ * a receipt is a refund request. And an attachment that cannot be added blocks its parent with a
  * stated reason rather than dropping quietly (`[7.20]`) — shipping an
  * injectable with no syringe is the failure this rule exists to prevent.
+ *
+ * A second prescription joins the first rather than replacing it (`[8.0f]`,
+ * `[8.0h]`). What keeps that safe is not here: a cart with two or more
+ * collects no questionnaire on the storefront at all (`[8.0i]`,
+ * {@see \AsterMD\Storefront\Funnel\FunnelRules::collectsOnStorefront()}), so
+ * no single intake is ever mistaken for an assessment of every treatment.
  */
 final class CartRules
 {
@@ -35,9 +38,6 @@ final class CartRules
 
     /** sprintf: parent name, unavailable child slug. */
     public const string CHILD_UNAVAILABLE = '%s cannot be added right now: a required item (%s) is unavailable.';
-
-    /** sprintf: replaced product name, new product name. */
-    public const string RX_REPLACED = '%s was replaced with %s — one prescription per order.';
 
     /** sprintf: child name, parent name. */
     public const string CHILD_LOCKED = '%s is included with %s and cannot be changed on its own.';
@@ -62,9 +62,8 @@ final class CartRules
      * `[7.8]` establishes that a bundled line is not the buyer's to change;
      * this guard applies that same rule to `add()` when a request names the
      * child's slug directly, checked before the existing-line lookup is used
-     * for anything else — in particular before the prescription-replacement
-     * branch, so posting a child's slug can never drop an unrelated
-     * prescription on its way to being refused.
+     * for anything else, so posting a child's slug is refused before it can
+     * change any line.
      */
     public function add(Cart $cart, string $slug, ?string $variantId = null, int $quantity = 1): CartOutcome
     {
@@ -101,19 +100,6 @@ final class CartRules
             ));
         }
 
-        $notice = null;
-        if (($product['kind'] ?? null) === 'rx') {
-            $existing = $cart->rxLine();
-            if ($existing !== null && $existing->slug !== $slug) {
-                $cart->forget($existing->slug);
-                $this->reattachRequiredChildren($cart);
-                $notice = sprintf(
-                    self::RX_REPLACED,
-                    $existing->name,
-                    (string) ($product['name'] ?? $product['slug']),
-                );
-            }
-        }
 
         if ($line === null) {
             $line = self::newLine($product, null);
@@ -129,7 +115,7 @@ final class CartRules
 
         $this->attachChildren($cart, $slug);
 
-        return CartOutcome::accepted($notice);
+        return CartOutcome::accepted();
     }
 
     /** `[7.8]`, `[7.9]`. */
@@ -468,7 +454,7 @@ final class CartRules
     }
 
     /**
-     * A prescription is always one per order (`[8.0f]`); everything else is
+     * A prescription line's quantity is always one; everything else is
      * capped by the catalog's own `max_buy_qty` when it declares one, and by
      * {@see self::DEFAULT_MAX_QUANTITY} when it does not, because `[7.16]`
      * requires a ceiling and an uncapped quantity field is an invitation.

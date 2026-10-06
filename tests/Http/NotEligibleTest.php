@@ -124,6 +124,37 @@ final class NotEligibleTest extends TestCase
     }
 
     /**
+     * With several prescriptions in the cart (`[8.0f]`), the stop is about the
+     * one whose questionnaire produced it: the page names that one, and Start
+     * Over removes that one alone.
+     *
+     * The stopped prescription is deliberately *not* the first in the cart, so
+     * "the first prescription" cannot pass for "the one that was stopped".
+     */
+    public function testWithTwoPrescriptionsTheStopIsAboutTheOneWhoseFormProducedIt(): void
+    {
+        $app = $this->app();
+        $this->seedCart();
+        $token = $this->disqualify($app);
+
+        $this->post($app, '/cart/add/', ['_csrf' => $token, 'slug' => 'ramelteon', 'variant_id' => 'ramelteon-1m']);
+        $this->post($app, '/cart/remove/', ['_csrf' => $token, 'slug' => 'semaglutide']);
+        $this->post($app, '/cart/add/', ['_csrf' => $token, 'slug' => 'semaglutide', 'variant_id' => 'semaglutide-1m']);
+        self::assertSame(
+            ['ramelteon', 'semaglutide'],
+            array_column((array) ($_SESSION['cart']['lines'] ?? []), 'slug'),
+            'the cart this case needs: the stopped prescription second',
+        );
+
+        $body = (string) $this->get($app, '/not-eligible/')->getBody();
+        self::assertStringContainsString('<span id="not-eligible-treatment" class="font-medium text-primary">Semaglutide</span>', $body);
+
+        $this->post($app, '/intake/start-over/', ['_csrf' => $token]);
+
+        self::assertSame(['ramelteon'], array_column((array) ($_SESSION['cart']['lines'] ?? []), 'slug'));
+    }
+
+    /**
      * A verdict from the dedicated eligibility form sends the visitor back to
      * the eligibility step, not to the medical one.
      *

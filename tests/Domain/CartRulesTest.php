@@ -193,7 +193,11 @@ final class CartRulesTest extends TestCase
         self::assertTrue($cart->has('loop-b'));
     }
 
-    public function testAddingASecondPrescriptionReplacesTheFirstWithANotice(): void
+    /**
+     * `[8.0h]`: a second prescription joins the first, and the first keeps
+     * everything bundled with it.
+     */
+    public function testAddingASecondPrescriptionKeepsTheFirst(): void
     {
         $cart = new Cart();
         $rules = new CartRules($this->catalog());
@@ -202,11 +206,12 @@ final class CartRulesTest extends TestCase
         $outcome = $rules->add($cart, 'tada');
 
         self::assertTrue($outcome->accepted);
+        self::assertNull($outcome->notice);
         self::assertTrue($cart->has('tada'));
-        self::assertFalse($cart->has('sema'));
-        self::assertFalse($cart->has('cmp'));
-        self::assertFalse($cart->has('syringe'));
-        self::assertSame(sprintf(CartRules::RX_REPLACED, 'Semaglutide', 'Tadalafil'), $outcome->notice);
+        self::assertTrue($cart->has('sema'));
+        self::assertTrue($cart->has('cmp'));
+        self::assertTrue($cart->has('syringe'));
+        self::assertSame(['sema', 'tada'], array_map(static fn (CartLine $line): string => $line->slug, $cart->rxLines()));
     }
 
     public function testAddingTheSamePrescriptionAgainDoesNotReplaceItself(): void
@@ -364,13 +369,12 @@ final class CartRulesTest extends TestCase
 
         $rules->add($cart, 'sema');
         $rules->add($cart, 'second-parent');
-        $rules->add($cart, 'tada');
+        $rules->remove($cart, 'sema');
 
         self::assertTrue($cart->has('cmp'));
         self::assertSame('second-parent', $cart->line('cmp')?->parentSlug);
         self::assertFalse($cart->has('syringe'));
         self::assertFalse($cart->has('sema'));
-        self::assertTrue($cart->has('tada'));
         self::assertTrue($cart->has('second-parent'));
     }
 

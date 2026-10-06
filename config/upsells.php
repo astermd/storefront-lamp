@@ -29,9 +29,9 @@
  * misconfiguration loudly, before a buyer meets it.
  *
  * Ships empty, for the same reason `cross-sells.php` does: every product in
- * the current channel's catalog is a prescription, an order carries at most
- * one prescription, and none of the synced variants carries a provider
- * mapping — so nothing here could be charged for even if it were offered.
+ * the current channel's catalog is a prescription and none of the synced
+ * variants carries a provider mapping — so nothing here could be charged for
+ * even if it were offered.
  * Populate it when the catalog has something to sell after the fact.
  *
  * A worked example, which `config:validate` would accept once the catalog held

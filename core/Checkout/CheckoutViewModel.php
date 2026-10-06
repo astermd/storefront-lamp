@@ -29,6 +29,11 @@ use AsterMD\Storefront\Payment\AdapterCapabilities;
  * directions. **The card is never among them** (`[15.8]`): a card echoed into
  * a `value` attribute lands in the browser's back-forward cache and in any
  * proxy that logs response bodies.
+ *
+ * `$postCheckoutSteps` is true when the cart holds two or more prescriptions,
+ * whose assessments are completed from the patient portal after the order
+ * (`[8.0i]`); the page mentions it without making it sound like a condition of
+ * paying.
  */
 final class CheckoutViewModel
 {
@@ -37,7 +42,8 @@ final class CheckoutViewModel
      * @param array<string, string>       $errors   checkout field name → the message to render beside it
      * @param list<array<string, mixed>>  $lines    the cart, in presentation shape
      * @param list<array<string, mixed>>  $bumps    the offers this cart earns (§27)
-     * @param array<string, mixed>|null   $plans    the Rx line's variant selector, or null when there is no Rx line
+     * @param array<string, mixed>|null   $plans    the first Rx line's variant selector, or null when there is none — kept for templates written before an order could carry several
+     * @param list<array<string, mixed>>  $planChoices every Rx line's variant selector, in cart order (`[8.0f]`)
      * @param list<ConsentDefinition>     $consents the controls §26 asks for, rendered unchecked
      */
     public function __construct(
@@ -53,6 +59,8 @@ final class CheckoutViewModel
         public readonly ?Promotion $promotion,
         public readonly string $currency,
         public readonly int $itemCount,
+        public readonly array $planChoices = [],
+        public readonly bool $postCheckoutSteps = false,
     ) {
     }
 }

@@ -245,6 +245,8 @@ final class CheckoutService
             $state?->recordEmrEvent(CheckoutEvent::CheckoutVisited->value);
         }
 
+        $plans = $this->planViewModels($cart);
+
         return new CheckoutViewModel(
             prefill: $prefill,
             errors: $errors,
@@ -252,12 +254,14 @@ final class CheckoutService
             totals: $totals,
             lines: $this->lineViewModels($cart),
             bumps: $this->bumpViewModels($cart, $prefill['territory'] ?? ''),
-            plans: $this->planViewModel($cart),
+            plans: $plans[0] ?? null,
             consents: $this->consents->definitions(),
             capabilities: $this->adapter->capabilities(),
             promotion: $promotion,
             currency: $this->currency(),
             itemCount: $cart->itemCount(),
+            planChoices: $plans,
+            postCheckoutSteps: count($cart->rxLines()) > 1,
         );
     }
 
@@ -1507,7 +1511,8 @@ final class CheckoutService
     }
 
     /**
-     * The order's anchor: the prescription if there is one, otherwise the
+     * The order's anchor: the first prescription added if there is one
+     * (`[8.0f]` allows several), otherwise the
      * first thing the buyer chose for themselves.
      *
      * It names the order for the operator and for the upsell queue's inputs,
@@ -1516,7 +1521,7 @@ final class CheckoutService
      */
     private static function anchorSlug(Cart $cart): string
     {
-        $rx = $cart->rxLine();
+        $rx = $cart->rxLines()[0] ?? null;
         if ($rx !== null) {
             return $rx->slug;
         }
@@ -1590,7 +1595,12 @@ final class CheckoutService
         );
     }
 
-    /** `[8.3]`: the first line that declares a questionnaire, which with one prescription per order is the only one. */
+    /**
+     * `[8.3]`: the first line that declares a questionnaire — the form whose
+     * stored answers can prefill checkout. A cart with two or more
+     * prescriptions collects none on the storefront (`[8.0i]`), so this only
+     * finds answers given before the second one was added.
+     */
     private function teleformIdFor(Cart $cart): ?string
     {
         foreach ($cart->lines() as $line) {
@@ -1663,18 +1673,27 @@ final class CheckoutService
     }
 
     /**
-     * The Rx line's plan selector, or null when there is no prescription to
-     * choose a plan for.
+     * One plan selector per Rx line, in cart order (`[8.0f]`); a prescription
+     * with no variants has nothing to choose and gets none.
      *
-     * @return array<string, mixed>|null
+     * @return list<array<string, mixed>>
      */
-    private function planViewModel(Cart $cart): ?array
+    private function planViewModels(Cart $cart): array
     {
-        $line = $cart->rxLine();
-        if ($line === null) {
-            return null;
+        $selectors = [];
+        foreach ($cart->rxLines() as $line) {
+            $selector = $this->planViewModel($line);
+            if ($selector !== null) {
+                $selectors[] = $selector;
+            }
         }
 
+        return $selectors;
+    }
+
+    /** @return array<string, mixed>|null */
+    private function planViewModel(CartLine $line): ?array
+    {
         $product = $this->catalog->product($line->slug);
         $variants = is_array($product['variants'] ?? null) ? array_values(array_filter($product['variants'], 'is_array')) : [];
         if ($variants === []) {

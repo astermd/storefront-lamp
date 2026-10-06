@@ -144,15 +144,16 @@ A few things worth knowing before reading:
 ## 8. Funnel routing
 
 - **`[8.0c]`** — **Bypassing the page must not bypass the rules.** Every §7 rule still runs on the logical add: geo gating, mandatory bundles, supply attachment, and cart mirroring.
-- **`[8.0f]`** — **A single order carries at most one `rx` product.** A buyer wanting two prescription treatments places two orders.
-- **`[8.0h]`** — Adding a second `rx` product must therefore be handled explicitly, not left to chance.
-- **`[8.1]`** — After the cart, the next step is chosen by this table, first match wins: Cart is empty → Home; Any cart item opts into a dedicated pre-qualification step → Pre-qualification; Any cart item is rx → Intake; Otherwise → Checkout.
+- **`[8.0f]`** — **An order may carry several `rx` products.** The EMR splits such an order into one treatment per product, and the patient portal follows that split.
+- **`[8.0h]`** — A second `rx` product added to the cart **joins** the first rather than replacing it.
+- **`[8.0i]`** — **A cart with two or more `rx` products collects no questionnaire on the storefront** — neither pre-qualification nor intake, for any line — and every assessment for it is completed from the patient portal after the order. With zero or one `rx` product the routing below applies unchanged.
+- **`[8.1]`** — After the cart, the next step is chosen by this table, first match wins: Cart is empty → Home; Any cart item opts into a dedicated pre-qualification step → Pre-qualification; Any cart item is rx → Intake; Otherwise → Checkout. Both questionnaire rows are skipped for a cart `[8.0i]` covers.
 - **`[8.2]`** — **Pre-qualification is opt-in per product.** The default is that pre-qualification questions are folded into the intake form; a product must explicitly declare both "requires pre-qualification" and which form to use in order to get a dedicated step.
-- **`[8.3]`** — **Intake dispatch:** the intake step routes to the form of the _first_ cart item that declares one.
+- **`[8.3]`** — **Intake dispatch:** the intake step routes to the form of the _first_ cart item that declares one (none, under `[8.0i]`).
 - **`[8.4]`** — Fixed step transitions: pre-qualification completion → intake; intake completion → plan selection; plan selection → checkout; checkout success → upsell queue if non-empty, else receipt.
 - **`[8.5]`** — **The eligibility rule is dead code.** A pure rule exists that disqualifies a visitor on age under 18, BMI under 27, or pregnancy — with missing answers treated as disqualifying — and a "not eligible" page exists to receive them.
 - **`[8.6]`** — **Routing is only evaluated on explicit forward navigation.** Typing a later step's URL directly is not guarded: a visitor can land on checkout with an empty cart, or on plan selection having never completed intake.
-- **`[8.7]`** — Only the _first_ cart item's form is used for intake.
+- **`[8.7]`** — Only the _first_ cart item's form is used for intake; a cart `[8.0i]` covers uses none.
 - **`[8.8]`** — Routing must become **declarative** rather than a hardcoded chain — see §22.
 
 ## 9. Pre-qualification

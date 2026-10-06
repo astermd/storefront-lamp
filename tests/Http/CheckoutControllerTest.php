@@ -401,6 +401,52 @@ final class CheckoutControllerTest extends TestCase
         self::assertStringContainsString('$140.00', $body);
     }
 
+    /** `[8.0f]`: every prescription in the order gets a plan picker of its own. */
+    public function testEveryPrescriptionGetsItsOwnPlanPicker(): void
+    {
+        $this->seedTwoPrescriptions();
+
+        $body = (string) $this->app()->handle($this->get('/checkout/'))->getBody();
+
+        self::assertStringContainsString('name="plan[tirzepatide]"', $body);
+        self::assertStringContainsString('name="plan[liraglutide]"', $body);
+    }
+
+    /** A picker names its own prescription, so choosing a plan re-prices that line and no other. */
+    public function testAPlanChosenForOnePrescriptionLeavesTheOtherAlone(): void
+    {
+        $this->seedTwoPrescriptions();
+        $app = $this->app();
+
+        $response = $this->post($app, '/checkout/plan/', [
+            '_csrf' => $this->csrfToken($app),
+            'plan' => ['liraglutide' => 'l-1m'],
+        ] + $this->carriedFields());
+
+        self::assertSame('/checkout/', $response->getHeaderLine('Location'));
+
+        $variants = array_column($_SESSION['cart']['lines'], 'variant_id', 'slug');
+        self::assertSame('l-1m', $variants['liraglutide']);
+        self::assertSame('t-3m', $variants['tirzepatide']);
+    }
+
+    /**
+     * `[8.0i]`: with two prescriptions the assessments happen after the order,
+     * and the page says so — softly, since it is not a condition of paying.
+     * One prescription keeps the page as it was.
+     */
+    public function testThePostCheckoutStepsNoteShowsOnlyForTwoPrescriptions(): void
+    {
+        $this->seedCart();
+        $single = (string) $this->app()->handle($this->get('/checkout/'))->getBody();
+
+        $this->seedTwoPrescriptions();
+        $double = (string) $this->app()->handle($this->get('/checkout/'))->getBody();
+
+        self::assertStringNotContainsString('data-post-checkout-steps', $single);
+        self::assertStringContainsString('data-post-checkout-steps', $double);
+    }
+
     public function testNoKeystrokeCanPlaceAnOrder(): void
     {
         // Implicit submission clicks a form's first submit button in tree
@@ -449,7 +495,7 @@ final class CheckoutControllerTest extends TestCase
 
         // Each sub-action redirects that one form, and names its target on the
         // button so only the row actually clicked is submitted.
-        self::assertStringContainsString('formaction="/checkout/plan/" name="variant_id" value="t-1m"', $body);
+        self::assertStringContainsString('formaction="/checkout/plan/" name="plan[tirzepatide]" value="t-1m"', $body);
         self::assertStringContainsString('formaction="/checkout/promo/"', $body);
         self::assertStringContainsString('formaction="/checkout/bump/" name="bump_slug" value="pill-organizer"', $body);
 
@@ -661,6 +707,23 @@ final class CheckoutControllerTest extends TestCase
         ]];
     }
 
+    /** Two prescriptions, each with a plan chosen (`[8.0f]`). */
+    private function seedTwoPrescriptions(): void
+    {
+        $_SESSION['cart'] = ['session' => null, 'territory' => null, 'lines' => [
+            [
+                'slug' => 'tirzepatide', 'name' => 'Tirzepatide', 'kind' => 'rx',
+                'emr_product_id' => null, 'parent_slug' => null,
+                'quantity' => 1, 'unit_price_cents' => 12000, 'variant_id' => 't-3m',
+            ],
+            [
+                'slug' => 'liraglutide', 'name' => 'Liraglutide', 'kind' => 'rx',
+                'emr_product_id' => null, 'parent_slug' => null,
+                'quantity' => 1, 'unit_price_cents' => 8000, 'variant_id' => 'l-3m',
+            ],
+        ]];
+    }
+
     /** Puts the buyer's details in journey state, the way a sub-action would have. */
     private function seedBuyer(App $app): void
     {
@@ -733,6 +796,15 @@ final class CheckoutControllerTest extends TestCase
                 'variants' => [
                     ['id' => 't-1m', 'name' => '1 Month', 'price_cents' => 14000, 'provider' => ['offer_id' => '337', 'product_id' => '3414']],
                     ['id' => 't-3m', 'name' => '3 Months', 'price_cents' => 12000, 'provider' => ['offer_id' => '337', 'product_id' => '3415']],
+                ],
+            ],
+            'liraglutide' => [
+                'slug' => 'liraglutide',
+                'name' => 'Liraglutide',
+                'kind' => 'rx',
+                'variants' => [
+                    ['id' => 'l-1m', 'name' => '1 Month', 'price_cents' => 9000, 'provider' => ['offer_id' => '337', 'product_id' => '3416']],
+                    ['id' => 'l-3m', 'name' => '3 Months', 'price_cents' => 8000, 'provider' => ['offer_id' => '337', 'product_id' => '3417']],
                 ],
             ],
             'blocked-thing' => [

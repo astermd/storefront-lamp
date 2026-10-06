@@ -225,6 +225,24 @@ final class MiniCartTest extends TestCase
     }
 
     /**
+     * `[8.0i]`: the same questionnaire-declaring prescription beside a second
+     * one leaves nothing to assess on the storefront, so the drawer offers
+     * checkout alone. The case above is its precondition: alone, semaglutide
+     * is offered the assessment.
+     */
+    public function testTwoPrescriptionsOfferCheckoutAndNoAssessment(): void
+    {
+        $this->seedCart([
+            $this->rxLine('semaglutide', variantId: 'semaglutide-1m'),
+            $this->rxLine('tadalafil'),
+        ]);
+        $panel = $this->cartPanelHtml($this->get('/'));
+
+        self::assertStringNotContainsString('href="/intake/"', $panel);
+        self::assertStringContainsString('href="/checkout/"', $panel);
+    }
+
+    /**
      * And the other direction, so the case above cannot be satisfied by a
      * drawer that has simply stopped offering the assessment to anybody: a
      * journey that has *started* the questionnaire and not finished it is sent
@@ -549,16 +567,16 @@ final class MiniCartTest extends TestCase
     /**
      * An accepted add redirects to the funnel's next step, whose layout has no
      * drawer and no product page to fall back on. Without a render site here,
-     * `CartRules::RX_REPLACED` — the notice that is the entire reason `[8.0h]`
-     * permits a silent-looking replacement — was consumed and dropped.
+     * a notice on an accepted add — a capped quantity — was consumed and
+     * dropped.
      */
     public function testTheNoticeRendersOnAFunnelPage(): void
     {
         $this->seedCart([$this->rxLine()]);
-        $_SESSION['cart_notice'] = 'Ramelteon was replaced with Semaglutide — one prescription per order.';
+        $_SESSION['cart_notice'] = 'You can order up to 5 of Travel Case.';
         $body = $this->get('/intake/');
 
-        self::assertStringContainsString('Ramelteon was replaced with Semaglutide', $body);
+        self::assertStringContainsString('You can order up to 5 of Travel Case.', $body);
         self::assertStringContainsString('role="status"', $body);
     }
 

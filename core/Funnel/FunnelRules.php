@@ -7,6 +7,7 @@ declare(strict_types=1);
 namespace AsterMD\Storefront\Funnel;
 
 use AsterMD\Storefront\Domain\Cart;
+use AsterMD\Storefront\Domain\CartLine;
 use AsterMD\Storefront\Domain\ProductCatalog;
 use AsterMD\Storefront\Journey\JourneyState;
 
@@ -36,10 +37,15 @@ use AsterMD\Storefront\Journey\JourneyState;
  * `requires_prequalification` and names the form that step collects with
  * `prequalification_teleform_id`. Reading the two keys off different lines is
  * what produced the drift, and it manufactures a gate no product ever
- * declared. `[8.0f]` allows only one prescription per order, but free
- * attachments, OTC lines and accepted order bumps all sit in the same cart and
- * can all carry these keys — so "there is only ever one line to look at" is
- * not a rule this class may lean on.
+ * declared. Free attachments, OTC lines and accepted order bumps sit in the
+ * same cart as a prescription and can all carry these keys — so "there is only
+ * ever one line to look at" is not a rule this class may lean on.
+ *
+ * A cart with two or more prescriptions collects **no** questionnaire on the
+ * storefront (`[8.0i]`): every assessment for it is completed from the patient
+ * portal after the order. That rule lives here, in the form lists themselves,
+ * rather than as a check in each step, so the routing decision, the guard, the
+ * questionnaire page and the cart drawer all follow it without a copy of it.
  *
  * The catalog is reached through the {@see ProductCatalog} port rather than the
  * concrete provider, the same way every other rule in this codebase reaches it.
@@ -138,7 +144,52 @@ final class FunnelRules
     }
 
     /**
-     * Every distinct form the cart's products declare under $field.
+     * Whether this cart's questionnaires are collected on the storefront at
+     * all: true while it holds at most one prescription (`[8.0i]`).
+     */
+    public function collectsOnStorefront(Cart $cart): bool
+    {
+        return count($cart->rxLines()) <= 1;
+    }
+
+    /**
+     * Whether a product page may offer "Start Assessment" for $slug: true when
+     * the cart would still collect on the storefront with that product in it.
+     * A product the catalog does not know adds no prescription.
+     */
+    public function assessmentAvailableFor(Cart $cart, string $slug): bool
+    {
+        $prescriptions = array_map(static fn (CartLine $line): string => $line->slug, $cart->rxLines());
+        if (($this->catalog->product($slug)['kind'] ?? null) === 'rx') {
+            $prescriptions[] = $slug;
+        }
+
+        return count(array_unique($prescriptions)) <= 1;
+    }
+
+    /**
+     * The prescription a hard stop on $teleformId is about: the first Rx line
+     * whose product declares that form, as its intake or its eligibility
+     * questionnaire. With several prescriptions in the cart (`[8.0f]`) this is
+     * what keeps "Start Over" from removing a treatment nobody was stopped for;
+     * with no declaring line it falls back to the first prescription.
+     */
+    public function prescriptionStoppedBy(Cart $cart, ?string $teleformId): ?CartLine
+    {
+        $prescriptions = $cart->rxLines();
+        foreach ($prescriptions as $line) {
+            $product = $this->catalog->product($line->slug) ?? [];
+            if ($teleformId !== null && in_array($teleformId, [$product['teleform_id'] ?? null, $product['prequalification_teleform_id'] ?? null], true)) {
+                return $line;
+            }
+        }
+
+        return $prescriptions[0] ?? null;
+    }
+
+    /**
+     * Every distinct form the cart's products declare under $field, or none
+     * when the cart is not collected on the storefront.
      *
      * A product the catalog does not know cannot declare anything, so an
      * unknown slug contributes nothing rather than blocking the funnel on a
@@ -149,6 +200,10 @@ final class FunnelRules
      */
     private function forms(Cart $cart, string $field, bool $requiresOptIn): array
     {
+        if (!$this->collectsOnStorefront($cart)) {
+            return [];
+        }
+
         $forms = [];
         foreach ($cart->lines() as $line) {
             $product = $this->catalog->product($line->slug);

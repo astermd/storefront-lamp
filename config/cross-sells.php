@@ -13,9 +13,10 @@
  * offer. A product may trigger several; several products may trigger the same
  * one, in which case it is shown once.
  *
- * Ships empty because no product in the current channel's catalog is a legal
- * bump: every one of them is a prescription, and an order carries at most one
- * prescription. Populate it when the catalog has something to cross-sell.
+ * Ships empty. Populate it when the catalog has something to cross-sell. A
+ * prescription offered here joins the order beside the one already in it
+ * (`[8.0f]`), and with two or more in the cart every assessment is completed
+ * from the patient portal after the order (`[8.0i]`).
  *
  *     'tirzepatide-5mg' => [
  *         [

@@ -60,7 +60,10 @@ return [
         // Removing them here does NOT make the funnel-optimal route skip the
         // questionnaire: FunnelRouter::nextStep() still answers
         // `prequalification` or `intake.medical` for a cart that owes one, so
-        // a visitor who never asked for checkout is still taken there.
+        // a visitor who never asked for checkout is still taken there. A cart
+        // with two or more prescriptions owes none on the storefront
+        // (`[8.0i]`) -- its assessments are all completed from the patient
+        // portal -- so the routing decision sends it straight here.
         //
         // `not_disqualified` is what those three requirements were carrying
         // besides completion, and it does NOT come back with them. A hard

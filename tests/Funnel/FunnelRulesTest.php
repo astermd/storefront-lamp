@@ -23,10 +23,11 @@ use PHPUnit\Framework\TestCase;
  * browser reports as a loop.
  *
  * The cases below are deliberately built on carts with more than one form in
- * them. `[8.0f]` allows one prescription per order, but free attachments, OTC
- * lines and accepted order bumps share the cart and can each name a
- * questionnaire, so "there is only ever one line to look at" is the assumption
- * these rules exist to remove.
+ * them. Free attachments, OTC lines and accepted order bumps share the cart
+ * with a prescription and can each name a questionnaire, so "there is only
+ * ever one line to look at" is the assumption these rules exist to remove.
+ * A cart with two or more prescriptions is the exception: it collects nothing
+ * on the storefront (`[8.0i]`).
  */
 final class FunnelRulesTest extends TestCase
 {
@@ -185,10 +186,81 @@ final class FunnelRulesTest extends TestCase
         self::assertFalse($rules->collectedAtPrequalification('tf-unknown', $cart));
     }
 
+    /**
+     * `[8.0i]`: with two or more prescriptions in the cart every assessment is
+     * completed from the patient portal after the order, so the storefront
+     * names no questionnaire at all — not the medical intake, not the
+     * eligibility step, and not a form an OTC line beside them declares.
+     */
+    public function testACartWithTwoPrescriptionsCollectsNoQuestionnaire(): void
+    {
+        $rules = self::rules([
+            'rx-a' => [
+                'kind' => 'rx',
+                'requires_prequalification' => true,
+                'prequalification_teleform_id' => 'tf-elig',
+                'teleform_id' => 'tf-a',
+            ],
+            'rx-b' => ['kind' => 'rx', 'teleform_id' => 'tf-b'],
+            'otc-c' => ['kind' => 'otc', 'teleform_id' => 'tf-c'],
+        ]);
+        $cart = self::cartOf(['rx-a' => 'rx', 'rx-b' => 'rx', 'otc-c' => 'otc']);
+
+        self::assertFalse($rules->collectsOnStorefront($cart));
+        self::assertSame([], $rules->prequalificationForms($cart));
+        self::assertSame([], $rules->intakeForms($cart));
+        self::assertNull($rules->outstandingPrequalificationForm($cart, null));
+        self::assertNull($rules->outstandingIntakeForm($cart, null));
+        self::assertNull($rules->intakeFormToCollect($cart, null));
+    }
+
+    /** One prescription, with anything else beside it, is the funnel unchanged. */
+    public function testACartWithOnePrescriptionStillCollectsOnTheStorefront(): void
+    {
+        $rules = self::rules([
+            'rx-a' => ['kind' => 'rx', 'teleform_id' => 'tf-a'],
+            'otc-c' => ['kind' => 'otc', 'teleform_id' => 'tf-c'],
+        ]);
+        $cart = self::cartOf(['rx-a' => 'rx', 'otc-c' => 'otc']);
+
+        self::assertTrue($rules->collectsOnStorefront($cart));
+        self::assertSame(['tf-a', 'tf-c'], $rules->intakeForms($cart));
+    }
+
+    /**
+     * What the product page asks before offering "Start Assessment": would the
+     * cart still collect on the storefront once this product is in it.
+     */
+    public function testTheAssessmentIsOfferedOnlyWhileTheCartWouldHoldAtMostOnePrescription(): void
+    {
+        $rules = self::rules([
+            'rx-a' => ['kind' => 'rx', 'teleform_id' => 'tf-a'],
+            'rx-b' => ['kind' => 'rx', 'teleform_id' => 'tf-b'],
+            'otc-c' => ['kind' => 'otc'],
+        ]);
+
+        self::assertTrue($rules->assessmentAvailableFor(new Cart(), 'rx-a'), 'an empty cart');
+        self::assertTrue($rules->assessmentAvailableFor(self::cartOf(['rx-a' => 'rx']), 'rx-a'), 'the same prescription again');
+        self::assertTrue($rules->assessmentAvailableFor(self::cartOf(['rx-a' => 'rx']), 'otc-c'), 'a non-prescription beside one');
+        self::assertFalse($rules->assessmentAvailableFor(self::cartOf(['rx-a' => 'rx']), 'rx-b'), 'a second prescription');
+        self::assertFalse($rules->assessmentAvailableFor(self::cartOf(['rx-a' => 'rx', 'rx-b' => 'rx']), 'otc-c'), 'a cart already past one');
+    }
+
     /** @param array<string, array<string, mixed>> $products */
     private static function rules(array $products): FunnelRules
     {
         return new FunnelRules(new FakeCatalog($products));
+    }
+
+    /** @param array<string, string> $kinds slug => kind, in cart order */
+    private static function cartOf(array $kinds): Cart
+    {
+        $cart = new Cart();
+        foreach ($kinds as $slug => $kind) {
+            $cart->put(new CartLine($slug, ucfirst($slug), $kind, null, null, 1, 1000, $slug . '-v1'));
+        }
+
+        return $cart;
     }
 
     private static function cart(string ...$slugs): Cart

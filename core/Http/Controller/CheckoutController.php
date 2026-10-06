@@ -146,16 +146,27 @@ final class CheckoutController
         return self::redirect($response, self::CHECKOUT_PATH);
     }
 
-    /** `[12.4]`, `[12.7]`: switching the plan re-prices the Rx line. */
+    /**
+     * `[12.4]`, `[12.7]`: switching the plan re-prices the Rx line it names.
+     *
+     * An order may carry several prescriptions (`[8.0f]`), so each picker's
+     * button posts `plan[<slug>]=<variant>` and names its own line. The older
+     * `slug` + `variant_id` pair is still read when `plan` is absent, so a
+     * checkout template written before that keeps working.
+     */
     public function plan(ServerRequestInterface $request, ResponseInterface $response): ResponseInterface
     {
         $body = (array) ($request->getParsedBody() ?? []);
         $this->checkout->rememberBuyer(BuyerDetails::fromSubmitted($body));
 
-        $outcome = $this->checkout->choosePlan(
-            self::text($body['slug'] ?? null),
-            self::text($body['variant_id'] ?? null),
-        );
+        $slug = self::text($body['slug'] ?? null);
+        $variantId = self::text($body['variant_id'] ?? null);
+        if (is_array($body['plan'] ?? null) && count($body['plan']) === 1) {
+            $slug = self::text(array_key_first($body['plan']));
+            $variantId = self::text(reset($body['plan']));
+        }
+
+        $outcome = $this->checkout->choosePlan($slug, $variantId);
 
         if ($outcome->notice !== null) {
             $this->carts->flash($outcome->notice);

@@ -244,10 +244,10 @@ final class FunnelRouterTest extends TestCase
 
     public function testTheFirstOutstandingQuestionnaireWinsEvenWhenAnEarlierLinesFormIsFinished(): void
     {
-        // Two lines, two intake forms, only the first one finished. `[8.0f]`
-        // allows one prescription per order, but free attachments, OTC lines
-        // and accepted bumps sit in the same cart and can carry a form of
-        // their own, so "there is only ever one" is not a rule to lean on.
+        // Two lines, two intake forms, only the first one finished. Free
+        // attachments, OTC lines and accepted bumps sit in the same cart as a
+        // prescription and can carry a form of their own, so "there is only
+        // ever one" is not a rule to lean on.
         $catalog = new FakeCatalog([
             'attachment' => ['slug' => 'attachment', 'kind' => 'otc', 'teleform_id' => 'tf-done'],
             'semaglutide' => ['slug' => 'semaglutide', 'kind' => 'rx', 'teleform_id' => 'tf-outstanding'],
@@ -257,6 +257,37 @@ final class FunnelRouterTest extends TestCase
         $state->markFormCompleted('tf-done');
 
         self::assertSame('intake.medical', (new FunnelRouter($catalog))->nextStep($cart, $state));
+    }
+
+    public function testTwoPrescriptionsGoStraightToCheckoutWithEveryQuestionnaireOutstanding(): void
+    {
+        // [8.0i]: the eligibility and medical forms both prescriptions declare
+        // are completed from the patient portal after the order.
+        $catalog = new FakeCatalog($this->catalogData());
+        $cart = $this->cartWith($catalog, 'prequal-rx', 'plain-rx');
+
+        self::assertSame('checkout', (new FunnelRouter($catalog))->nextStep($cart, new JourneyState()));
+    }
+
+    public function testTwoPrescriptionsOnADisqualifiedJourneyStillReachTheTerminalPage(): void
+    {
+        // A stop is the server's verdict on answers already given, and adding a
+        // second prescription afterwards must not walk around it.
+        $catalog = new FakeCatalog($this->catalogData());
+        $cart = $this->cartWith($catalog, 'plain-rx', 'prequal-rx');
+        $state = new JourneyState();
+        $state->recordDisqualification('tf-medical', 'rule-1');
+
+        self::assertSame('not_eligible', (new FunnelRouter($catalog))->nextStep($cart, $state));
+    }
+
+    public function testRemovingTheSecondPrescriptionBringsTheQuestionnaireBack(): void
+    {
+        $catalog = new FakeCatalog($this->catalogData());
+        $cart = $this->cartWith($catalog, 'plain-rx', 'prequal-rx');
+        $cart->forget('prequal-rx');
+
+        self::assertSame('intake.medical', (new FunnelRouter($catalog))->nextStep($cart, new JourneyState()));
     }
 
     public function testPrequalificationPairsTheOptInAndTheFormOnTheSameLine(): void

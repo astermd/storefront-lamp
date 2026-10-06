@@ -42,7 +42,21 @@ final class ReceiptController
             'noindex' => true,
             'receipt' => $receipt,
             'line_images' => $this->lineImages($receipt),
+            'post_checkout_steps' => self::prescriptionCount($receipt) > 1,
         ]);
+    }
+
+    /**
+     * An order with two or more prescriptions had every assessment left for
+     * the patient portal (`[8.0i]`), which the page mentions. Read off the
+     * kind each line was charged as, not the catalog's current one.
+     */
+    private static function prescriptionCount(ReceiptViewModel $receipt): int
+    {
+        return count(array_unique(array_column(
+            array_filter($receipt->lines, static fn (array $line): bool => $line['kind'] === 'rx'),
+            'slug',
+        )));
     }
 
     /**

@@ -6,6 +6,97 @@ must say the same thing. `bin/console --version` reads `composer.json`, so it is
 not a fourth copy to keep in step. An update is applied by copying files, so every entry
 names exactly which ones changed.
 
+## [0.0.5]
+
+Lets one order carry several prescriptions. A second prescription added to the
+cart used to replace the first; it now joins it, and a cart with two or more
+collects no questionnaire on the storefront — every assessment for it is
+completed from the patient portal after the order. A cart with one prescription
+goes through the funnel exactly as before. Also fixes "Proceed to Checkout" on
+the product page, which routed like "Start Assessment" whenever scripts ran.
+
+No configuration key, migration or route is added. A client-customised
+`checkout.twig` keeps working: the view model still carries the first
+prescription's plan picker under `plans`, and the plan endpoint still reads the
+`slug` + `variant_id` pair.
+
+### Several prescriptions in one order
+
+`[8.0f]` and `[8.0h]` are rewritten in `docs/SPEC-REFERENCE.md`, and `[8.0i]` is
+new. `CartRules::add()` no longer removes the prescription already in the cart,
+and `CartRules::RX_REPLACED` — the "was replaced with" notice — is gone.
+`Cart::rxLine()` becomes `Cart::rxLines()`, a list in the order the lines were
+added.
+
+The questionnaire rule is one method, `FunnelRules::collectsOnStorefront()`,
+true while the cart holds at most one prescription. When it is false the form
+lists `FunnelRules` hands out are empty, and everything that reads them follows
+without a check of its own: the routing decision answers `checkout`, the step
+guard finds both form preconditions satisfied, `/intake/`, `/intake/medical/`
+and `/intake/eligibility/` forward to checkout, and the cart drawer offers
+checkout alone. A disqualification still shuts checkout — `not_disqualified`
+reads the journey, not the forms — and Start Over on the not-eligible page now
+removes only the prescription whose questionnaire produced the stop, rather than
+whichever prescription came first.
+
+On the page:
+
+- The product page hides "Start Assessment" when adding that product would make
+  two prescriptions, and "Proceed to Checkout" takes the primary style in its
+  place.
+- Checkout shows one plan picker per prescription. Each option posts
+  `plan[<slug>]=<variant>`, so a picker names the line it belongs to.
+- Product page, checkout and receipt show a short note — "You may have a few
+  quick steps to complete after checkout to finalize your order." — whenever
+  the cart or order holds two or more prescriptions. The wording lives in the
+  new `theme/templates/partials/post-checkout-steps.twig`.
+
+The upsell queue and the order's operator label anchor on the first
+prescription added. `docs/ARCHITECTURE.md` describes the rule and where shared
+intake forms — several products answering one questionnaire on the storefront —
+would plug in.
+
+- `core/Domain/CartRules.php`, `core/Domain/Cart.php`, `core/Domain/CartOutcome.php`,
+  `core/Funnel/FunnelRules.php`
+- `core/Checkout/CheckoutService.php`, `core/Checkout/CheckoutViewModel.php`,
+  `core/Http/Controller/CheckoutController.php`
+- `core/Http/Controller/ProductDetailController.php`,
+  `core/Http/Controller/ReceiptController.php`,
+  `core/Http/Controller/NotEligibleController.php`, `core/Bootstrap/AppFactory.php`
+- `theme/templates/pages/product.twig`, `theme/templates/pages/checkout.twig`,
+  `theme/templates/pages/thank-you.twig`,
+  `theme/templates/partials/post-checkout-steps.twig` (new), `public/assets/build/`
+- `config/funnel.php`, `config/cross-sells.php`, `config/upsells.php` (comments only)
+- `docs/SPEC-REFERENCE.md`, `docs/ARCHITECTURE.md`
+
+### "Proceed to Checkout" posted no intent when scripts ran
+
+The product page's two buttons differ only by the `intent` they post.
+`theme/js/cart.js` disabled every submit button inside the form's `submit`
+handler, and a browser leaves a control that is disabled by then out of the
+request body — the pressed button included. "Proceed to Checkout" therefore
+reached `/cart/add/` with no `intent` and was routed to the questionnaire like
+"Start Assessment". The disable is now deferred by one tick, as
+`theme/js/checkout.js` already does; a double click still cannot post twice.
+Without scripts the form was always correct.
+
+- `theme/js/cart.js`, `public/assets/build/`
+
+### Tests
+
+`StepPreconditionsTest` built every cart line as a prescription whatever the
+catalog said, so its "an OTC line beside a prescription" cases became
+two-prescription carts and passed for a reason they were not about. They now
+build each line with the kind the catalog gives it, and the router-and-guard
+agreement check gains a two-prescription case.
+
+- `tests/Domain/CartRulesTest.php`, `tests/Domain/FunnelRouterTest.php`,
+  `tests/Funnel/FunnelRulesTest.php`, `tests/Funnel/StepPreconditionsTest.php`
+- `tests/Http/CartControllerTest.php`, `tests/Http/CheckoutControllerTest.php`,
+  `tests/Http/IntakeFormChoiceTest.php`, `tests/Http/MiniCartTest.php`,
+  `tests/Http/NotEligibleTest.php`, `tests/Http/ProductPageTest.php`,
+  `tests/Http/ReceiptPageTest.php`
+
 ## [0.0.4]
 
 Stops the intake-submission draft silently dropping any field the form marks

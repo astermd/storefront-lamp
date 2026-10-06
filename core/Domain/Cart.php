@@ -101,19 +101,22 @@ final class Cart
 
     public function hasRx(): bool
     {
-        return $this->rxLine() !== null;
+        return $this->rxLines() !== [];
     }
 
-    /** At most one exists at a time — a second prescription replaces the first (`[8.0f]`). */
-    public function rxLine(): ?CartLine
+    /**
+     * Every prescription line, in the order it was added. An order may carry
+     * several (`[8.0f]`); how many there are is what decides whether the
+     * storefront collects a questionnaire at all (`[8.0i]`).
+     *
+     * @return list<CartLine>
+     */
+    public function rxLines(): array
     {
-        foreach ($this->lines as $line) {
-            if ($line->kind === 'rx') {
-                return $line;
-            }
-        }
-
-        return null;
+        return array_values(array_filter(
+            $this->lines,
+            static fn (CartLine $line): bool => $line->kind === 'rx',
+        ));
     }
 
     /**

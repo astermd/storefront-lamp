@@ -705,6 +705,40 @@ The router and the guard share one implementation of the rules they both need �
 where they go instead, and a funnel where those two disagree either strands the visitor or
 leaves a step unguarded.
 
+### Several prescriptions in one order
+
+An order may carry any number of different prescriptions (`[8.0f]`); a second one added to the
+cart joins the first rather than replacing it (`[8.0h]`). The EMR splits such an order into one
+treatment per product, and the patient portal follows that split.
+
+The storefront's questionnaires stay a one-prescription affair. A cart with **two or more**
+prescriptions collects no questionnaire on the storefront at all — no eligibility step, no
+medical intake, and no form an OTC line beside them declares — and every assessment for it is
+completed from the patient portal after the order (`[8.0i]`). With zero or one prescription
+the funnel above is unchanged, and removing the second prescription brings the storefront
+questionnaire back: the rule reads the cart as it is now.
+
+The rule lives in exactly one place, `FunnelRules::collectsOnStorefront()`, which empties the
+form lists every other collaborator reads. The router then answers `checkout`, the guard finds
+both form preconditions satisfied (so `/verify/` cannot loop on a form nobody will serve), the
+questionnaire pages forward a typed-in URL to checkout, and the cart drawer offers checkout
+alone — none of them carrying a copy of the rule. A standing disqualification is untouched by
+it: `not_disqualified` reads the journey, not the forms, so adding a second prescription after
+a hard stop does not open checkout. On the not-eligible page, "Start Over" removes only the
+prescription whose questionnaire produced the stop (`FunnelRules::prescriptionStoppedBy()`).
+
+What the buyer sees: the product page hides "Start Assessment" when adding that product would
+make two prescriptions, and checkout and the receipt carry a short note
+(`theme/templates/partials/post-checkout-steps.twig`) that a few steps may follow the order.
+Checkout shows one plan picker per prescription; each picker's buttons post
+`plan[<slug>]=<variant>`, and the older `slug` + `variant_id` pair is still accepted.
+
+**Shared intake forms are a possible extension, not part of this release.** Several products
+could one day declare a single intake form between them, and a cart whose prescriptions all
+share one form could then be assessed on the storefront in one pass. `collectsOnStorefront()`
+is the one method that would change: it would answer true for such a cart instead of counting
+prescriptions.
+
 ### Three subtleties worth carrying
 
 **The form preconditions are "satisfied *or not required*", not "completed".** A cart with

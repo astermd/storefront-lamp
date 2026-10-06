@@ -336,17 +336,18 @@
     <div class="mx-auto max-w-[410px] lg:mx-0 lg:sticky lg:top-10">
 
       <!-- ==================== TREATMENT PLAN SELECTOR ==================== -->
-      {% if checkout.plans %}
+      {% if checkout.planChoices %}
       <h2 class="font-heading text-base font-bold sm:text-lg text-heading">Select Treatment Plan</h2>
-      <p class="mt-0.5 text-xs text-muted">{{ checkout.plans.name }}</p>
 
-      {# The plan slug is the same for every option, so it is one hidden input
-         outside the loop; the variant rides on each button as its own
-         name/value, so only the option actually clicked is submitted. #}
-      <input type="hidden" name="slug" value="{{ checkout.plans.slug }}" />
+      {% for plans in checkout.planChoices %}
+      <p class="{{ loop.first ? 'mt-0.5' : 'mt-6' }} text-xs text-muted">{{ plans.name }}</p>
+
+      {# Each button names its own prescription as `plan[slug]`, so with several
+         in the order only the option actually clicked is submitted, and it
+         says which line it belongs to. #}
       <div class="mt-3.5 flex flex-col gap-2 rounded-md border border-border bg-background overflow-hidden" data-select-group>
-        {% for option in checkout.plans.options %}
-        <button type="submit" formaction="{{ url('/checkout/plan') }}" name="variant_id" value="{{ option.id }}" data-select-option aria-pressed="{{ option.id == checkout.plans.chosen ? 'true' : 'false' }}" class="group flex w-full items-center justify-between gap-3 rounded-md border border-transparent p-3 text-left transition-colors hover:border-primary/40 aria-pressed:border-primary aria-pressed:bg-primary-light">
+        {% for option in plans.options %}
+        <button type="submit" formaction="{{ url('/checkout/plan') }}" name="plan[{{ plans.slug }}]" value="{{ option.id }}" data-select-option aria-pressed="{{ option.id == plans.chosen ? 'true' : 'false' }}" class="group flex w-full items-center justify-between gap-3 rounded-md border border-transparent p-3 text-left transition-colors hover:border-primary/40 aria-pressed:border-primary aria-pressed:bg-primary-light">
           <span class="flex gap-3">
             <span class="flex mt-1 w-[18px] h-[18px] shrink-0 items-center justify-center rounded-full border-2 border-border-darker group-aria-pressed:border-primary">
               <span class="size-2 rounded-full group-aria-pressed:bg-primary"></span>
@@ -360,6 +361,11 @@
         </button>
         {% endfor %}
       </div>
+      {% endfor %}
+      {% endif %}
+
+      {% if checkout.postCheckoutSteps %}
+      {% include 'partials/post-checkout-steps.twig' with {note_class: 'mt-6'} %}
       {% endif %}
 
       <!-- ==================== LINE ITEMS ==================== -->

@@ -31,8 +31,8 @@ use Slim\Psr7\Factory\ServerRequestFactory;
  * cannot detect that loop because every hop is a different path.
  *
  * The shape that produced it is a cart with more than one questionnaire in it.
- * `[8.0f]` allows a single prescription per order, but free attachments, OTC
- * lines and accepted order bumps share the cart and may each name a form, so
+ * Free attachments, OTC lines and accepted order bumps share the cart with a
+ * prescription and may each name a form, so
  * the shipped sample catalog — where every product folds its eligibility
  * questions into one intake form — is the configuration that hides this rather
  * than the rule.

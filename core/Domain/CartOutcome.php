@@ -11,9 +11,8 @@ namespace AsterMD\Storefront\Domain;
  * the buyer is shown.
  *
  * A notice is not an error channel — an accepted mutation carries one too
- * (a replaced prescription, `[8.0h]`), because the rule that makes the
- * replacement safe is the one that says it must be visible rather than
- * silent.
+ * (a quantity capped at the product's maximum), because a change the buyer
+ * did not quite ask for must be visible rather than silent.
  */
 final class CartOutcome
 {

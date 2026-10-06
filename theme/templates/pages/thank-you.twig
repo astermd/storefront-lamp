@@ -69,6 +69,9 @@
            `href="#"` with a comment saying so, which on the one page a buyer
            keeps is the worst place for a button that does not move: it is the
            only thing they are told to do next. #}
+        {% if post_checkout_steps %}
+        {% include 'partials/post-checkout-steps.twig' with {note_class: 'mt-6 text-left'} %}
+        {% endif %}
         {% if portal_url %}
         <a href="{{ portal_url }}" class="mt-6 inline-flex h-[41px] w-full items-center justify-center gap-2 rounded-sm bg-primary px-5 text-base font-medium text-primary-foreground transition-colors hover:bg-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-hover">
           Go to Patient Portal
