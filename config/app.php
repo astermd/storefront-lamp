@@ -168,13 +168,22 @@ return [
         'wallets' => false,
         'google_maps_api_key' => $env['GOOGLE_MAPS_API_KEY'] ?? null,
 
-        // Email and address checks against the EMR at checkout. Off because
-        // the credential this storefront ships with is refused for that whole
-        // resource, and a check that always fails is worse than none: it would
-        // either block real buyers or teach an operator to ignore it. Checkout
-        // validates format locally either way, so turning this on adds a
-        // second opinion rather than supplying the only one.
-        'emr_verification' => filter_var($env['EMR_VERIFICATION'] ?? false, FILTER_VALIDATE_BOOL),
+        // Email and address checks against the EMR at checkout, each switched
+        // on its own. Off by default: whether the EMR answers them depends on
+        // the organisation's grant, and a check that always fails is worse
+        // than none -- it would either block real buyers or teach an operator
+        // to ignore it. Checkout validates format locally either way, so
+        // turning one on adds a second opinion rather than supplying the only
+        // one. `EMR_VERIFICATION`, the single switch these replaced, still
+        // sets both when neither is given.
+        'emr_verify_email' => filter_var($env['EMR_VERIFY_EMAIL'] ?? $env['EMR_VERIFICATION'] ?? false, FILTER_VALIDATE_BOOL),
+        'emr_verify_address' => filter_var($env['EMR_VERIFY_ADDRESS'] ?? $env['EMR_VERIFICATION'] ?? false, FILTER_VALIDATE_BOOL),
+
+        // Checkout's address suggestions. Not a switch a deployment sets: with
+        // `GOOGLE_MAPS_API_KEY` the browser asks Google, and without one the
+        // storefront asks the EMR. Off only under the test suite, so no test
+        // run can reach the EMR.
+        'address_autofill' => ($env['APP_ENV'] ?? 'production') !== 'test',
     ],
 
     'debug' => [

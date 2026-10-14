@@ -73,10 +73,10 @@ Leaving `AMD_TRACKING_KEY` empty is a legitimate configuration — encrypted pay
 
 ### `GOOGLE_MAPS_API_KEY` costs something to fill in
 
-Blank is the shipped default, blank is safe, and blank is handled: the receipt simply renders no map. Filling it in has two consequences that are not obvious from the variable's name.
+Blank is the shipped default, blank is safe, and blank is handled: the receipt simply renders no map, and checkout's address suggestions come from the EMR through the storefront. Filling it in moves those suggestions to Google Places in the buyer's browser and adds a delivery map to the receipt. That has two consequences that are not obvious from the variable's name.
 
-- **It sends the buyer's shipping address to Google.** The receipt page embeds a Google Maps iframe whose query parameter *is* the delivery address, so every buyer reaching the receipt causes a third-party request carrying where they live. That is a data-sharing decision, not a styling one, and it is one to make deliberately and to reflect in the privacy copy at `/privacy/`.
-- **The key is rendered into page source.** It is a template global, so it is delivered as plain text in the HTML of every page that uses it and is readable by anyone who can view that page — there is no server-side proxying of the request. Restrict it before you use it, by HTTP referrer to your own domain and by API to the Maps Embed API alone; an unrestricted key in page source is billable by anyone who reads it.
+- **It sends the buyer's address to Google.** What the buyer types into checkout's address field goes to Google Places as they type, and the receipt page embeds a Google Maps iframe whose query parameter *is* the delivery address. That is a data-sharing decision, not a styling one, and it is one to make deliberately and to reflect in the privacy copy at `/privacy/`.
+- **The key is rendered into page source.** It is a template global, so it is delivered as plain text in the HTML of every page that uses it and is readable by anyone who can view that page — there is no server-side proxying of the request. Restrict it before you use it, by HTTP referrer to your own domain and by API to the Maps JavaScript API, the Places API (New) and the Maps Embed API; an unrestricted key in page source is billable by anyone who reads it. A key restricted to the Embed API alone still works: the address field finds Places refused and falls back to the EMR's suggestions.
 
 ## Theme Assets
 

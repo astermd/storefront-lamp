@@ -219,12 +219,16 @@ with no affiliate links yet. `deploy/README.md` covers rotation once you have a 
 
 #### `GOOGLE_MAPS_API_KEY`
 
-Optional, blank by default, and blank is handled — the receipt renders no map. Filling it in
-buys a delivery map on `/thank-you/` at two costs worth deciding on rather than discovering:
-the embed's query parameter **is the buyer's shipping address**, so every receipt causes a
-third-party request carrying where that person lives; and the key is a template global, so it
-is delivered as plain text in page source and needs an HTTP-referrer restriction to your own
-domain plus an API restriction to the Maps Embed API before it goes anywhere real.
+Optional, blank by default, and blank is handled — the receipt renders no map, and checkout's
+address suggestions come from the EMR. Filling it in buys two things: checkout's address
+suggestions come from Google Places instead, and `/thank-you/` shows a delivery map. Both cost
+something worth deciding on rather than discovering: what the buyer types into the address
+field, and the receipt's shipping address, **go to Google**, so this belongs in the privacy
+copy; and the key is a template global, so it is delivered as plain text in page source and
+needs an HTTP-referrer restriction to your own domain plus an API restriction to the **Maps
+JavaScript API, the Places API (New) and the Maps Embed API** before it goes anywhere real. A
+key Google refuses for Places is not fatal: the address field falls back to the EMR's
+suggestions on its own.
 
 #### Switches with no line in `.env.example`
 
@@ -235,7 +239,9 @@ worth knowing:
 |---|---|---|
 | `WIRE_LOG` | writes every EMR and provider call to `storage/logs/` verbatim. **See Security.** | off |
 | `IDENTITY_VERIFICATION` | master switch for the identity-check step | off |
-| `EMR_VERIFICATION` | email-deliverability and address checks at checkout | off |
+| `EMR_VERIFY_EMAIL` | email-deliverability check at checkout | off |
+| `EMR_VERIFY_ADDRESS` | address check against the EMR | off |
+| `EMR_VERIFICATION` | sets both of the above when neither is given (the older single switch) | off |
 | `INTAKE_RENDERER` | `server` or `js-engine` | `server` |
 | `PAYMENT_SHIPPING_PROFILE_ID` | the provider refuses any payment order without one | `1` |
 | `ABANDONMENT_IDLE_SECONDS` / `_LOOKBACK_SECONDS` / `_LIMIT` | abandonment sweep tuning | 3600 / 2592000 / 500 |
@@ -479,8 +485,8 @@ A short list, so none of these reads as an oversight. Each is explained in the c
 that holds it.
 
 - **Identity verification** — see above.
-- **`app.features.emr_verification`** — the shipped credential is refused for that whole
-  EMR resource, and a check that always fails is worse than none.
+- **`app.features.emr_verify_email` / `emr_verify_address`** — whether the EMR answers them
+  depends on the organisation's grant, and a check that always fails is worse than none.
 - **`config/cross-sells.php` is empty** — every product in the current channel is a
   prescription, and an order carries at most one prescription, so nothing in the catalog is
   a legal order bump.

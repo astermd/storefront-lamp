@@ -64,19 +64,15 @@ final class TreatmentsPageTest extends TestCase
         );
     }
 
-    public function testANonPrescriptionsGetStartedOpensItsProductPage(): void
+    public function testANonPrescriptionsGetStartedGoesStraightToCheckout(): void
     {
-        // There is no questionnaire to start, so the plan is chosen on the
-        // product page instead.
-        $rx = $this->page('/treatments/');
-        $otc = $this->page('/treatments/', self::withOtc('tadalafil'));
+        // There is no questionnaire to start, so its first plan is added and
+        // the buyer goes on to checkout, where the plan can still be changed.
+        $body = $this->page('/treatments/', self::withOtc('tadalafil'));
 
-        self::assertStringContainsString('name="slug" value="tadalafil"', $rx, 'the precondition: as a prescription it posts');
-        self::assertStringNotContainsString('name="slug" value="tadalafil"', $otc);
-        self::assertSame(
-            substr_count($rx, 'href="/products/tadalafil/"') + 1,
-            substr_count($otc, 'href="/products/tadalafil/"'),
-            'Get Started joins Learn More in opening the product',
+        self::assertMatchesRegularExpression(
+            '#name="slug" value="tadalafil" />\\s*<input type="hidden" name="variant_id" value="tadalafil-1m" />.*?name="intent" value="checkout"#s',
+            $body,
         );
     }
 

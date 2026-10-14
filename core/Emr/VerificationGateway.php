@@ -13,12 +13,11 @@ namespace AsterMD\Storefront\Emr;
  * implementations and the switch between them are described.
  *
  * Every method returns null for "could not determine", which is a third
- * distinct answer from yes and no and the most important one here: this
- * storefront's credential is currently refused for the whole `verification()`
- * resource -- `verifyEmail`, `verifyAddress` and `autofillAddress` all answer
- * "You do not have permission to perform this action" against a freshly
- * minted token. A gateway that could only say yes or no would have to call
- * every buyer's email invalid.
+ * distinct answer from yes and no and the most important one here: whether
+ * the EMR answers the `verification()` resource at all depends on the
+ * organisation's grant, and a refused one answers "You do not have permission
+ * to perform this action" to every call. A gateway that could only say yes or
+ * no would then have to call every buyer's email invalid.
  *
  * An undeterminable answer never blocks an order (`[20.1]`). These checks
  * improve a form; they do not gate a purchase.

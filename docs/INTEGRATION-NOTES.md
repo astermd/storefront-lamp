@@ -743,6 +743,36 @@ is sent, so it carries the code as well.
 
 ---
 
+## Address suggestions
+
+### 29. The EMR's autofill answers strings from anywhere, and no ZIP
+
+`verification()->autofillAddress($search)` (`GET /v1/platform/extensions/address-autofill`)
+answers up to five suggestions:
+
+```
+"350 5th Ave New York" -> [{"unique_id":"ChIJyXBIaf5awokRA7y33q7Ghlw",
+                            "address":"350 5th Ave, Brooklyn, New York, USA",
+                            "main_text":"350 5th Ave"},
+                           {"unique_id":"Eh4zNTAg...","address":"350 5th Ave, New York, NY, USA",
+                            "main_text":"350 5th Ave"}, ...]
+"1600 Amphitheatre"    -> [... "1600 Amphitheatre Road, Mount Lonarch VIC, Australia" ...,
+                           ... "1600 Amphitheatre Parkway, Mountain View, CA 94043, Nice, Hello, Nigeria" ...]
+```
+
+- **Not restricted to the US**, and biased toward wherever the request comes from — which
+  is the storefront's server, not the buyer. `EmrAddressAutofill` keeps only the
+  suggestions ending in `USA`.
+- **No ZIP, and the state is sometimes spelled out** (`Brooklyn, New York, USA`). The SDK
+  has no call that resolves `unique_id` into components, so the storefront resolves a chosen
+  suggestion through `verifyAddress()`, whose `formatted_address` does carry a ZIP and a
+  two-letter state: `350 5th Avenue, New York, NY 10118-0110, USA`.
+- **`verifyAddress()`'s `valid` is about deliverability, not existence.** That same address
+  answers `valid: false` with `verdict.addressComplete: false` — no apartment — while being
+  exactly the building chosen, so the fill reads `formatted_address` whatever `valid` says.
+
+---
+
 ## What to take from all of this
 
 Three patterns run through every item above.

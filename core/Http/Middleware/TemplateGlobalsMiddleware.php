@@ -124,6 +124,7 @@ final class TemplateGlobalsMiddleware implements MiddlewareInterface
         $environment->addGlobal('app_env', $this->config->get('app.env'));
         $environment->addGlobal('csrf_token', $request->getAttribute('csrf_token'));
         $environment->addGlobal('maps_api_key', $this->config->get('app.features.google_maps_api_key'));
+        $environment->addGlobal('address_autocomplete', $this->addressAutocomplete());
         // Null is a supported value and means "render no portal link at all";
         // {@see config/app.php} explains why there is no default.
         $environment->addGlobal('portal_url', $this->config->get('app.portal.url'));
@@ -143,6 +144,22 @@ final class TemplateGlobalsMiddleware implements MiddlewareInterface
         $response = $handler->handle($request);
 
         return $this->trace ? $response->withAddedHeader('X-MW-Trace', 'globals') : $response;
+    }
+
+    /**
+     * Where the checkout's address suggestions come from: `google` when the
+     * deployment has its own Maps key, `emr` otherwise, and null only when
+     * neither is available -- which is the test suite, never a deployment.
+     */
+    private function addressAutocomplete(): ?string
+    {
+        $key = $this->config->get('app.features.google_maps_api_key');
+
+        if (is_string($key) && trim($key) !== '') {
+            return 'google';
+        }
+
+        return $this->config->get('app.features.address_autofill') === true ? 'emr' : null;
     }
 
     /**

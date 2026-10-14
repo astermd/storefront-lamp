@@ -1,27 +1,19 @@
-{# A product card's primary action.
+{# A product card's primary action: add the product's first plan to the cart
+   and start buying it. The plan can be changed at checkout.
 
-   A prescription posts its first plan to the cart with the assessment intent,
-   which is what the product page's "Start Assessment" does, so the buyer lands
-   on the questionnaire rather than on the product page they skipped. Anything
-   else has no questionnaire to start, so it opens the product page, where the
-   plan is chosen.
+   A prescription goes on with the assessment intent, which is what the product
+   page's "Start Assessment" does, so the buyer lands on the questionnaire.
+   Anything else has no questionnaire, so it goes straight to checkout.
+   "Learn More", beside it, is the way to the product page.
 
    `icon_class` sizes the arrow to the card it sits in. #}
-{% set get_started_class = 'inline-flex items-center justify-center gap-2 rounded-sm bg-primary h-[41px] px-5 text-base font-medium sm:h-auto sm:py-3 text-primary-foreground transition-colors hover:bg-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-hover' %}
-{% if product.kind == 'rx' %}
 <form method="post" action="{{ url('/cart/add') }}" class="contents">
   <input type="hidden" name="_csrf" value="{{ csrf_token }}" />
   <input type="hidden" name="slug" value="{{ product.slug }}" />
   <input type="hidden" name="variant_id" value="{{ product.variants is defined and product.variants is not empty ? product.variants[0].id : '' }}" />
   <input type="hidden" name="return_to" value="{{ current_path }}" />
-  <button type="submit" name="intent" value="assessment" class="{{ get_started_class }}">
+  <button type="submit" name="intent" value="{{ product.kind == 'rx' ? 'assessment' : 'checkout' }}" class="inline-flex items-center justify-center gap-2 rounded-sm bg-primary h-[41px] px-5 text-base font-medium sm:h-auto sm:py-3 text-primary-foreground transition-colors hover:bg-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-hover">
     Get Started
     <i data-lucide="arrow-right" class="{{ icon_class|default('size-[17px]') }}"></i>
   </button>
 </form>
-{% else %}
-<a href="{{ url('/products/' ~ product.slug) }}" class="{{ get_started_class }}">
-  Get Started
-  <i data-lucide="arrow-right" class="{{ icon_class|default('size-[17px]') }}"></i>
-</a>
-{% endif %}

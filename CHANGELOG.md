@@ -8,6 +8,45 @@ names exactly which ones changed.
 
 ## [Unreleased]
 
+### Address suggestions at checkout
+
+Typing in checkout's Address field now offers up to five US addresses, which
+narrow as the buyer types, and choosing one fills the address line, city,
+state and ZIP. It is the same for every payment provider, since the address
+form is shared.
+
+The source follows `GOOGLE_MAPS_API_KEY`, with no switch of its own. With a key,
+the browser asks Google Places (`AutocompleteSuggestion`, US only). Without
+one, it asks the storefront's new `GET /checkout/address/suggest/` and
+`/checkout/address/resolve/`, which ask the EMR through the new
+`Emr\AddressAutofill` port. The EMR's suggestions carry no ZIP, so resolving
+one goes through its address verifier, whose formatted address does
+(`docs/INTEGRATION-NOTES.md` item 29). A key Google refuses for Places falls
+back to the EMR without the buyer noticing. A Maps key restricted to the Embed
+API alone, as the deploy notes used to advise, should now also allow the Maps
+JavaScript API and the Places API (New).
+
+The endpoints are rate-limited per client address under the new
+`checkout.address` bucket in `config/payment.php`. With the script absent, the
+field is the plain text input it was.
+
+**`EMR_VERIFICATION` is split** into `EMR_VERIFY_EMAIL` and
+`EMR_VERIFY_ADDRESS`, so the email and address checks can be switched
+separately. `EMR_VERIFICATION` still sets both when neither is given, so an
+existing `.env` behaves as before.
+
+- `core/Emr/AddressAutofill.php`, `EmrAddressAutofill.php`,
+  `NullAddressAutofill.php`, `core/Checkout/FormattedAddress.php`,
+  `core/Http/Controller/AddressController.php` (all new)
+- `core/Emr/VerificationGateway.php`, `EmrVerificationGateway.php`,
+  `NullVerificationGateway.php`, `core/Bootstrap/AppFactory.php`,
+  `core/Http/Middleware/TemplateGlobalsMiddleware.php`
+- `config/app.php`, `config/payment.php`, `config/routes.php`, `.env.example`
+- `theme/templates/pages/checkout.twig`, `theme/js/address-autocomplete.js` (new),
+  `public/assets/build/`
+- `README.md`, `deploy/README.md`, `docs/ARCHITECTURE.md`,
+  `docs/INTEGRATION-NOTES.md`
+
 ### Treatment listings and the product page
 
 - **The treatments filter works.** The sidebar's checkboxes were rendered with
@@ -15,12 +54,13 @@ names exactly which ones changed.
   `script.js` hides the cards that do not match: any ticked box within a group,
   every group that has one. A "No treatments match" note replaces an empty grid.
   Without the script every card stays shown.
-- **"Get Started" starts the assessment.** On a prescription card it posts the
-  first plan to the cart with the assessment intent, as the product page's
-  "Start Assessment" does, and lands on the questionnaire. A non-prescription
-  card has no questionnaire, so it opens the product page. It used to open the
-  product page on the listing and the listing on the home page. The button is
-  the new `partials/get-started.twig`, shared by both.
+- **"Get Started" starts buying.** It adds the product's first plan to the
+  cart; the plan can be changed at checkout. A prescription then goes to the
+  questionnaire, as the product page's "Start Assessment" does, and anything
+  else straight to checkout. "Learn More" stays the way to the product page.
+  "Get Started" used to open the product page on the listing and the listing
+  on the home page. The button is the new `partials/get-started.twig`, shared
+  by both.
 - **Cards line up.** Price and actions sit at the foot of each listing card,
   and descriptions on both grids are clamped to three lines.
 - **The header's "Treatments" goes to the home page's Our Treatments section**,

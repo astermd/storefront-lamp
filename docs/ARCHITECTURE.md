@@ -277,13 +277,14 @@ alphabetically.
 behind an interface. Each interface has a real implementation that talks to the system and a
 **Null implementation that talks to nothing**, and the container decides which one is bound.
 
-There are thirteen interfaces under `core/`; these are the ones with a Null counterpart:
+There are fourteen interfaces under `core/`; these are the ones with a Null counterpart:
 
 | Port | Real | Null |
 | --- | --- | --- |
 | `Emr\SessionGateway` | `EmrSessionGateway` | `NullSessionGateway` |
 | `Emr\CartGateway` | `EmrCartGateway` | `NullCartGateway` |
 | `Emr\VerificationGateway` | `EmrVerificationGateway` | `NullVerificationGateway` |
+| `Emr\AddressAutofill` | `EmrAddressAutofill` | `NullAddressAutofill` |
 | `Forms\TeleformGateway` | `EmrTeleformGateway` | `NullTeleformGateway` |
 | `Forms\IntakeGateway` | `EmrIntakeGateway` | `NullIntakeGateway` |
 | `Forms\LeadGateway` | `EmrLeadGateway` | `NullLeadGateway` |
@@ -299,7 +300,7 @@ that names any step), and `Seo\StructuredData\Emitter`.
 
 ### What binds the Null ones
 
-Three configuration switches, all read inside `AppFactory::create()`:
+Four configuration switches, all read inside `AppFactory::create()`:
 
 - **`app.session.analytics`** governs the EMR gateway family — session, cart, teleform,
   intake, lead. `config/app.php` derives it as `APP_ENV !== 'test'`, so **under the test
@@ -307,15 +308,22 @@ Three configuration switches, all read inside `AppFactory::create()`:
   to the dev EMR.** Tests that exercise session or intake flows inject their own gateway
   through the container instead.
 - **`verification.enabled`** governs `IdentityGateway`. Off as shipped, and therefore always
-  off under tests. It deliberately does *not* follow `app.features.emr_verification`: the
-  two govern different resources that happen to share an EMR endpoint family, and tying them
+  off under tests. It deliberately does *not* follow `app.features.emr_verify_*`: they
+  govern different resources that happen to share an EMR endpoint family, and tying them
   together would mean an operator could not have the checkout address check without also
-  running identity checks that, as recorded against the live integration, currently refuse
-  everybody.
-- **`app.features.emr_verification`** governs `VerificationGateway` (email deliverability
-  and address checks at checkout). Off by default, because the credential this storefront
-  ships with is refused for that whole resource — and a check that always fails is worse
+  running identity checks.
+- **`app.features.emr_verify_email` and `emr_verify_address`** govern `VerificationGateway`
+  (email deliverability and address checks at checkout), each check under its own switch;
+  the Null gateway is bound when both are off. Off by default, because whether the EMR
+  answers them depends on the organisation's grant — and a check that always fails is worse
   than none, since it would either block real buyers or teach an operator to ignore it.
+  `EMR_VERIFICATION`, the single switch they replaced, still sets both when neither is
+  given.
+- **`app.features.address_autofill`** governs `AddressAutofill`, checkout's address
+  suggestions when the deployment has no Google Maps key. It is not a deployment's switch:
+  `config/app.php` derives it as `APP_ENV !== 'test'`, so it is on everywhere but the test
+  suite. With a Maps key the browser asks Google Places directly and this port is never
+  called.
 
 `PaymentAdapter` is a fourth case and works differently: it is not switched by environment
 but resolved from the synced provider category (see [Payment](#payment)), falling back to

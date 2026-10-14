@@ -2,6 +2,7 @@
 
 /** Route table. URL => handler. Handlers live in core; templates in theme/. */
 
+use AsterMD\Storefront\Http\Controller\AddressController;
 use AsterMD\Storefront\Http\Controller\CartController;
 use AsterMD\Storefront\Http\Controller\CheckoutController;
 use AsterMD\Storefront\Http\Controller\HealthController;
@@ -70,6 +71,11 @@ return function (App $app): void {
     $app->post('/checkout/promo/', CheckoutController::class . ':promoApply')->setName('checkout.promo.apply');
     $app->post('/checkout/promo/remove/', CheckoutController::class . ':promoRemove')->setName('checkout.promo.remove');
     $app->post('/checkout/plan/', CheckoutController::class . ':plan')->setName('checkout.plan');
+    // The address field's suggestions when the deployment has no Google key.
+    // GETs that change nothing, so they sit outside the step guard and the
+    // CSRF check like the other sub-actions, and are rate-limited instead.
+    $app->get('/checkout/address/suggest/', AddressController::class . ':suggest')->setName('checkout.address.suggest');
+    $app->get('/checkout/address/resolve/', AddressController::class . ':resolve')->setName('checkout.address.resolve');
     // One offer per step, so the page is a GET and each answer is its own POST
     // back to a 303. The two POSTs are sub-actions rather than funnel steps —
     // they name no path in `funnel.php`, so the step guard lets them through
