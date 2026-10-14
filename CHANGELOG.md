@@ -63,9 +63,14 @@ existing `.env` behaves as before.
   by both.
 - **Cards line up.** Price and actions sit at the foot of each listing card,
   and descriptions on both grids are clamped to three lines.
-- **The header's "Treatments" goes to the home page's Our Treatments section**,
-  like its neighbours, and that section ends with "View All Treatments" to the
-  full listing.
+- **The home page's Our Treatments section ends with "View All Treatments"**,
+  a link to the full, filterable listing the header's "Treatments" also opens.
+- **An empty discount box is nothing to apply.** Pressing Apply with it empty,
+  or Enter in any checkout field (which lands on the promo button, so that no
+  keystroke can place an order), used to reload the page with "That discount
+  code could not be applied." The server now answers an empty code with no
+  notice and without spending the rate-limit bucket, and `checkout.js` keeps
+  the page where it is and moves focus to the discount box.
 - **A non-prescription product offers no "Start Assessment".** Checkout is its
   only action, and the note about steps after checkout is not shown for it.
 - **Choosing a plan shows its price.** Each plan button carries its price and
@@ -75,7 +80,8 @@ existing `.env` behaves as before.
 - `theme/templates/pages/treatments.twig`, `theme/templates/pages/home.twig`,
   `theme/templates/pages/product.twig`, `theme/templates/partials/header.twig`,
   `theme/templates/partials/get-started.twig` (new)
-- `theme/js/script.js`, `theme/js/cart.js`, `public/assets/build/`
+- `theme/js/script.js`, `theme/js/cart.js`, `theme/js/checkout.js`,
+  `core/Checkout/CheckoutService.php`, `public/assets/build/`
 
 ### Discount codes on CheckoutChamp
 

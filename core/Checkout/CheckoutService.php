@@ -641,6 +641,14 @@ final class CheckoutService
      */
     public function applyPromotion(string $code, ?RequestContext $context = null): CartOutcome
     {
+        // Nothing to apply, and nothing to say about it. Pressing Enter in any
+        // checkout field arrives here too (the page's first submit button is
+        // the promo one, so that no keystroke can place an order), and a buyer
+        // who pressed it in the email box must not be told a code failed.
+        if (trim($code) === '') {
+            return CartOutcome::accepted();
+        }
+
         if (!$this->adapter->capabilities()->supportsPromotions) {
             return CartOutcome::rejected('Discount codes are not available.');
         }

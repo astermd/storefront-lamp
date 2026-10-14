@@ -76,13 +76,13 @@ final class TreatmentsPageTest extends TestCase
         );
     }
 
-    public function testTheHeaderTakesTreatmentsToTheHomeSectionAndTheHomeSectionLinksOnToTheListing(): void
+    public function testTheHeaderAndTheHomeSectionBothLeadToTheListing(): void
     {
         $home = $this->page('/');
 
-        self::assertSame(2, substr_count($home, 'href="/#treatments"'), 'desktop and mobile navigation');
-        self::assertStringContainsString('<section id="treatments"', $home);
-        self::assertStringContainsString('href="/treatments/"', $home);
+        self::assertMatchesRegularExpression('#<a href="/treatments/" class="text-base text-body#', $home, 'desktop navigation');
+        self::assertMatchesRegularExpression('#<a href="/treatments/" class="block#', $home, 'mobile navigation');
+        self::assertStringContainsString('View All Treatments', $home);
     }
 
     public function testTreatmentsPageListsCatalogProducts(): void

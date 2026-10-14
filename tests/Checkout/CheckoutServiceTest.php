@@ -1113,6 +1113,18 @@ final class CheckoutServiceTest extends TestCase
         self::assertSame('San Francisco', $view->prefill['city'], 'working state still fills the gaps');
     }
 
+    public function testAnEmptyCodeIsNothingToApplyAndSaysNothing(): void
+    {
+        // Enter in any checkout field arrives as an apply with an empty box,
+        // under a provider with promotions or without.
+        foreach ([true, false] as $promotions) {
+            $outcome = $this->serviceThatPlaces(promotions: $promotions)->applyPromotion('  ');
+
+            self::assertTrue($outcome->accepted);
+            self::assertNull($outcome->notice);
+        }
+    }
+
     public function testTheTotalsHonourAnAppliedPromotion(): void
     {
         // [13.12]: subtotal minus discount, clamped, in integer cents.
