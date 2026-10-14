@@ -8,6 +8,35 @@ names exactly which ones changed.
 
 ## [Unreleased]
 
+### Treatment listings and the product page
+
+- **The treatments filter works.** The sidebar's checkboxes were rendered with
+  nothing behind them. Each card now carries its kind and categories, and
+  `script.js` hides the cards that do not match: any ticked box within a group,
+  every group that has one. A "No treatments match" note replaces an empty grid.
+  Without the script every card stays shown.
+- **"Get Started" starts the assessment.** On a prescription card it posts the
+  first plan to the cart with the assessment intent, as the product page's
+  "Start Assessment" does, and lands on the questionnaire. A non-prescription
+  card has no questionnaire, so it opens the product page. It used to open the
+  product page on the listing and the listing on the home page. The button is
+  the new `partials/get-started.twig`, shared by both.
+- **Cards line up.** Price and actions sit at the foot of each listing card,
+  and descriptions on both grids are clamped to three lines.
+- **The header's "Treatments" goes to the home page's Our Treatments section**,
+  like its neighbours, and that section ends with "View All Treatments" to the
+  full listing.
+- **A non-prescription product offers no "Start Assessment".** Checkout is its
+  only action, and the note about steps after checkout is not shown for it.
+- **Choosing a plan shows its price.** Each plan button carries its price and
+  `cart.js` writes it into the displayed figure. The charge was already the
+  chosen plan's; only the figure on the page stayed on the first plan.
+
+- `theme/templates/pages/treatments.twig`, `theme/templates/pages/home.twig`,
+  `theme/templates/pages/product.twig`, `theme/templates/partials/header.twig`,
+  `theme/templates/partials/get-started.twig` (new)
+- `theme/js/script.js`, `theme/js/cart.js`, `public/assets/build/`
+
 ### Discount codes on CheckoutChamp
 
 Checkout now offers the discount box when the channel's provider is
