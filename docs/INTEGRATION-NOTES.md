@@ -699,7 +699,7 @@ its provider, and a cart cannot be half one and half the other.
 
 ### 27. What is still not recorded
 
-Two things, both declared `false` on the adapter rather than guessed at:
+One thing, declared `false` on the adapter rather than guessed at:
 
 - **`supportsOrderSearch`.** `orderQuery` works and its projection is rich, but
   `[21.9a]`'s reverse sweep turns its findings into alerts about money, and the
@@ -707,8 +707,39 @@ Two things, both declared `false` on the adapter rather than guessed at:
   have not been established across a real window. Declaring false produces *no
   sweep*, which the sweep is explicitly built to distinguish from a clean bill of
   health.
-- **`supportsPromotions`.** The client exposes no discount-quote endpoint, so
-  `[14.4]` hides the control rather than offering a box that can only reject.
+
+### 28. `/order/coupon/` answers an unknown code as a zero discount, not a refusal
+
+A code is priced without placing anything by `POST /order/coupon/`, with the
+campaign, the code and the same numbered lines the billing call sends:
+
+```
+couponCode=COUPON30, product1_price=100.00, qty 1  -> {"result":"SUCCESS","message":{"priceDiscount":30,"shipDiscount":0}}
+couponCode=COUPON30, product1_price=0.25,   qty 1  -> {"result":"SUCCESS","message":{"priceDiscount":0.08,"shipDiscount":0}}
+couponCode=NOSUCHCODE                              -> {"result":"SUCCESS","message":{"priceDiscount":0,"shipDiscount":0}}
+an expired code                                    -> {"result":"ERROR","message":"Coupon is expired"}
+no product lines                                   -> {"result":"ERROR","message":"No products exist in the order"}
+```
+
+- **Amounts are dollars, as JSON numbers**, rounded half up to the cent
+  (30% of $0.25 answers `0.08`). The per-line `product{i}_price` override and
+  `product{i}_qty` are both honoured, so the quote prices the cart the charge
+  will price.
+- **An unknown code is indistinguishable from a real one worth nothing here.**
+  Both answer SUCCESS with zeros. The adapter therefore refuses a zero discount
+  as `invalid` rather than showing "applied".
+- **A country-scoped code priced without `shipCountry` answers zero.** A code
+  limited to `US`, quoted with no country, answers `priceDiscount: 0`; with
+  `shipCountry=US` it answers its real figure. The quote always sends the
+  buyer's country.
+- **A percentage code with a small rate rounds to nothing on a small cart.**
+  0.02% of $0.25 is $0.00005, which answers `0`, and is refused as above.
+
+`couponCode` on `/order/import/` applies the same discount the quote reported.
+The order then reads back `couponCode`, `discountPrice` and `totalDiscount`, and
+`totalAmount` is the discounted figure, so the charge reconciliation in `CheckoutChampOutcome`
+compares like with like. The pre-authorized settle call re-prices the lines it
+is sent, so it carries the code as well.
 
 ---
 

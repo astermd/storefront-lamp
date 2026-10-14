@@ -912,8 +912,9 @@ provider was sent would be worse than no switch.
 whether the boundary above was drawn in the right place. It is not shaped like the first:
 **placement is two calls** (`/leads/import/` answers a `sessionId`, `/order/import/` bills
 it — calling the second alone answers "Customer not found"), **lines are numbered
-parameters** (`product1_id`, `product2_id`, …) rather than an array, there is no promotion
-endpoint, and the reusable credential is a single customer id rather than a pair. None of
+parameters** (`product1_id`, `product2_id`, …) rather than an array, a discount is quoted by
+`/order/coupon/` from a code and those same numbered lines, and the reusable credential is a
+single customer id rather than a pair. None of
 that reaches anything above `PaymentAdapter`.
 
 Two shapes of difference it forced, both worth knowing about:
@@ -947,8 +948,8 @@ an authorization that does not reserve the money is not doing the job it was ask
 The setting is deployment-wide under `payment.checkout_champ.*`, never per product: it is a
 property of the merchant arrangement, and a cart cannot be half one and half the other.
 The capability is the same either way, so nothing above the boundary knows which is set. It declares
-`supportsPromotions` and `supportsOrderSearch` **false**, each for a stated reason rather
-than as a stub; see [`INTEGRATION-NOTES.md`](INTEGRATION-NOTES.md) items 20–27.
+`supportsOrderSearch` **false**, for a stated reason rather than as a stub; see
+[`INTEGRATION-NOTES.md`](INTEGRATION-NOTES.md) items 20–28.
 
 Settling is why `PaymentAdapter::capture()` takes a {@see CaptureRequest} rather than a bare
 reference. A pre-authorized order at this provider carries **no line items** until the

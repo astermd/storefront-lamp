@@ -25,8 +25,9 @@ use AsterMD\Storefront\Support\OperatorLog;
  * The second implementation of `[14.1]`'s boundary, and the one that tests
  * whether the boundary was drawn in the right place. It is not shaped like the
  * first: placement is two calls rather than one, lines are numbered parameters
- * rather than an array, there is no promotion endpoint, and the credential is a
- * single customer id rather than a pair. None of that reaches anything above
+ * rather than an array, a discount is quoted by a code-and-lines call that
+ * answers dollars rather than per-offer totals, and the credential is a single
+ * customer id rather than a pair. None of that reaches anything above
  * this class — which is the whole claim `[14.2]` and `[14.3]` make.
  *
  * **Placement is two calls, because the provider has no single one.**
@@ -76,13 +77,12 @@ final class CheckoutChampAdapter implements PaymentAdapter
     }
 
     /**
-     * What this adapter can do, and the two things it deliberately will not
+     * What this adapter can do, and the one thing it deliberately will not
      * claim yet.
      *
-     * **`supportsPromotions` is false.** The client exposes no discount-quote
-     * endpoint, and `[13.14]`/`[14.4]` make that a UI decision rather than a
-     * runtime surprise: the storefront hides the promo control entirely instead
-     * of offering a box that can only ever reject a code.
+     * **`supportsPromotions` is true**, through `POST /order/coupon/`
+     * ({@see self::quotePromotion()}), and the code then travels on the billing
+     * call so the provider applies the discount it quoted.
      *
      * **`supportsOrderSearch` is false, although `orderQuery` exists.**
      * `[21.9a]`'s reverse sweep reports orders the provider took that no local
@@ -102,7 +102,7 @@ final class CheckoutChampAdapter implements PaymentAdapter
     {
         return new AdapterCapabilities(
             providerCategory: 'checkout_champ',
-            supportsPromotions: false,
+            supportsPromotions: true,
             discountScope: AdapterCapabilities::SCOPE_ORDER_LEVEL,
             credentialStrategy: AdapterCapabilities::STRATEGY_ORDER_REFERENCE,
             collectionSurface: AdapterCapabilities::SURFACE_THEME_FIELDS,
@@ -255,13 +255,67 @@ final class CheckoutChampAdapter implements PaymentAdapter
     }
 
     /**
-     * Not offered: this provider has no promotion endpoint in the client, and
-     * `supportsPromotions` is false so the storefront never renders the control
-     * that would call this (`[13.18]`, `[14.4]`).
+     * Price a code against the cart: `POST /order/coupon/`.
+     *
+     * **A zero discount is refused as `invalid`.** The provider answers an
+     * unknown code exactly as it answers a real code worth nothing on these
+     * lines -- SUCCESS with both amounts zero -- so a zero is no evidence the
+     * code exists, and showing "applied" for it would tell the buyer they saved
+     * something they did not. A code it does recognise and refuses (expired,
+     * say) answers ERROR with a sentence, which is logged and also `invalid`.
+     *
+     * **Only `priceDiscount` counts.** The storefront charges no shipping line,
+     * so a `shipDiscount` would be a reduction of a fee the buyer was never
+     * shown; it is logged rather than added.
+     *
+     * Failures to reach the provider degrade to a rejected code rather than an
+     * error (`[13.14]`).
      */
     public function quotePromotion(OrderEnvelope $order, string $code): PromotionQuote
     {
-        return PromotionQuote::rejected($code, 'unsupported');
+        $code = trim($code);
+        if ($code === '') {
+            return PromotionQuote::rejected($code, 'empty');
+        }
+
+        if ($order->chargeableLines() === [] || CheckoutChampPayload::campaignFor($order) === null) {
+            return PromotionQuote::rejected($code, 'no_offers');
+        }
+
+        try {
+            $response = $this->apiFactory->create($this->credentials)
+                ->orderCoupon(CheckoutChampPayload::forCoupon($order, $code))
+                ->getInArray()['response'];
+        } catch (\Throwable $e) {
+            $this->log->warning('payment.promotion_threw', ['reason' => CardScrubber::scrub($e->getMessage())]);
+
+            return PromotionQuote::rejected($code, 'unavailable');
+        }
+
+        if (!is_array($response) || isset($response['curlError'])) {
+            return PromotionQuote::rejected($code, 'unavailable');
+        }
+
+        if (($response['result'] ?? null) !== 'SUCCESS' || !is_array($response['message'] ?? null)) {
+            $this->log->info('payment.promotion_refused', ['response' => CardScrubber::scrub($response)]);
+
+            return PromotionQuote::rejected($code, 'invalid');
+        }
+
+        $message = $response['message'];
+        $priceDiscount = $message['priceDiscount'] ?? null;
+        $cents = is_numeric($priceDiscount) ? (int) round(((float) $priceDiscount) * 100) : 0;
+
+        $shipDiscount = $message['shipDiscount'] ?? null;
+        if (is_numeric($shipDiscount) && (float) $shipDiscount > 0) {
+            $this->log->info('payment.promotion_ship_discount_ignored', ['ship_discount' => (string) $shipDiscount]);
+        }
+
+        if ($cents <= 0) {
+            return PromotionQuote::rejected($code, 'invalid');
+        }
+
+        return PromotionQuote::accepted($code, $cents);
     }
 
     /**
@@ -338,7 +392,7 @@ final class CheckoutChampAdapter implements PaymentAdapter
 
         try {
             $envelope = $this->apiFactory->create($this->credentials)
-                ->importOrder(CheckoutChampPayload::forCapture($reference, $lines, $campaignId))
+                ->importOrder(CheckoutChampPayload::forCapture($reference, $lines, $campaignId, $request->promotionCode))
                 ->getInArray()['response'];
         } catch (\Throwable $e) {
             $this->log->error('payment.capture_threw', [

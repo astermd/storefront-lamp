@@ -6,6 +6,35 @@ must say the same thing. `bin/console --version` reads `composer.json`, so it is
 not a fourth copy to keep in step. An update is applied by copying files, so every entry
 names exactly which ones changed.
 
+## [Unreleased]
+
+### Discount codes on CheckoutChamp
+
+Checkout now offers the discount box when the channel's provider is
+CheckoutChamp. A code is priced by `POST /order/coupon/` against the same
+numbered lines, prices and quantities the billing call sends, with the buyer's
+shipping country, so a country-scoped code prices correctly. The accepted code
+then travels on `/order/import/` as `couponCode`, and on the pre-authorized
+settle call as well, which re-prices the lines and would otherwise bill the
+undiscounted figure.
+
+The provider answers an unknown code exactly as it answers a real code worth
+nothing on the cart — SUCCESS with a zero discount — so a zero is refused as an
+invalid code rather than shown as applied. Only `priceDiscount` counts; a
+`shipDiscount` is logged, since the storefront charges no shipping line.
+`docs/INTEGRATION-NOTES.md` item 28 records the endpoint's answers.
+
+Requires `astermd/checkoutchamp-client` 0.0.2, which adds `orderCoupon()`; the
+constraint in `composer.json` is raised to `^0.0.2`. Against an older client the
+quote fails closed: the code is rejected as `unavailable` and the order is
+placed at full price.
+
+- `core/Payment/CheckoutChamp/CheckoutChampAdapter.php`,
+  `core/Payment/CheckoutChamp/CheckoutChampPayload.php`
+- `core/Payment/CaptureRequest.php`, `core/Console/CaptureOrderCommand.php`
+- `composer.json`, `composer.lock`
+- `docs/INTEGRATION-NOTES.md`, `docs/ARCHITECTURE.md`
+
 ## [0.0.5]
 
 Lets one order carry several prescriptions. A second prescription added to the

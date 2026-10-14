@@ -184,6 +184,8 @@ final class CheckoutChampPayload
             'orderId' => $reference,
         ] + self::shipping($order) + self::lines($order) + self::paymentFor($credential);
 
+        $body += self::coupon($order->promotionCode);
+
         // `forceQA` is how the QA mechanism authorizes: the same billing call,
         // which instead of charging puts the order in PENDING review with the
         // **full order amount held** on the card. `/order/qa/` releases it.
@@ -232,13 +234,53 @@ final class CheckoutChampPayload
      * No card, no shipping: both were taken at the pre-authorization, and the
      * settle call is accepted without either.
      *
+     * **The coupon is resent with them.** This call prices the lines afresh,
+     * so a settle without the code bills the undiscounted figure for an order
+     * the buyer was quoted a discount on.
+     *
      * @param list<\AsterMD\Storefront\Payment\OrderLine> $lines
      *
      * @return array<string, mixed>
      */
-    public static function forCapture(string $reference, array $lines, string $campaignId): array
+    public static function forCapture(
+        string $reference,
+        array $lines,
+        string $campaignId,
+        ?string $promotionCode = null,
+    ): array {
+        return ['campaignId' => $campaignId, 'orderId' => $reference]
+            + self::numbered($lines)
+            + self::coupon($promotionCode);
+    }
+
+    /**
+     * `POST /order/coupon/` — price a code against the cart without placing
+     * anything.
+     *
+     * The lines are numbered exactly as the billing call numbers them, with
+     * the same per-line prices, so the discount quoted is the discount the
+     * billing call computes rather than one against the campaign's own prices.
+     *
+     * **The shipping country is sent because a coupon can be scoped to one.**
+     * A country-scoped code priced without it answers a zero discount, not a
+     * refusal. The state is sent when the journey already holds one, for
+     * zone-scoped codes; it is absent rather than empty otherwise.
+     *
+     * @return array<string, mixed>
+     */
+    public static function forCoupon(OrderEnvelope $order, string $code): array
     {
-        return ['campaignId' => $campaignId, 'orderId' => $reference] + self::numbered($lines);
+        $body = [
+            'campaignId' => (string) self::campaignFor($order),
+            'couponCode' => $code,
+            'shipCountry' => $order->buyer->country,
+        ];
+
+        if ($order->buyer->territory !== '') {
+            $body['shipState'] = $order->buyer->territory;
+        }
+
+        return $body + self::lines($order);
     }
 
     /**
@@ -335,6 +377,20 @@ final class CheckoutChampPayload
         }
 
         return ['paySource' => 'ACCTONFILE', 'customerId' => $customerId];
+    }
+
+    /**
+     * The coupon parameter, or nothing when the order carries no code -- an
+     * empty `couponCode` is not documented as meaning "none", so it is not
+     * sent at all.
+     *
+     * @return array<string, string>
+     */
+    private static function coupon(?string $promotionCode): array
+    {
+        $code = trim((string) $promotionCode);
+
+        return $code === '' ? [] : ['couponCode' => $code];
     }
 
     /** Integer cents as the two-place decimal string the provider's money fields take. */

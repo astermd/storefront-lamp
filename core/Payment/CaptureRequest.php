@@ -30,6 +30,10 @@ namespace AsterMD\Storefront\Payment;
  * `$lines` are the same {@see OrderLine}s the placement was built from, read
  * back from `order_lines`. They carry the provider's own opaque identifiers, so
  * an adapter rebuilds its own request from them without the caller knowing how.
+ *
+ * `$promotionCode` travels with them for the same reason: a settling call that
+ * re-prices the lines re-prices them without the discount unless it is told the
+ * code again. The adapter that settles from the reference alone ignores it.
  */
 final readonly class CaptureRequest
 {
@@ -37,6 +41,7 @@ final readonly class CaptureRequest
     public function __construct(
         public string $reference,
         public array $lines = [],
+        public ?string $promotionCode = null,
     ) {
     }
 

@@ -45,8 +45,11 @@ final class CheckoutChampAdapterTest extends TestCase
     }
 
     /** @param list<OrderLine>|null $lines */
-    private function envelope(?array $lines = null, SettlementMode $settlement = SettlementMode::Capture): OrderEnvelope
-    {
+    private function envelope(
+        ?array $lines = null,
+        SettlementMode $settlement = SettlementMode::Capture,
+        ?string $promotionCode = null,
+    ): OrderEnvelope {
         $lines ??= [new OrderLine('nad-500', 'NAD+ (500mg)', '459', '15271', 12000, 1)];
         $subtotal = array_sum(array_map(static fn (OrderLine $l): int => $l->lineTotalCents(), $lines));
 
@@ -57,7 +60,7 @@ final class CheckoutChampAdapterTest extends TestCase
             discountCents: 0,
             totalCents: $subtotal,
             currency: 'USD',
-            promotionCode: null,
+            promotionCode: $promotionCode,
             attribution: [],
             sessionUuid: 'sess-1',
             clientIp: '203.0.113.7',
@@ -392,14 +395,152 @@ final class CheckoutChampAdapterTest extends TestCase
         );
     }
 
-    public function testTheAdapterDeclaresNoPromotionSupportSoTheControlIsHidden(): void
+    public function testTheAdapterDeclaresPromotionSupportSoTheControlIsShown(): void
     {
-        // [14.4]: the storefront adapts rather than offering a box that can
-        // only ever reject a code.
-        $adapter = $this->adapter(new FakeCheckoutChampTransport());
+        self::assertTrue($this->adapter(new FakeCheckoutChampTransport())->capabilities()->supportsPromotions);
+    }
 
-        self::assertFalse($adapter->capabilities()->supportsPromotions);
-        self::assertFalse($adapter->quotePromotion($this->envelope(), 'SAVE10')->valid);
+    public function testACodeIsQuotedAgainstTheSameNumberedLinesTheBillingCallSends(): void
+    {
+        // The quote has to price the cart the charge will price, line prices
+        // included, or the discount shown is against some other cart.
+        $transport = new FakeCheckoutChampTransport();
+        $transport->queueSuccess(['priceDiscount' => 36, 'shipDiscount' => 0]);
+
+        $this->adapter($transport)->quotePromotion($this->envelope([
+            new OrderLine('nad-500', 'NAD+ (500mg)', '459', '15271', 12000, 1),
+            new OrderLine('nad-1000', 'NAD+ (1000mg)', '459', '15275', 9000, 2),
+        ]), ' SAVE30 ');
+
+        $params = $transport->params(0);
+
+        self::assertStringContainsString('/order/coupon/', $transport->path(0));
+        self::assertSame('459', $params['campaignId']);
+        self::assertSame('SAVE30', $params['couponCode']);
+        self::assertSame('15271', $params['product1_id']);
+        self::assertSame('120.00', $params['product1_price']);
+        self::assertSame('15275', $params['product2_id']);
+        self::assertSame('2', $params['product2_qty']);
+        self::assertSame('90.00', $params['product2_price']);
+    }
+
+    public function testTheQuoteCarriesTheShippingCountryForACountryScopedCode(): void
+    {
+        // A code scoped to one country, priced without a country, answers a
+        // zero discount rather than a refusal.
+        $transport = new FakeCheckoutChampTransport();
+        $transport->queueSuccess(['priceDiscount' => 1, 'shipDiscount' => 0]);
+
+        $this->adapter($transport)->quotePromotion($this->envelope(), 'SAVE10');
+
+        self::assertSame('US', $transport->params(0)['shipCountry'] ?? null);
+        self::assertSame('NY', $transport->params(0)['shipState'] ?? null);
+    }
+
+    public function testAPriceDiscountInDollarsIsQuotedInCents(): void
+    {
+        $transport = new FakeCheckoutChampTransport();
+        $transport->queueSuccess(['priceDiscount' => 0.08, 'shipDiscount' => 0]);
+
+        $quote = $this->adapter($transport)->quotePromotion($this->envelope(), 'COUPON30');
+
+        self::assertTrue($quote->valid);
+        self::assertSame('COUPON30', $quote->code);
+        self::assertSame(8, $quote->discountCents);
+    }
+
+    public function testAZeroDiscountIsRefusedBecauseAnUnknownCodeAnswersExactlyThat(): void
+    {
+        // An unknown code answers SUCCESS with both amounts zero, the same as a
+        // real code worth nothing here. Neither is a discount to show.
+        $transport = new FakeCheckoutChampTransport();
+        $transport->queueSuccess(['priceDiscount' => 0, 'shipDiscount' => 0]);
+
+        $quote = $this->adapter($transport)->quotePromotion($this->envelope(), 'NOSUCHCODE');
+
+        self::assertFalse($quote->valid);
+        self::assertSame('invalid', $quote->reason);
+    }
+
+    public function testAShippingDiscountIsNotCountedTowardsTheQuote(): void
+    {
+        // The storefront charges no shipping line, so a reduction of one is a
+        // saving on a fee the buyer was never shown.
+        $transport = new FakeCheckoutChampTransport();
+        $transport->queueSuccess(['priceDiscount' => 5, 'shipDiscount' => 2.5]);
+
+        self::assertSame(500, $this->adapter($transport)->quotePromotion($this->envelope(), 'SAVE5')->discountCents);
+    }
+
+    public function testACodeTheProviderRefusesIsInvalid(): void
+    {
+        $transport = new FakeCheckoutChampTransport();
+        $transport->queueError('Coupon is expired');
+
+        $quote = $this->adapter($transport)->quotePromotion($this->envelope(), 'OLDCODE');
+
+        self::assertFalse($quote->valid);
+        self::assertSame('invalid', $quote->reason);
+    }
+
+    public function testAQuoteThatCannotReachTheProviderIsRejectedRatherThanThrown(): void
+    {
+        // [13.14]: a calculation failure degrades to a code that did not apply.
+        $transport = new FakeCheckoutChampTransport();
+        $transport->queue(0, '', 'Could not resolve host');
+
+        $quote = $this->adapter($transport)->quotePromotion($this->envelope(), 'SAVE10');
+
+        self::assertFalse($quote->valid);
+        self::assertSame('unavailable', $quote->reason);
+    }
+
+    public function testAnEmptyCodeOrACartWithNoCampaignNeverReachesTheProvider(): void
+    {
+        $transport = new FakeCheckoutChampTransport();
+        $adapter = $this->adapter($transport);
+
+        self::assertSame('empty', $adapter->quotePromotion($this->envelope(), '  ')->reason);
+        self::assertSame('no_offers', $adapter->quotePromotion($this->envelope([
+            new OrderLine('nad-500', 'NAD+ (500mg)', '459', '15271', 12000, 1),
+            new OrderLine('other', 'Other', '460', '15999', 5000, 1),
+        ]), 'SAVE10')->reason);
+        self::assertSame([], $transport->requests);
+    }
+
+    public function testTheBillingCallCarriesTheCodeTheBuyerWasQuoted(): void
+    {
+        // Without it the provider bills the undiscounted lines and the charge
+        // reconciles as a mismatch against the discounted total.
+        $transport = $this->transportThatPlaces();
+
+        $this->adapter($transport)->place($this->envelope(promotionCode: 'SAVE10'), $this->card());
+
+        self::assertSame('SAVE10', $transport->params(1)['couponCode'] ?? null);
+    }
+
+    public function testABillingCallWithNoCodeSendsNoCouponParameter(): void
+    {
+        $transport = $this->transportThatPlaces();
+
+        $this->adapter($transport)->place($this->envelope(), $this->card());
+
+        self::assertArrayNotHasKey('couponCode', $transport->params(1));
+    }
+
+    public function testACaptureThatResendsTheLinesResendsTheCodeWithThem(): void
+    {
+        // The settling call re-prices the lines, so without the code it bills
+        // the undiscounted figure for an order quoted a discount.
+        $transport = new FakeCheckoutChampTransport();
+        $transport->queueFixture('checkoutchamp-capture-approved.json');
+
+        $this->adapter($transport, mode: CheckoutChampAuthorizeMode::Preauth)
+            ->capture(new CaptureRequest('FF2BE54DD5', [
+                new OrderLine('nad-500', 'NAD+ (500mg)', '459', '15271', 12000, 1),
+            ], 'SAVE10'));
+
+        self::assertSame('SAVE10', $transport->params(0)['couponCode'] ?? null);
     }
 
     public function testOrderSearchAnswersUnsupportedRatherThanAnEmptyWindow(): void
