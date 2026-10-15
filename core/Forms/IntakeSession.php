@@ -45,6 +45,7 @@ final class IntakeSession
         private readonly LeadWriter $leads,
         private readonly RecordMapper $mapper,
         private readonly OperatorLog $log,
+        private readonly bool $collectsFiles = true,
     ) {
     }
 
@@ -83,7 +84,7 @@ final class IntakeSession
             answers: $answers,
             errors: [],
             terminationMessage: $this->standingTermination($teleformId, $definition),
-            unsupportedTypes: $definition->unsupportedTypes(),
+            unsupportedTypes: $definition->unsupportedTypes($this->collectsFiles),
             rules: $this->disqualification->rulesFor($teleformId, $definition),
         );
     }
@@ -135,7 +136,7 @@ final class IntakeSession
         $definition = $this->definition($teleformId);
         $answers = $this->store($teleformId, $definition, $posted);
 
-        $unsupported = $definition->unsupportedTypes();
+        $unsupported = $definition->unsupportedTypes($this->collectsFiles);
         if ($unsupported !== []) {
             // Refusing here rather than accepting a form with missing answers
             // is the whole point of `[10.13]`: a clinician must never read an
@@ -232,6 +233,24 @@ final class IntakeSession
     }
 
     /**
+     * The rules for one file-upload question on this form, or null when the
+     * form asks no such question by that name -- which is what stops the
+     * upload endpoints relaying a file for a question that is not there.
+     *
+     * @throws FormUnavailable
+     */
+    public function fileRulesFor(string $teleformId, string $fieldName): ?FileRules
+    {
+        if (!$this->collectsFiles) {
+            return null;
+        }
+
+        $field = $this->definition($teleformId)->field($fieldName);
+
+        return $field !== null && $field->isFileUpload() ? FileRules::for($field) : null;
+    }
+
+    /**
      * Stored answers in the shape the hosted engine wants for its
      * `initialValues`, filtered the same way a server render filters them
      * (`[9.12]`) so neither renderer prefills a question the form dropped.
@@ -257,7 +276,7 @@ final class IntakeSession
         $stored = $state === null ? [] : $state->answersFor($teleformId);
 
         $answers = $this->answers($teleformId, $definition)
-            ->merge($posted, $definition)
+            ->merge($this->ownFiles($posted, $definition), $definition)
             ->withDerived($definition);
 
         // Answers to questions the form no longer asks are carried through
@@ -268,6 +287,51 @@ final class IntakeSession
         $state?->storeAnswers($teleformId, array_merge(self::orphans($stored, $definition), $answers->all()));
 
         return $answers;
+    }
+
+    /**
+     * The posted answers with every file reference that is not this
+     * visitor's taken out of them.
+     *
+     * The page posts what the upload endpoints answered, and nothing stops a
+     * request posting another path instead. A reference is kept only when
+     * the EMR filed it under this journey's session, which no other visitor's
+     * upload can be ({@see FileReference::belongsTo()}). A journey with no
+     * session keeps none, since none of its uploads could have been made.
+     *
+     * @param array<string, mixed> $posted
+     *
+     * @return array<string, mixed>
+     */
+    private function ownFiles(array $posted, Definition $definition): array
+    {
+        $session = (string) $this->journey->sessionUuid();
+
+        foreach ($posted as $name => $value) {
+            $field = $definition->field((string) $name);
+            if ($field === null || !$field->isFileUpload()) {
+                continue;
+            }
+
+            $kept = [];
+            foreach (is_array($value) ? $value : [$value] as $entry) {
+                $reference = FileReference::fromPosted($entry);
+                if ($reference === null) {
+                    continue;
+                }
+
+                if ($session === '' || !$reference->belongsTo($session)) {
+                    $this->log->warning('intake.foreign_file_refused', ['field' => $field->name]);
+                    continue;
+                }
+
+                $kept[] = $reference->toArray();
+            }
+
+            $posted[$name] = $kept;
+        }
+
+        return $posted;
     }
 
     /**

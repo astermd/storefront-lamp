@@ -239,7 +239,7 @@ alphabetically.
 
 | Namespace | Owns |
 | --- | --- |
-| `Forms` | The intake questionnaire engine: teleform metadata and definition fetch, caching, field rendering models, rule evaluation, answer validation, disqualification, lead writing. |
+| `Forms` | The intake questionnaire engine: teleform metadata and definition fetch, caching, field rendering models, rule evaluation, answer validation, disqualification, lead writing, and file-upload answers (`FileRules`, `FileReference`, the `IntakeUploads` port). |
 | `Verification` | The identity-check step: `VerificationStep`, `IdentityVerificationSequence`, `VerificationPlacement`, `IdentityVerdict`. |
 | `Checkout` | The checkout decision surface: `CheckoutService`, buyer validation, consents, order bumps, promotions, totals, idempotency, order recording, `PostChargeGuard`. |
 | `Payment` | The provider boundary: the `PaymentAdapter` contract, `AdapterCapabilities`, `AdapterRegistry`, `PaymentCredential`, and the `Vrio/` adapter. |
@@ -277,7 +277,7 @@ alphabetically.
 behind an interface. Each interface has a real implementation that talks to the system and a
 **Null implementation that talks to nothing**, and the container decides which one is bound.
 
-There are fourteen interfaces under `core/`; these are the ones with a Null counterpart:
+There are fifteen interfaces under `core/`; these are the ones with a Null counterpart:
 
 | Port | Real | Null |
 | --- | --- | --- |
@@ -287,6 +287,7 @@ There are fourteen interfaces under `core/`; these are the ones with a Null coun
 | `Emr\AddressAutofill` | `EmrAddressAutofill` | `NullAddressAutofill` |
 | `Forms\TeleformGateway` | `EmrTeleformGateway` | `NullTeleformGateway` |
 | `Forms\IntakeGateway` | `EmrIntakeGateway` | `NullIntakeGateway` |
+| `Forms\IntakeUploads` | `EmrIntakeUploads` | `NullIntakeUploads` |
 | `Forms\LeadGateway` | `EmrLeadGateway` | `NullLeadGateway` |
 | `Verification\IdentityGateway` | `EmrIdentityGateway` | `NullIdentityGateway` |
 | `Payment\PaymentAdapter` | `Vrio\VrioAdapter` | `NullPaymentAdapter` |
@@ -303,7 +304,8 @@ that names any step), and `Seo\StructuredData\Emitter`.
 Four configuration switches, all read inside `AppFactory::create()`:
 
 - **`app.session.analytics`** governs the EMR gateway family — session, cart, teleform,
-  intake, lead. `config/app.php` derives it as `APP_ENV !== 'test'`, so **under the test
+  intake, intake uploads, lead. Uploads follow the submission's switch because a file
+  answer reaches a clinician only inside the submission. `config/app.php` derives it as `APP_ENV !== 'test'`, so **under the test
   suite the whole EMR family is Null-bound and no test run can reach the network or write
   to the dev EMR.** Tests that exercise session or intake flows inject their own gateway
   through the container instead.
@@ -343,6 +345,9 @@ states:
   with analytics off must behave exactly like one whose mirror always succeeded; reporting
   `false` would be read as "the save failed" and could surface a retry or a warning to a
   visitor whose form is working exactly as configured.
+- `NullIntakeUploads` is the exception, and reports **failure**: a patient told their file
+  was attached would believe the clinician can see it, and with analytics off nothing ever
+  names the stored file.
 - `NullIdentityGateway` answers **inconclusive** to everything, and never `passed`. A
   deployment may run the identity step blocking, and a disabled gateway reporting a pass
   would let anyone through the moment an operator switched identity checks off — turning "we

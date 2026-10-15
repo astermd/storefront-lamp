@@ -79,14 +79,31 @@ final class DefinitionTest extends TestCase
                 'pageId' => 'p1',
                 'order' => 0,
                 'fields' => [
-                    ['fieldId' => 'sig', 'name' => 'signature', 'type' => 'signature', 'label' => 'Sign here'],
+                    ['fieldId' => 'vid', 'name' => 'intro', 'type' => 'video', 'label' => 'Watch this'],
                     ['fieldId' => 'up', 'name' => 'labs', 'type' => 'file', 'label' => 'Upload labs'],
                     ['fieldId' => 'ok', 'name' => 'first_name', 'type' => 'text', 'label' => 'First name'],
                 ],
             ]],
         ]);
 
-        self::assertSame(['signature', 'file'], $definition->unsupportedTypes());
+        self::assertSame(['video', 'file'], $definition->unsupportedTypes());
+    }
+
+    public function testAFileQuestionIsUnsupportedOnlyWhereFilesCannotBeCollected(): void
+    {
+        $definition = Definition::fromArray([
+            'pages' => [[
+                'pageId' => 'p1',
+                'order' => 0,
+                'fields' => [
+                    ['fieldId' => 'up', 'name' => 'labs', 'type' => 'file-upload', 'label' => 'Upload labs'],
+                    ['fieldId' => 'sig', 'name' => 'sig', 'type' => 'signature', 'label' => 'Sign here'],
+                ],
+            ]],
+        ]);
+
+        self::assertSame([], $definition->unsupportedTypes());
+        self::assertSame(['file-upload', 'signature'], $definition->unsupportedTypes(collectsFiles: false));
     }
 
     public function testReadsTheColumnSpanHintThatDrivesLayout(): void

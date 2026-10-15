@@ -152,6 +152,20 @@ If you front the app with something that legitimately sets these — Cloudflare 
 
 The health endpoint (`/health/`) reports whether analytics sessions are enabled and whether `AMD_TRACKING_KEY` / `AMD_TRACKING_KEY_PREVIOUS` are configured, under its `info` block — presence only, never the key values themselves.
 
+## Request size: intake file uploads
+
+A file-upload question sends each file to the EMR as soon as it is picked, relayed through this server one request at a time: a whole document or image up to 10 MB, or a video or larger file in parts of up to 10 MB. Every layer between the browser and PHP has to let a request of that size through:
+
+| Layer | Setting | Shipped value | Where |
+|---|---|---|---|
+| nginx | `client_max_body_size` | `12m` (default `1m`) | `deploy/nginx.conf` |
+| Apache | `LimitRequestBody` | `12582912` | `deploy/apache-vhost.conf` |
+| PHP | `upload_max_filesize`, `post_max_size` | `11M`, `12M` (defaults `2M`, `8M`) | `public/.user.ini` |
+
+`public/.user.ini` is read by php-fpm and other CGI/FastCGI setups, and is not served (both samples deny dot-files). **mod_php ignores it**: under mod_php, set the two values with `php_value` in the vhost instead. A CDN or load balancer in front has a body limit of its own.
+
+Lower PHP limits do not break the form. The page reads what PHP will accept and sends nothing larger, so a file between that and 10 MB goes up in parts instead of whole. Below 5 MB, though, a file larger than the limit cannot go up at all, because the EMR needs every part but the last to be at least 5 MB, and the page says so.
+
 ## Apache Deployment
 
 ### Required Modules

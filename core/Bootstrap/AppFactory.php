@@ -26,6 +26,7 @@ use AsterMD\Storefront\Emr\SessionGateway;
 use AsterMD\Storefront\Funnel\FlowDefinition;
 use AsterMD\Storefront\Funnel\StepPreconditions;
 use AsterMD\Storefront\Http\Controller\AddressController;
+use AsterMD\Storefront\Http\Controller\IntakeUploadController;
 use AsterMD\Storefront\Http\Controller\VerifyController;
 use AsterMD\Storefront\Verification\EmrIdentityGateway;
 use AsterMD\Storefront\Verification\IdentityGateway;
@@ -52,12 +53,15 @@ use AsterMD\Storefront\Http\TwigExtensions;
 use AsterMD\Storefront\Forms\AnswerValidator;
 use AsterMD\Storefront\Forms\Disqualification;
 use AsterMD\Storefront\Forms\EmrIntakeGateway;
+use AsterMD\Storefront\Forms\EmrIntakeUploads;
 use AsterMD\Storefront\Forms\EmrLeadGateway;
 use AsterMD\Storefront\Forms\IntakeGateway;
 use AsterMD\Storefront\Forms\IntakeSession;
+use AsterMD\Storefront\Forms\IntakeUploads;
 use AsterMD\Storefront\Forms\LeadGateway;
 use AsterMD\Storefront\Forms\LeadWriter;
 use AsterMD\Storefront\Forms\NullIntakeGateway;
+use AsterMD\Storefront\Forms\NullIntakeUploads;
 use AsterMD\Storefront\Forms\NullLeadGateway;
 use AsterMD\Storefront\Forms\RecordMapper;
 use AsterMD\Storefront\Forms\RecordingIntakeGateway;
@@ -334,6 +338,28 @@ final class AppFactory
             $c->get(IntakeGateway::class),
             $c->get(LeadWriter::class),
             $c->get(RecordMapper::class),
+            $c->get(OperatorLog::class),
+            // The hosted engine keeps a picked file's name and never its
+            // bytes, so under it a file or a signature cannot be collected.
+            collectsFiles: $config->get('intake.renderer', 'server') !== 'js-engine',
+        ));
+        // A file answer reaches the clinician only inside the intake
+        // submission, so uploads follow the same switch the submission does:
+        // with analytics off nothing would ever name the stored file.
+        $container->set(IntakeUploads::class, static function (Container $c) use ($config): IntakeUploads {
+            if ($config->get('app.session.analytics') !== true) {
+                return new NullIntakeUploads();
+            }
+
+            return new EmrIntakeUploads($c->get(EmrClientFactory::class), $c->get(OperatorLog::class));
+        });
+        $container->set(IntakeUploadController::class, static fn (Container $c): IntakeUploadController => new IntakeUploadController(
+            $c->get(IntakeSession::class),
+            $c->get(IntakeUploads::class),
+            $c->get(CartStore::class),
+            $c->get(JourneyStore::class),
+            $c->get(ProductCatalog::class),
+            $c->get(DatabaseRateLimiter::class),
             $c->get(OperatorLog::class),
         ));
         $container->set(IntakeController::class, static fn (Container $c): IntakeController => new IntakeController(

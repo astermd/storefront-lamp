@@ -1,0 +1,24 @@
+{# A drawn signature. The pad is drawn on with a finger, a pen or a mouse
+   (theme/js/intake-files.js), and the drawing is kept as a PNG data URL in the
+   hidden input, which is what the form posts: a signature is small enough to
+   travel in the answer itself, and is never uploaded as a file.
+
+   The hidden input comes first because the stepper reads a field's first
+   control as its answer. A signature already given is drawn back onto the pad
+   from that input when the page loads. #}
+{% include 'partials/intake/field-question.twig' with { field: field } only %}
+<div class="mt-2{% if field.runtime_class %} {{ field.runtime_class }}{% endif %}" data-intake-signature>
+  <input type="hidden" name="{{ field.name }}" value="{{ field.value }}" data-intake-signature-value />
+  <canvas data-intake-signature-pad
+          width="{{ field.signature.width }}" height="{{ field.signature.height }}"
+          style="aspect-ratio: {{ field.signature.width }} / {{ field.signature.height }}; max-width: {{ field.signature.width }}px"
+          role="img" aria-labelledby="intake-{{ field.name }}-label"
+          class="block w-full touch-none rounded-sm border-2 border-border bg-white aria-[invalid=true]:border-danger{% if field.disabled %} pointer-events-none opacity-60{% endif %}"
+          {% if field.error %}aria-invalid="true" aria-describedby="{{ field.error_id }}"{% endif %}></canvas>
+  <div class="mt-2 flex items-center justify-between gap-4" style="max-width: {{ field.signature.width }}px">
+    <span class="text-xs text-muted">Sign inside the box.</span>
+    <button type="button" data-intake-signature-clear
+            class="rounded-sm px-2 py-1 text-xs font-medium text-body underline transition-colors hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Clear</button>
+  </div>
+</div>
+{% include 'partials/intake/field-error.twig' with { field: field } only %}

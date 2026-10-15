@@ -182,7 +182,7 @@ final class AnswerValidator
             return $value === true;
         }
 
-        if ($field->isMultiValue()) {
+        if ($field->isMultiValue() || $field->isFileUpload()) {
             return is_array($value) && $value !== [];
         }
 
@@ -208,6 +208,28 @@ final class AnswerValidator
     {
         $validation = $field->validation;
         $label = self::label($field);
+
+        // A file question's only constraint is how many files it takes; the
+        // size and kind of each were checked before it was uploaded, and the
+        // text constraints below would read a list of files as an empty
+        // string.
+        if ($field->isFileUpload()) {
+            $maxFiles = FileRules::for($field)->maxFiles;
+
+            return $maxFiles !== null && is_array($value) && count($value) > $maxFiles
+                ? $this->message($field, 'maxFiles', sprintf(
+                    '%s takes at most %d file%s.',
+                    $label,
+                    $maxFiles,
+                    $maxFiles === 1 ? '' : 's',
+                ))
+                : null;
+        }
+
+        if ($field->isSignature()) {
+            return null;
+        }
+
         $text = is_scalar($value) ? (string) $value : '';
         $length = mb_strlen($text);
 

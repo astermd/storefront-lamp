@@ -30,6 +30,27 @@ final class AnswerValidatorTest extends TestCase
         return Definition::fromArray(['pages' => $pages]);
     }
 
+    public function testAFileQuestionHoldingMoreFilesThanItTakesIsRejected(): void
+    {
+        // The page stops a third file being picked; a request that went
+        // round it is stopped here.
+        $definition = self::definition([[
+            'fieldId' => 'labs', 'name' => 'labs', 'type' => 'file-upload', 'label' => 'Labs',
+            'properties' => ['allowMultipleFiles' => true, 'maxFiles' => 2],
+        ]]);
+        $file = static fn (int $n): array => [
+            'path' => sprintf('a/b/intake_submissions/550e8400-e29b-41d4-a716-446655440000/f%d.pdf', $n),
+            'name' => sprintf('f%d.pdf', $n),
+            'mime_type' => 'application/pdf',
+        ];
+
+        $two = self::validator()->validate($definition, AnswerSet::fromArray(['labs' => [$file(1), $file(2)]]), null);
+        $three = self::validator()->validate($definition, AnswerSet::fromArray(['labs' => [$file(1), $file(2), $file(3)]]), null);
+
+        self::assertSame([], $two);
+        self::assertSame(['labs' => 'Labs takes at most 2 files.'], $three);
+    }
+
     public function testAMissingRequiredAnswerIsRejected(): void
     {
         $definition = self::definition([

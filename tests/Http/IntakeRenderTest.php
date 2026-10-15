@@ -95,11 +95,11 @@ final class IntakeRenderTest extends TestCase
     public function testAnUnsupportedTypeRendersAStatedErrorNamingTheQuestion(): void
     {
         $html = self::render([
-            'fieldId' => 'sig', 'name' => 'sig', 'type' => 'signature', 'label' => 'Sign here',
+            'fieldId' => 'cap', 'name' => 'cap', 'type' => 'captcha', 'label' => 'Prove it',
         ]);
 
-        self::assertStringContainsString('data-intake-unsupported="signature"', $html, '[10.13]');
-        self::assertStringContainsString('Sign here', $html);
+        self::assertStringContainsString('data-intake-unsupported="captcha"', $html, '[10.13]');
+        self::assertStringContainsString('Prove it', $html);
         self::assertStringContainsString('cannot be submitted', $html);
     }
 

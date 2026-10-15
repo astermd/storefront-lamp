@@ -529,7 +529,7 @@ final class IntakeSessionTest extends TestCase
      *
      * @param array<string, mixed>|null $definition
      */
-    private function session(?array $definition): IntakeSession
+    private function session(?array $definition, bool $collectsFiles = true): IntakeSession
     {
         $log = new OperatorLog($this->dir . '/app.log');
         $evaluator = new RuleEvaluator($log);
@@ -546,6 +546,7 @@ final class IntakeSessionTest extends TestCase
             new LeadWriter($this->leads, $mapper, $log),
             $mapper,
             $log,
+            $collectsFiles,
         );
     }
 
@@ -684,10 +685,30 @@ final class IntakeSessionTest extends TestCase
     }
 
     /** The same short form plus a question no shipped renderer implements. @return array<string, mixed> */
+    public function testUnderARendererThatCannotUploadAFileQuestionRefusesTheSubmission(): void
+    {
+        // The hosted engine keeps a picked file's name and never its bytes, so
+        // completing the form there would send a clinician an intake whose
+        // file question was answered with nothing.
+        $form = self::shortForm([
+            ['fieldId' => 'up', 'name' => 'labs', 'type' => 'file-upload', 'label' => 'Labs', 'required' => false],
+        ]);
+        $answers = ['first_name' => 'Ada', 'email' => 'ada@example.com', 'consent' => 'on'];
+
+        $refused = $this->session($form, collectsFiles: false)->submit(self::TELEFORM, IntakeSession::STEP_INTAKE, $answers);
+
+        self::assertFalse($refused->completed);
+        self::assertStringContainsString('file-upload', $refused->errors['_form'] ?? '');
+        self::assertTrue(
+            $this->session($form)->submit(self::TELEFORM, IntakeSession::STEP_INTAKE, $answers)->completed,
+            'the same form completes where files can be collected',
+        );
+    }
+
     private static function shortFormWithUnsupportedType(): array
     {
         return self::shortForm([
-            ['fieldId' => 'sig', 'name' => 'sig', 'type' => 'signature', 'label' => 'Sign here', 'required' => false],
+            ['fieldId' => 'cap', 'name' => 'cap', 'type' => 'captcha', 'label' => 'Prove it', 'required' => false],
         ]);
     }
 }

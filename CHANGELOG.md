@@ -8,6 +8,66 @@ names exactly which ones changed.
 
 ## [Unreleased]
 
+### File-upload and signature questions on the intake form
+
+The server-rendered intake form now collects the builder's `file-upload` and
+`signature` question types, which it used to refuse as unsupported (`[10.13]`).
+
+A file goes to the EMR as soon as it is picked, relayed through five new POST
+routes because the EMR call needs this deployment's credential:
+`/intake/upload/` takes a whole document or image, and
+`/intake/upload/start/`, `/part/`, `/finish/` and `/abort/` take a video, or
+anything over one request, in parts of up to 10 MB, three at a time. The
+EMR's answer, `{path, name, mime_type}`, is what the form posts and what the
+intake submission carries, one entry per file, under the type `file`.
+`docs/INTEGRATION-NOTES.md` item 30 records what the endpoints really accept:
+the single-request one refuses all video, the multipart one also takes
+documents and images, and neither takes HEIC yet.
+
+Each question is held to its own `maxFiles`, `allowMultipleFiles`,
+`maxFileSizeMb` and `fileTypes`, within the EMR's limits (its kinds, 200 MB a
+file), in the browser before a byte is sent and again on the server. The page
+shows each file's progress, a retry for a failed one and a remove button, and
+will not leave the page while a file is still going up or has failed. A
+reference the page posts is stored only when the EMR filed it under the
+visitor's own session, and an upload id is honoured only from the PHP session
+that started it, so no visitor can attach or write into another's file.
+
+A signature is drawn on a pad and kept as a PNG data URL in the answer itself,
+also sent under the type `file`. Every other field keeps the type it was
+authored with.
+
+Under `INTAKE_RENDERER=js-engine` both types stay unsupported: the hosted
+engine keeps a picked file's name and never its bytes, and draws no signature
+pad. That renderer's page now says so before the visitor starts, as the server
+renderer's always has.
+
+**Request size.** One upload request carries up to 10 MB, so the shipped
+`deploy/nginx.conf` sets `client_max_body_size 12m`, `deploy/apache-vhost.conf`
+sets `LimitRequestBody`, and a new `public/.user.ini` raises PHP's
+`upload_max_filesize` and `post_max_size` for php-fpm. A server left lower
+still works -- the page sends nothing larger than PHP will take -- but see
+`deploy/README.md` for what a limit under 5 MB costs. Uploads use the new
+`intake.upload` rate-limit bucket in `config/payment.php`, and follow
+`app.session.analytics`: with it off, nothing would ever name a stored file, so
+none is stored.
+
+- `core/Forms/FileRules.php`, `FileReference.php`, `IntakeUploads.php`,
+  `EmrIntakeUploads.php`, `NullIntakeUploads.php`, `UploadOutcome.php`,
+  `core/Http/Controller/IntakeUploadController.php` (all new)
+- `core/Forms/FieldTypes.php`, `Field.php`, `Definition.php`, `AnswerSet.php`,
+  `AnswerValidator.php`, `AnswerEncoder.php`, `FieldViewModel.php`,
+  `IntakeSession.php`, `core/Http/Controller/IntakeController.php`,
+  `core/Bootstrap/AppFactory.php`
+- `config/routes.php`, `config/payment.php`
+- `theme/templates/partials/intake/field-file-upload.twig`,
+  `field-signature.twig` (new), `theme/templates/pages/intake/form.twig`,
+  `form-js-engine.twig`, `theme/js/intake-files.js` (new), `theme/js/intake.js`,
+  `public/assets/build/`
+- `public/.user.ini` (new), `deploy/nginx.conf`, `deploy/apache-vhost.conf`,
+  `deploy/README.md`
+- `docs/INTEGRATION-NOTES.md`, `docs/ARCHITECTURE.md`
+
 ### Address suggestions at checkout
 
 Typing in checkout's Address field now offers up to five US addresses, which
