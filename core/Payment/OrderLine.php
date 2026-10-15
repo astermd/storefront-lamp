@@ -11,8 +11,8 @@ namespace AsterMD\Storefront\Payment;
  *
  * `$providerOffer` and `$providerItem` are opaque strings the catalog resolved
  * from the channel's variant mapping (`[14.1]` capability 3). Both may be
- * null: the recorded channel gives free attachments no mapping at all, and a
- * product with no variants has no `product_mappings` either. A line with no
+ * null: a lab or free attachment the channel has not mapped carries none, nor
+ * does any variant its product's `product_mappings` does not name. A line with no
  * provider identity is dropped from the charge and logged (`[13.19]` cannot be
  * honoured for something the provider has never heard of) -- but only when it
  * is free. A priced line with no mapping stops checkout, because dropping it

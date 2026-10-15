@@ -136,9 +136,12 @@ final class CatalogBuilder
      * Builds a nested labtest/add_ons entry into a standalone product and
      * registers it in the shared `$products` map, deduping by slug (which is
      * a deterministic function of the source `_id` + name, so the same
-     * entity referenced twice always maps to the same slug) [2.14]. Nested
-     * entities have no `product_mappings` of their own, so every one of
-     * their variants gets `provider: null`.
+     * entity referenced twice always maps to the same slug) [2.14]. A nested
+     * entry carries its own `product_mappings`, independent of its parent's:
+     * an add-on is a separate line item at the provider, so it resolves
+     * against its own mappings and never inherits the parent's offer. An
+     * entry without the key gets `provider: null` on every variant, and
+     * validation reports the gap ([2.18]).
      *
      * @param array<string, array<string, mixed>> $products
      * @param array<string, mixed> $item
@@ -151,7 +154,8 @@ final class CatalogBuilder
             return $slug;
         }
 
-        $variants = self::buildVariants($item['variants'] ?? [], $item, []);
+        $mappings = is_array($item['product_mappings'] ?? null) ? $item['product_mappings'] : [];
+        $variants = self::buildVariants($item['variants'] ?? [], $item, $mappings);
 
         $products[$slug] = [
             'slug' => $slug,

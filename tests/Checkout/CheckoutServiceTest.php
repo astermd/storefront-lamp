@@ -461,6 +461,25 @@ final class CheckoutServiceTest extends TestCase
         self::assertSame([], $this->transport->requests);
     }
 
+    public function testAMappedFreeAttachmentIsALineItemOnTheChargeAtZero(): void
+    {
+        // [13.19]: every line, free attachments included, is a line item on
+        // the one charge. The catalog prices the add-on at 5.00 standalone, so
+        // the charged 0.00 can only come from the cart's [7.14a] price.
+        $cart = new Cart();
+        $cart->put(new CartLine('tirzepatide', 'Tirzepatide', 'rx', null, null, 1, 12000, 't-3m'));
+        $cart->put(new CartLine('mapped-addon', 'Mapped Addon', 'free-addon', null, 'tirzepatide', 1, 0, null));
+        $this->cartStore->save($cart);
+
+        $result = $this->serviceThatPlaces()->submit($this->buyer(), $this->card(), ['terms' => 'on']);
+
+        self::assertTrue($result->outcome->isPlaced());
+        $offers = $this->transport->body(count($this->transport->requests) - 1)['offers'];
+        self::assertCount(2, $offers);
+        self::assertSame(['337', '3415', '120.00'], [$offers[0]['offer_id'], $offers[0]['item_id'], $offers[0]['order_offer_price']]);
+        self::assertSame(['340', '2846', '0.00'], [$offers[1]['offer_id'], $offers[1]['item_id'], $offers[1]['order_offer_price']]);
+    }
+
     public function testARefusalBeforeTheChargeGivesBackOnlyAKeyItStillOwns(): void
     {
         // The release is conditional on the token this request claimed with,
@@ -1718,6 +1737,15 @@ final class CheckoutServiceTest extends TestCase
                 'kind' => 'free-addon',
                 'geo_blocks' => ['NY'],
                 'variants' => [],
+            ],
+            // Free, and mapped by the channel the way an add-on's own
+            // `product_mappings` resolve: a single synthesised variant.
+            'mapped-addon' => [
+                'slug' => 'mapped-addon',
+                'name' => 'Mapped Addon',
+                'kind' => 'free-addon',
+                'price_cents' => 500,
+                'variants' => [['id' => 'ma-1', 'name' => 'Mapped Addon', 'price_cents' => 500, 'provider' => ['offer_id' => '340', 'product_id' => '2846']]],
             ],
             'unmapped' => [
                 'slug' => 'unmapped',

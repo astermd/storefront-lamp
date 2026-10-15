@@ -186,8 +186,9 @@ final class VrioPayloadTest extends TestCase
 
     public function testALineWithNoProviderMappingIsNotSent(): void
     {
-        // The channel gives the free Syringe add-on no mapping at all, and the
-        // provider refuses an offer with no item, so there is nothing to send.
+        // A free add-on the channel has not mapped has no offer and no item,
+        // and the provider refuses an offer with no item, so there is nothing
+        // to send.
         $lines = [
             new OrderLine('tirzepatide-5mg', 'Tirzepatide', '337', '3414', 12000, 1),
             new OrderLine('syringe', 'Syringe', null, null, 0, 1),
@@ -196,6 +197,26 @@ final class VrioPayloadTest extends TestCase
         $body = VrioPayload::forOrder($this->envelope($lines), $this->card(), $this->credentials(), 1);
 
         self::assertCount(1, $body['offers']);
+    }
+
+    public function testAMappedFreeAddOnIsSentAsItsOwnLineAtZero(): void
+    {
+        // [13.19]: a free attachment is a line item on the one charge. Its
+        // price is sent as 0.00 rather than omitted, because an omitted price
+        // is priced from the provider's own item catalog -- which would charge
+        // for something the buyer was shown as free.
+        $lines = [
+            new OrderLine('tirzepatide-5mg', 'Tirzepatide', '337', '3414', 12000, 1),
+            new OrderLine('syringe', 'Syringe', '340', '2846', 0, 1),
+        ];
+
+        $body = VrioPayload::forOrder($this->envelope($lines), $this->card(), $this->credentials(), 1);
+
+        self::assertCount(2, $body['offers']);
+        self::assertSame('340', $body['offers'][1]['offer_id']);
+        self::assertSame('2846', $body['offers'][1]['item_id']);
+        self::assertSame('0.00', $body['offers'][1]['order_offer_price']);
+        self::assertSame('1', $body['offers'][1]['order_offer_quantity']);
     }
 
     public function testBillingRepeatsTheShippingAddressAndSaysSo(): void

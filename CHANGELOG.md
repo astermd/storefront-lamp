@@ -8,6 +8,27 @@ names exactly which ones changed.
 
 ## [Unreleased]
 
+### Add-ons reach the provider order
+
+An add-on in the channel now carries its own `product_mappings`, and
+`theme:sync` reads them: each add-on variant gets the offer and product ids its
+own mapping names, never its parent's. Before, every add-on and lab was built
+with no provider identity at all, so `theme:sync` warned that it needed one in
+the override layer and checkout left it off the provider order, logged as
+`payment.line_not_sent`.
+
+A mapped add-on is now a line item on the one charge (`[13.19]`), on Vrio and
+CheckoutChamp alike, sent at `0.00` as `[7.14a]` prices it -- the price is
+always sent, so the provider never charges its own catalog figure for
+something the buyer was shown as free. On CheckoutChamp an add-on's `offer_id`
+is its campaign, and a cart whose lines name two campaigns is refused, so map
+an add-on under the same campaign as the products it attaches to. A lab, or an
+add-on the channel leaves unmapped, behaves as before.
+
+Run `bin/console theme:sync --apply` to pick the mappings up.
+
+- `core/Catalog/CatalogBuilder.php`, `core/Payment/OrderLine.php`
+
 ### File-upload and signature questions on the intake form
 
 The server-rendered intake form now collects the builder's `file-upload` and

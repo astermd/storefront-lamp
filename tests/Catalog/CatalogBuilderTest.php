@@ -497,6 +497,70 @@ final class CatalogBuilderTest extends TestCase
         self::assertArrayNotHasKey('orphan-orphan-addon', $catalog['products']);
     }
 
+    /** @return array<string, mixed> one `product_mappings[]` entry in the shape the EMR emits */
+    private static function vrioMapping(string $variantId, string $offerId, string $providerProductId): array
+    {
+        return [
+            '_id' => 'map-' . $variantId,
+            'type' => 'vrio',
+            'status' => 1,
+            'product_id' => $variantId,
+            'variant_id' => $variantId,
+            'integration' => ['type' => 'payment_aggregator', 'integration_id' => 'integ01'],
+            'mapping' => [
+                'type' => 'vrio',
+                'offer_id' => $offerId,
+                'product_id' => $providerProductId,
+                'variant_id' => $providerProductId,
+            ],
+        ];
+    }
+
+    public function testAddOnResolvesProviderFromItsOwnMappings(): void
+    {
+        $entry = self::minimalEntry('entry01', 'parent01xxxxxxxxxxxxxxxxxx', 'Parent Product');
+        $entry['product_mappings'] = [self::vrioMapping('parent01xxxxxxxxxxxxxxxxxx', '338', '9001')];
+        $entry['add_ons'] = [[
+            '_id' => 'addon01xxxxxxxxxxxxxxxxxxx',
+            'name' => 'Mapped Addon',
+            'single' => [['default_price' => 5]],
+            'variants' => [],
+            'product_mappings' => [self::vrioMapping('addon01xxxxxxxxxxxxxxxxxxx', '340', '2846')],
+        ]];
+
+        $catalog = CatalogBuilder::build(['_id' => 'chan01', 'name' => 'Synthetic Channel', 'products' => [$entry]]);
+
+        self::assertSame(
+            ['offer_id' => '340', 'product_id' => '2846'],
+            $catalog['products']['addon0-mapped-addon']['variants'][0]['provider'],
+        );
+        self::assertSame(
+            ['offer_id' => '338', 'product_id' => '9001'],
+            $catalog['products']['parent-parent-product']['variants'][0]['provider'],
+        );
+    }
+
+    public function testAddOnNeverInheritsItsParentsMappings(): void
+    {
+        // The parent's list carries an entry keyed by the add-on's own id, so
+        // only the rule under test keeps it off the add-on: the add-on is its
+        // own provider line item and resolves against its own list alone.
+        $addOnId = 'addon01xxxxxxxxxxxxxxxxxxx';
+        $entry = self::minimalEntry('entry01', 'parent01xxxxxxxxxxxxxxxxxx', 'Parent Product');
+        $entry['product_mappings'] = [self::vrioMapping($addOnId, '338', '9001')];
+        $entry['add_ons'] = [[
+            '_id' => $addOnId,
+            'name' => 'Unmapped Addon',
+            'single' => [['default_price' => 5]],
+            'variants' => [],
+        ]];
+
+        $catalog = CatalogBuilder::build(['_id' => 'chan01', 'name' => 'Synthetic Channel', 'products' => [$entry]]);
+
+        self::assertSame($addOnId, $entry['product_mappings'][0]['variant_id'], 'precondition: the parent maps the add-on id');
+        self::assertNull($catalog['products']['addon0-unmapped-addon']['variants'][0]['provider']);
+    }
+
     public function testFractionalDollarPricesRoundCorrectlyBeforeCastToCents(): void
     {
         $entry = self::minimalEntry('entry01', 'fract01xxxxxxxxxxxxxxxxxxx', 'Fractional Widget');

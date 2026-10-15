@@ -184,6 +184,26 @@ final class CheckoutChampAdapterTest extends TestCase
         self::assertArrayNotHasKey('product2_id', $params);
     }
 
+    public function testAMappedFreeAddOnIsSentAsItsOwnLineAtZero(): void
+    {
+        // [13.19]: a free attachment is a line item on the one charge, priced
+        // 0.00 explicitly so the provider does not price it from its own
+        // catalog. It shares the parent's campaign, or the order is refused.
+        $transport = $this->transportThatPlaces();
+
+        $this->adapter($transport)->place($this->envelope([
+            new OrderLine('nad-500', 'NAD+ (500mg)', '459', '15271', 12000, 1),
+            new OrderLine('syringe', 'Syringe', '459', '15280', 0, 1),
+        ]), $this->card());
+
+        $params = $transport->params(1);
+
+        self::assertSame('459', $params['campaignId']);
+        self::assertSame('15280', $params['product2_id']);
+        self::assertSame('1', $params['product2_qty']);
+        self::assertSame('0.00', $params['product2_price']);
+    }
+
     public function testTheQaMechanismAuthorizesThroughTheBillingEndpointWithForceQa(): void
     {
         // The default, and the one the provider recommends. It authorizes
