@@ -99,6 +99,14 @@ invalid code rather than shown as applied. Only `priceDiscount` counts; a
 `shipDiscount` is logged, since the storefront charges no shipping line.
 `docs/INTEGRATION-NOTES.md` item 28 records the endpoint's answers.
 
+A code the provider refuses with a reason of its own -- "This coupon has
+already been redeemed. Please try again", "Coupon is expired" -- shows the
+buyer that reason instead of "That discount code could not be applied", so they
+know to stop trying rather than write to support. Only a refusal that names
+the coupon is passed on; one about the request itself ("No products exist in
+the order", a refused login) keeps the generic notice. `PromotionQuote` gains
+an optional `$notice` for this, which an adapter may leave null.
+
 Requires `astermd/checkoutchamp-client` 0.0.2, which adds `orderCoupon()`; the
 constraint in `composer.json` is raised to `^0.0.2`. Against an older client the
 quote fails closed: the code is rejected as `unavailable` and the order is
@@ -107,6 +115,7 @@ placed at full price.
 - `core/Payment/CheckoutChamp/CheckoutChampAdapter.php`,
   `core/Payment/CheckoutChamp/CheckoutChampPayload.php`
 - `core/Payment/CaptureRequest.php`, `core/Console/CaptureOrderCommand.php`
+- `core/Payment/PromotionQuote.php`, `core/Checkout/CheckoutService.php`
 - `composer.json`, `composer.lock`
 - `docs/INTEGRATION-NOTES.md`, `docs/ARCHITECTURE.md`
 

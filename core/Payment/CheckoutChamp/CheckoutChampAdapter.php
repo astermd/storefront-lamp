@@ -299,7 +299,7 @@ final class CheckoutChampAdapter implements PaymentAdapter
         if (($response['result'] ?? null) !== 'SUCCESS' || !is_array($response['message'] ?? null)) {
             $this->log->info('payment.promotion_refused', ['response' => CardScrubber::scrub($response)]);
 
-            return PromotionQuote::rejected($code, 'invalid');
+            return PromotionQuote::rejected($code, 'invalid', self::couponNotice($response['message'] ?? null));
         }
 
         $message = $response['message'];
@@ -316,6 +316,32 @@ final class CheckoutChampAdapter implements PaymentAdapter
         }
 
         return PromotionQuote::accepted($code, $cents);
+    }
+
+    /**
+     * The refusal's own text, when it is about the code and so worth showing
+     * the buyer -- "This coupon has already been redeemed. Please try again",
+     * "Coupon is expired".
+     *
+     * The same ERROR result also carries faults in the request itself ("No
+     * products exist in the order", a refused login), which say nothing a
+     * buyer can act on and something about this deployment they should not
+     * see. Only a message that names the coupon is passed on; everything else
+     * keeps the generic refusal.
+     */
+    private static function couponNotice(mixed $message): ?string
+    {
+        if (!is_string($message)) {
+            return null;
+        }
+
+        $message = trim((string) preg_replace('/\s+/', ' ', strip_tags($message)));
+
+        if ($message === '' || mb_strlen($message) > 200 || stripos($message, 'coupon') === false) {
+            return null;
+        }
+
+        return $message;
     }
 
     /**

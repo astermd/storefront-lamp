@@ -718,6 +718,7 @@ couponCode=COUPON30, product1_price=100.00, qty 1  -> {"result":"SUCCESS","messa
 couponCode=COUPON30, product1_price=0.25,   qty 1  -> {"result":"SUCCESS","message":{"priceDiscount":0.08,"shipDiscount":0}}
 couponCode=NOSUCHCODE                              -> {"result":"SUCCESS","message":{"priceDiscount":0,"shipDiscount":0}}
 an expired code                                    -> {"result":"ERROR","message":"Coupon is expired"}
+a code already redeemed                            -> {"result":"ERROR","message":"This coupon has already been redeemed. Please try again"}
 no product lines                                   -> {"result":"ERROR","message":"No products exist in the order"}
 ```
 
@@ -732,6 +733,10 @@ no product lines                                   -> {"result":"ERROR","message
   limited to `US`, quoted with no country, answers `priceDiscount: 0`; with
   `shipCountry=US` it answers its real figure. The quote always sends the
   buyer's country.
+- **A refusal's `message` is sometimes the buyer's answer and sometimes this
+  deployment's fault.** The adapter shows the buyer a message that names the
+  coupon, as the expired and redeemed ones do, and keeps the generic notice for
+  anything else.
 - **A percentage code with a small rate rounds to nothing on a small cart.**
   0.02% of $0.25 is $0.00005, which answers `0`, and is refused as above.
 

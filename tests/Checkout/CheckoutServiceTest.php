@@ -37,6 +37,7 @@ use AsterMD\Storefront\Payment\OrderEnvelope;
 use AsterMD\Storefront\Payment\PaymentCredential;
 use AsterMD\Storefront\Payment\PaymentDescriptor;
 use AsterMD\Storefront\Payment\PlacementOutcome;
+use AsterMD\Storefront\Payment\PromotionQuote;
 use AsterMD\Storefront\Payment\SettlementMode;
 use AsterMD\Storefront\Payment\Vrio\VrioAdapter;
 use AsterMD\Storefront\Payment\Vrio\VrioApiFactory;
@@ -1259,6 +1260,27 @@ final class CheckoutServiceTest extends TestCase
         self::assertNotSame([], $this->log->eventsNamed('checkout.promotion_exceeds_cart'));
     }
 
+    public function testTheProvidersReasonForRefusingACodeIsWhatTheBuyerIsTold(): void
+    {
+        // "Already redeemed" tells the buyer to stop trying; "could not be
+        // applied" sends them to support.
+        $notice = 'This coupon has already been redeemed. Please try again';
+        $service = $this->service(null, quote: PromotionQuote::rejected('USED', 'invalid', $notice));
+
+        $outcome = $service->applyPromotion('USED');
+
+        self::assertFalse($outcome->accepted);
+        self::assertSame($notice, $outcome->notice);
+        self::assertNull($this->journey->promotion);
+    }
+
+    public function testARefusalWithNoReasonOfItsOwnKeepsTheGenericNotice(): void
+    {
+        $service = $this->service(null, quote: PromotionQuote::rejected('NOPE', 'invalid'));
+
+        self::assertSame('That discount code could not be applied.', $service->applyPromotion('NOPE')->notice);
+    }
+
     public function testAStoredQuoteWithNoCartBehindItIsRequotedRatherThanTrusted(): void
     {
         // Journey state survives a deploy, so a promotion written before the
@@ -1360,6 +1382,7 @@ final class CheckoutServiceTest extends TestCase
         array $upsells = self::UPSELLS,
         SettlementMode $settlement = SettlementMode::Capture,
         ?bool $supportsAuthorizeCapture = null,
+        ?PromotionQuote $quote = null,
     ): CheckoutService {
         return $this->service(
             'vrio-order-approved.json',
@@ -1546,6 +1569,7 @@ final class CheckoutServiceTest extends TestCase
         array $upsells = self::UPSELLS,
         SettlementMode $settlement = SettlementMode::Capture,
         ?bool $supportsAuthorizeCapture = null,
+        ?PromotionQuote $quote = null,
     ): CheckoutService {
         if ($sessionUuid !== self::SESSION_UUID) {
             $this->boot($sessionUuid);
@@ -1570,9 +1594,9 @@ final class CheckoutServiceTest extends TestCase
             journeys: $this->journeys,
             rules: new CartRules($catalog),
             catalog: $catalog,
-            adapter: $strategy === null && $promotions && $supportsAuthorizeCapture === null
+            adapter: $strategy === null && $promotions && $supportsAuthorizeCapture === null && $quote === null
                 ? $adapter
-                : new RedeclaredAdapter($adapter, $strategy, $promotions, $supportsAuthorizeCapture),
+                : new RedeclaredAdapter($adapter, $strategy, $promotions, $supportsAuthorizeCapture, $quote),
             consents: Consents::fromConfig((array) require dirname(__DIR__, 2) . '/config/consent.php'),
             bumps: OrderBumps::fromConfig(['max_on_page' => 3, 'bumps' => []], $catalog, $this->log->log),
             verification: new NullVerificationGateway(),

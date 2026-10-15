@@ -659,10 +659,10 @@ final class CheckoutService
 
         $cart = $this->carts->cart();
         $state = $this->journeys->state();
-        $promotion = $this->quoteAgainst($cart, $state, $code);
+        [$promotion, $refusal] = $this->quoteAgainst($cart, $state, $code);
 
         if ($promotion === null) {
-            return CartOutcome::rejected('That discount code could not be applied.');
+            return CartOutcome::rejected($refusal ?? 'That discount code could not be applied.');
         }
 
         $this->storePromotion($state, $cart, $promotion);
@@ -1352,7 +1352,7 @@ final class CheckoutService
             return [$stored, null];
         }
 
-        $fresh = $this->quoteAgainst($cart, $state, $stored->code);
+        [$fresh] = $this->quoteAgainst($cart, $state, $stored->code);
 
         if ($fresh === null) {
             $this->storePromotion($state, $cart, null);
@@ -1377,8 +1377,8 @@ final class CheckoutService
     }
 
     /**
-     * One read-only quote of a code against one cart, or null when the code
-     * does not price against it.
+     * One read-only quote of a code against one cart, with no promotion when
+     * the code does not price against it.
      *
      * The single place a quote is turned into a stored promotion, so the two
      * entry points — the buyer applying a code, and a re-price after the cart
@@ -1394,11 +1394,16 @@ final class CheckoutService
      * between the two endpoints fails exactly that way, and silently. Refusing
      * leaves the buyer looking at the full price they will really be charged,
      * which is the only reading of the two that is certainly true.
+     *
+     * @return array{0: ?Promotion, 1: ?string} the promotion, or null with the
+     *                                          provider's own reason for the
+     *                                          refusal when it gave one fit to
+     *                                          show the buyer
      */
-    private function quoteAgainst(Cart $cart, ?JourneyState $state, string $code): ?Promotion
+    private function quoteAgainst(Cart $cart, ?JourneyState $state, string $code): array
     {
         if (!$this->adapter->capabilities()->supportsPromotions) {
-            return null;
+            return [null, null];
         }
 
         $quote = $this->adapter->quotePromotion($this->quoteEnvelope($cart, $state), $code);
@@ -1406,7 +1411,7 @@ final class CheckoutService
         if (!$quote->valid) {
             $this->log->info('checkout.promotion_rejected', ['reason' => $quote->reason]);
 
-            return null;
+            return [null, $quote->notice];
         }
 
         if ($quote->discountCents > $cart->subtotalCents()) {
@@ -1416,10 +1421,10 @@ final class CheckoutService
                 'subtotal_cents' => $cart->subtotalCents(),
             ]);
 
-            return null;
+            return [null, null];
         }
 
-        return new Promotion($quote->code, $quote->discountCents);
+        return [new Promotion($quote->code, $quote->discountCents), null];
     }
 
     /**

@@ -481,6 +481,33 @@ final class CheckoutChampAdapterTest extends TestCase
 
         self::assertFalse($quote->valid);
         self::assertSame('invalid', $quote->reason);
+        self::assertSame('Coupon is expired', $quote->notice);
+    }
+
+    public function testARefusalAboutTheRequestRatherThanTheCodeIsNotPassedToTheBuyer(): void
+    {
+        // The same ERROR result reports this deployment's own faults, which a
+        // buyer can do nothing about and should not see.
+        $transport = new FakeCheckoutChampTransport();
+        $transport->queueError('No products exist in the order');
+
+        $quote = $this->adapter($transport)->quotePromotion($this->envelope(), 'SAVE10');
+
+        self::assertSame('invalid', $quote->reason);
+        self::assertNull($quote->notice);
+    }
+
+    public function testAnUnknownCodeCarriesNoNoticeOfItsOwn(): void
+    {
+        // A zero discount is the provider's answer to a code it has never
+        // heard of, and it says nothing more about why.
+        $transport = new FakeCheckoutChampTransport();
+        $transport->queueSuccess(['priceDiscount' => 0, 'shipDiscount' => 0]);
+
+        $quote = $this->adapter($transport)->quotePromotion($this->envelope(), 'NOSUCHCODE');
+
+        self::assertFalse($quote->valid);
+        self::assertNull($quote->notice);
     }
 
     public function testAQuoteThatCannotReachTheProviderIsRejectedRatherThanThrown(): void
