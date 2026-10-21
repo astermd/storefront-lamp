@@ -6,7 +6,24 @@ must say the same thing. `bin/console --version` reads `composer.json`, so it is
 not a fourth copy to keep in step. An update is applied by copying files, so every entry
 names exactly which ones changed.
 
-## [Unreleased]
+## [0.0.6]
+
+Sends a channel-mapped add-on to the payment provider as its own line item at
+`0.00`, where it used to be left off the order. The intake form collects
+file-upload and signature answers, checkout suggests US addresses from Google
+or the EMR, and the discount box is offered on CheckoutChamp. The treatments
+listing's filter, "Get Started" and the product page's plan price are fixed.
+
+Run `bin/console theme:sync --apply` after updating, so the catalog picks up
+add-on mappings. Five intake upload routes and two checkout address routes are
+added in `config/routes.php`, and two rate-limit buckets, `intake.upload` and
+`checkout.address`, in `config/payment.php`; a deployment that has edited
+either file merges them in by hand. `EMR_VERIFICATION` is split into
+`EMR_VERIFY_EMAIL` and `EMR_VERIFY_ADDRESS`, and an existing `.env` behaves as
+before. The shipped server configs and the new `public/.user.ini` raise the
+request limit to 12 MB for file uploads; a lower limit still works, at the cost
+`deploy/README.md` describes. `astermd/checkoutchamp-client` is raised to
+`^0.0.2`. No migration is added.
 
 ### Add-ons reach the provider order
 
