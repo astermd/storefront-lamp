@@ -6,10 +6,11 @@
  * - clicking a treatment-plan button (`[data-select-option][data-variant-id]`)
  *   writes its variant id into the product page's hidden `#product-variant-id`
  *   field, so the add-to-cart form posts the plan the buyer just chose rather
- *   than always the first one. `script.js`'s existing `data-select-group`
- *   handler keeps owning `aria-pressed` — this only touches the hidden field.
- * - submitting any form inside `#cart-panel`, or the product page's
- *   add-to-cart form, marks itself `aria-busy` and disables its own submit
+ *   than always the first one, and shows that plan's `data-price` in
+ *   `#product-price`. `script.js`'s existing `data-select-group` handler keeps
+ *   owning `aria-pressed`. The price is display only: the server charges the
+ *   posted variant's own price whatever the page shows.
+ * - submitting any form inside `#cart-panel`, or any add-to-cart form, marks itself `aria-busy` and disables its own submit
  *   buttons, so a double click during the round-trip to the server can't
  *   post the same mutation twice.
  * - if the cart panel carries `data-cart-notice` on load (the server flashed
@@ -23,10 +24,14 @@
   'use strict';
 
   var variantField = document.getElementById('product-variant-id');
+  var priceField = document.getElementById('product-price');
   if (variantField) {
     document.querySelectorAll('[data-select-option][data-variant-id]').forEach(function (option) {
       option.addEventListener('click', function () {
         variantField.value = option.getAttribute('data-variant-id') || '';
+
+        var price = option.getAttribute('data-price');
+        if (priceField && price) priceField.textContent = price;
       });
     });
   }
@@ -56,8 +61,6 @@
     }
   }
 
-  var addToCartForm = document.querySelector('form[action$="/cart/add/"]');
-  if (addToCartForm) {
-    guardAgainstDoublePost(addToCartForm);
-  }
+  // The product page's form, and each card's "Get Started" on the listings.
+  document.querySelectorAll('form[action$="/cart/add/"]').forEach(guardAgainstDoublePost);
 })();

@@ -113,11 +113,11 @@ final class Definition
      *
      * @return list<string>
      */
-    public function unsupportedTypes(): array
+    public function unsupportedTypes(bool $collectsFiles = true): array
     {
         $unsupported = [];
         foreach ($this->flattened as $field) {
-            if (!$field->isSupported() && !in_array($field->type, $unsupported, true)) {
+            if (!$field->isSupported($collectsFiles) && !in_array($field->type, $unsupported, true)) {
                 $unsupported[] = $field->type;
             }
         }

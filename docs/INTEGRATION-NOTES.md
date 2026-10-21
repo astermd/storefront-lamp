@@ -699,7 +699,7 @@ its provider, and a cart cannot be half one and half the other.
 
 ### 27. What is still not recorded
 
-Two things, both declared `false` on the adapter rather than guessed at:
+One thing, declared `false` on the adapter rather than guessed at:
 
 - **`supportsOrderSearch`.** `orderQuery` works and its projection is rich, but
   `[21.9a]`'s reverse sweep turns its findings into alerts about money, and the
@@ -707,8 +707,129 @@ Two things, both declared `false` on the adapter rather than guessed at:
   have not been established across a real window. Declaring false produces *no
   sweep*, which the sweep is explicitly built to distinguish from a clean bill of
   health.
-- **`supportsPromotions`.** The client exposes no discount-quote endpoint, so
-  `[14.4]` hides the control rather than offering a box that can only reject.
+
+### 28. `/order/coupon/` answers an unknown code as a zero discount, not a refusal
+
+A code is priced without placing anything by `POST /order/coupon/`, with the
+campaign, the code and the same numbered lines the billing call sends:
+
+```
+couponCode=COUPON30, product1_price=100.00, qty 1  -> {"result":"SUCCESS","message":{"priceDiscount":30,"shipDiscount":0}}
+couponCode=COUPON30, product1_price=0.25,   qty 1  -> {"result":"SUCCESS","message":{"priceDiscount":0.08,"shipDiscount":0}}
+couponCode=NOSUCHCODE                              -> {"result":"SUCCESS","message":{"priceDiscount":0,"shipDiscount":0}}
+an expired code                                    -> {"result":"ERROR","message":"Coupon is expired"}
+a code already redeemed                            -> {"result":"ERROR","message":"This coupon has already been redeemed. Please try again"}
+no product lines                                   -> {"result":"ERROR","message":"No products exist in the order"}
+```
+
+- **Amounts are dollars, as JSON numbers**, rounded half up to the cent
+  (30% of $0.25 answers `0.08`). The per-line `product{i}_price` override and
+  `product{i}_qty` are both honoured, so the quote prices the cart the charge
+  will price.
+- **An unknown code is indistinguishable from a real one worth nothing here.**
+  Both answer SUCCESS with zeros. The adapter therefore refuses a zero discount
+  as `invalid` rather than showing "applied".
+- **A country-scoped code priced without `shipCountry` answers zero.** A code
+  limited to `US`, quoted with no country, answers `priceDiscount: 0`; with
+  `shipCountry=US` it answers its real figure. The quote always sends the
+  buyer's country.
+- **A refusal's `message` is sometimes the buyer's answer and sometimes this
+  deployment's fault.** The adapter shows the buyer a message that names the
+  coupon, as the expired and redeemed ones do, and keeps the generic notice for
+  anything else.
+- **A percentage code with a small rate rounds to nothing on a small cart.**
+  0.02% of $0.25 is $0.00005, which answers `0`, and is refused as above.
+
+`couponCode` on `/order/import/` applies the same discount the quote reported.
+The order then reads back `couponCode`, `discountPrice` and `totalDiscount`, and
+`totalAmount` is the discounted figure, so the charge reconciliation in `CheckoutChampOutcome`
+compares like with like. The pre-authorized settle call re-prices the lines it
+is sent, so it carries the code as well.
+
+---
+
+## Address suggestions
+
+### 29. The EMR's autofill answers strings from anywhere, and no ZIP
+
+`verification()->autofillAddress($search)` (`GET /v1/platform/extensions/address-autofill`)
+answers up to five suggestions:
+
+```
+"350 5th Ave New York" -> [{"unique_id":"ChIJyXBIaf5awokRA7y33q7Ghlw",
+                            "address":"350 5th Ave, Brooklyn, New York, USA",
+                            "main_text":"350 5th Ave"},
+                           {"unique_id":"Eh4zNTAg...","address":"350 5th Ave, New York, NY, USA",
+                            "main_text":"350 5th Ave"}, ...]
+"1600 Amphitheatre"    -> [... "1600 Amphitheatre Road, Mount Lonarch VIC, Australia" ...,
+                           ... "1600 Amphitheatre Parkway, Mountain View, CA 94043, Nice, Hello, Nigeria" ...]
+```
+
+- **Not restricted to the US**, and biased toward wherever the request comes from — which
+  is the storefront's server, not the buyer. `EmrAddressAutofill` keeps only the
+  suggestions ending in `USA`.
+- **No ZIP, and the state is sometimes spelled out** (`Brooklyn, New York, USA`). The SDK
+  has no call that resolves `unique_id` into components, so the storefront resolves a chosen
+  suggestion through `verifyAddress()`, whose `formatted_address` does carry a ZIP and a
+  two-letter state: `350 5th Avenue, New York, NY 10118-0110, USA`.
+- **`verifyAddress()`'s `valid` is about deliverability, not existence.** That same address
+  answers `valid: false` with `verdict.addressComplete: false` — no apartment — while being
+  exactly the building chosen, so the fill reads `formatted_address` whatever `valid` says.
+
+---
+
+## Intake file uploads
+
+### 30. The upload endpoints split by kind as well as by size, and not as documented
+
+A file-upload answer is stored before the submission that names it:
+`POST /intake-submissions/upload-file/{session_id}` takes a whole file, and
+`upload-file-multipart/initiate`, `part` and `finish` take one in numbered parts.
+Each answers `{path, name, mime_type}`, filed at
+`{account}/{org}/intake_submissions/{session_id}/{name}` with a UUID inserted
+before the extension. That reference, as given, is the answer's value; the
+submission's `type` for the field is `file`.
+
+```
+upload-file, text/plain | image/png | application/pdf, small  -> 200 {path, name, mime_type}
+upload-file, video/mp4, 2 KB                                  -> 400 "Unsupported attachment type: video&#x2F;mp4"
+upload-file, image/heic | image/heif                          -> 400 "Unsupported attachment type: image&#x2F;heic"
+upload-file, application/zip                                  -> 400 "Unsupported attachment type: application&#x2F;zip"
+initiate, application/pdf | image/* | text/plain | doc/docx   -> 200 {upload_id}
+initiate, video/mp4 | video/quicktime | video/webm            -> 200 {upload_id}
+initiate, image/heic | application/zip | video/x-msvideo      -> 400 "Unsupported file type: …"
+initiate, file_size 209715200                                 -> 200
+initiate, file_size 209715201                                 -> 400 "File size exceeds the 200 MB limit"
+abort, any id (a live one, a finished one, a session id)      -> 200 {"aborted": true}
+```
+
+- **The single-request endpoint refuses every video, however small**, and the
+  multipart one takes documents and images as well as video, where the
+  description of each says the opposite split. So a video always goes in parts,
+  as does anything too large for one request. `FileRules::needsParts()` is that
+  rule.
+- **One request may carry 10 MiB including the multipart envelope.** A file of
+  exactly 10,485,760 bytes is refused; 64 KiB is left for the envelope, which
+  makes 10,420,224 the largest whole file and the size of every part. Every part
+  but the last must be at least 5 MiB, which `finish` enforces.
+- **The cap on one file is 200 MiB** (209,715,200 bytes), checked at `initiate`.
+- **A refusal's message is HTML-escaped** (`image&#x2F;heic`). The storefront
+  does not show it: a 400 becomes its own "choose a different file".
+- **HEIC and HEIF are refused by both endpoints.** The storefront accepts them in
+  the picker regardless, so a phone photo gets the EMR's refusal in words rather
+  than a picker that will not open it, and needs no change when the EMR takes
+  them.
+- **`part` answers the ETag with its quotes** (`"\"7501fc35…\""`), and `finish`
+  wants it back exactly so, sorted by `part_number`.
+- **A finished multipart file reads back byte for byte**, through
+  `GET /intake-submissions/download-file/{path}`, which answers a short-lived
+  presigned URL.
+- **Nothing ties an upload id to a session.** `part`, `finish` and `abort`
+  answer for any id, so the storefront honours an id only from the PHP session
+  that started it.
+
+A signature is not uploaded: its answer is the drawing itself, as a
+`data:image/png;base64,…` URL, also under the type `file`.
 
 ---
 

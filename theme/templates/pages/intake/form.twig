@@ -63,6 +63,12 @@
           data-save-url="{{ url('/intake/save/') }}"
           data-submit-url="{{ url('/intake/submit/') }}"
           data-capture-url="{{ url('/intake/capture/') }}"
+          data-upload-url="{{ url('/intake/upload/') }}"
+          data-upload-start-url="{{ url('/intake/upload/start/') }}"
+          data-upload-part-url="{{ url('/intake/upload/part/') }}"
+          data-upload-finish-url="{{ url('/intake/upload/finish/') }}"
+          data-upload-abort-url="{{ url('/intake/upload/abort/') }}"
+          data-upload-request-bytes="{{ upload_request_bytes }}"
           data-page-count="{{ definition.pageCount }}"
           data-intake-rules="{{ rules_json }}"
           {% if unsupported_types is not empty %}data-intake-blocked="1"{% endif %}>
@@ -126,5 +132,6 @@
 {% block scripts %}
 <script src="{{ asset('script.js') }}" defer></script>
 <script src="{{ asset('datepicker.js') }}" defer></script>
+<script src="{{ asset('intake-files.js') }}" defer></script>
 <script src="{{ asset('intake.js') }}" defer></script>
 {% endblock %}

@@ -28,6 +28,21 @@
 
   <section class="mx-auto max-w-[660px] px-6 py-16">
 
+    {% if unsupported_types is not empty %}
+      {# Said before the visitor starts rather than only when the submit is
+         refused ([10.13]). This includes a file upload and a signature: the
+         engine keeps a picked file's name and never its bytes, and draws no
+         signature pad, so neither can be collected here. #}
+      <div role="alert" class="mb-10 rounded-sm border-2 border-danger bg-danger-light px-5 py-4">
+        <p class="text-sm font-semibold text-danger">This form cannot be completed here.</p>
+        <p class="mt-2 text-sm leading-relaxed text-heading">
+          It contains {{ unsupported_types|length > 1 ? 'question types' : 'a question type' }}
+          this storefront cannot collect ({{ unsupported_types|join(', ') }}). Please contact us and we will
+          complete it with you.
+        </p>
+      </div>
+    {% endif %}
+
     {% if termination_message %}
       {# The server has already judged this journey. Shown on entry so a
          returning visitor is not invited to answer a form they cannot pass

@@ -132,6 +132,9 @@ final class FieldViewModel
             'min_value' => self::constraint($field, 'minValue'),
             'max_value' => self::constraint($field, 'maxValue'),
             'subfields' => self::subfields($field, $composite),
+            'files' => $field->isFileUpload() ? self::files($own) : [],
+            'upload' => $field->isFileUpload() ? self::upload($field) : null,
+            'signature' => $field->isSignature() ? self::signaturePad($field) : null,
             // The field's own conditions, for the stepper to re-evaluate as
             // answers change. Encoded here rather than in the template so the
             // escaping is a property of the value: with the tag, ampersand and
@@ -302,6 +305,66 @@ final class FieldViewModel
         }
 
         return $models;
+    }
+
+    /**
+     * The files already attached, each with the JSON its hidden input posts
+     * back and the name to show.
+     *
+     * The EMR stores a file under its own name with a UUID before the
+     * extension, so the name shown is that one with the UUID taken out --
+     * near enough to what the patient picked to recognise it.
+     *
+     * @return list<array{label: string, json: string}>
+     */
+    private static function files(mixed $answer): array
+    {
+        $files = [];
+        foreach (is_array($answer) ? $answer : [] as $entry) {
+            $reference = FileReference::fromArray($entry);
+            if ($reference === null) {
+                continue;
+            }
+
+            $files[] = [
+                'label' => (string) preg_replace('/-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}(?=\.[^.]*$|$)/i', '', $reference->name),
+                'json' => (string) json_encode($reference->toArray(), JSON_UNESCAPED_SLASHES),
+            ];
+        }
+
+        return $files;
+    }
+
+    /** @return array{max_files: ?int, max_bytes: int, max_label: string, accept: string, drag_drop: bool} */
+    private static function upload(Field $field): array
+    {
+        $rules = FileRules::for($field);
+
+        return [
+            'max_files' => $rules->maxFiles,
+            'max_bytes' => $rules->maxBytes,
+            'max_label' => FileRules::megabytes($rules->maxBytes),
+            'accept' => $rules->accept(),
+            'drag_drop' => $rules->dragDrop,
+        ];
+    }
+
+    /**
+     * The pad's drawing size as authored, within reason: the builder's
+     * default is 320 by 220, and the pad is scaled down to fit a narrow
+     * screen whatever is set here.
+     *
+     * @return array{width: int, height: int}
+     */
+    private static function signaturePad(Field $field): array
+    {
+        $width = $field->properties['signatureCanvasWidth'] ?? null;
+        $height = $field->properties['signatureCanvasHeight'] ?? null;
+
+        return [
+            'width' => is_numeric($width) ? max(160, min(800, (int) $width)) : 320,
+            'height' => is_numeric($height) ? max(80, min(400, (int) $height)) : 220,
+        ];
     }
 
     /** An unauthored notice falls back to the one treatment that cannot overstate itself. */

@@ -109,16 +109,13 @@
           <div class="flex flex-1 flex-col justify-between py-0.5">
             <div>
               <h3 class="font-heading text-[18px] font-medium sm:text-[20px] text-heading">{{ product.name }}</h3>
-              <p class="mt-2 text-[15px] leading-relaxed text-body">{{ product.description }}</p>
+              <p class="mt-2 line-clamp-3 text-[15px] leading-relaxed text-body">{{ product.description }}</p>
             </div>
             <p class="mt-3 text-base font-semibold text-primary">Starting from {{ product.variants is defined and product.variants is not empty ? product.variants[0].price_cents|money : product.price_cents|money }}/mo</p>
           </div>
         </div>
         <div class="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <a href="{{ url('/treatments') }}" class="inline-flex items-center justify-center gap-2 rounded-sm bg-primary h-[41px] px-5 text-base font-medium sm:h-auto sm:py-3 text-primary-foreground transition-colors hover:bg-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-hover">
-            Get Started
-            <i data-lucide="arrow-right" class="size-4"></i>
-          </a>
+          {% include 'partials/get-started.twig' with {icon_class: 'size-4'} %}
           <a href="{{ url('/products/' ~ product.slug) }}" class="inline-flex items-center justify-center gap-2 rounded-sm border border-border bg-background h-[41px] px-5 text-base font-medium sm:h-auto sm:py-3 text-heading transition-colors hover:border-primary hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
             Learn More
             <i data-lucide="arrow-right" class="size-4"></i>
@@ -127,6 +124,15 @@
       </article>
       {% endfor %}
 
+    </div>
+
+    {# The header's "Treatments" lands on this section, which shows a few; the
+       full, filterable list is one step further. #}
+    <div class="mt-10 text-center">
+      <a href="{{ url('/treatments') }}" class="inline-flex items-center justify-center gap-2 rounded-sm border border-border bg-background h-[41px] px-5 text-base font-medium sm:h-auto sm:py-3 text-heading transition-colors hover:border-primary hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
+        View All Treatments
+        <i data-lucide="arrow-right" class="size-4"></i>
+      </a>
     </div>
   </section>
 

@@ -98,6 +98,33 @@ final class ProductPageTest extends TestCase
         }
     }
 
+    public function testANonPrescriptionOffersCheckoutAloneAndNoPostCheckoutSteps(): void
+    {
+        // No assessment exists for it, and the note about steps after checkout
+        // concerns prescriptions only.
+        $products = SampleCatalog::products();
+        $products['tadalafil']['kind'] = 'otc';
+        $products['tadalafil']['teleform_id'] = null;
+
+        $response = AppFactory::create(dirname(__DIR__, 2), [CatalogProvider::class => SampleCatalog::provider($products)])
+            ->handle((new ServerRequestFactory())->createServerRequest('GET', '/products/tadalafil/'));
+        $body = (string) $response->getBody();
+
+        self::assertSame(200, $response->getStatusCode());
+        self::assertStringNotContainsString('value="assessment"', $body);
+        self::assertStringNotContainsString('data-post-checkout-steps', $body);
+        self::assertStringContainsString('value="checkout"', $body);
+    }
+
+    public function testEachPlanCarriesItsOwnPriceForThePageToShowWhenChosen(): void
+    {
+        $body = $this->productPage('semaglutide');
+
+        self::assertStringContainsString('data-variant-id="semaglutide-1m" data-price="$50.00"', $body);
+        self::assertStringContainsString('data-variant-id="semaglutide-3m" data-price="$46.00"', $body);
+        self::assertStringContainsString('data-variant-id="semaglutide-6m" data-price="$40.00"', $body);
+    }
+
     public function testSingleVariantProductHasNoTreatmentPlanSection(): void
     {
         $app = $this->app();

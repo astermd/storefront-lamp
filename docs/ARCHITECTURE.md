@@ -239,7 +239,7 @@ alphabetically.
 
 | Namespace | Owns |
 | --- | --- |
-| `Forms` | The intake questionnaire engine: teleform metadata and definition fetch, caching, field rendering models, rule evaluation, answer validation, disqualification, lead writing. |
+| `Forms` | The intake questionnaire engine: teleform metadata and definition fetch, caching, field rendering models, rule evaluation, answer validation, disqualification, lead writing, and file-upload answers (`FileRules`, `FileReference`, the `IntakeUploads` port). |
 | `Verification` | The identity-check step: `VerificationStep`, `IdentityVerificationSequence`, `VerificationPlacement`, `IdentityVerdict`. |
 | `Checkout` | The checkout decision surface: `CheckoutService`, buyer validation, consents, order bumps, promotions, totals, idempotency, order recording, `PostChargeGuard`. |
 | `Payment` | The provider boundary: the `PaymentAdapter` contract, `AdapterCapabilities`, `AdapterRegistry`, `PaymentCredential`, and the `Vrio/` adapter. |
@@ -277,15 +277,17 @@ alphabetically.
 behind an interface. Each interface has a real implementation that talks to the system and a
 **Null implementation that talks to nothing**, and the container decides which one is bound.
 
-There are thirteen interfaces under `core/`; these are the ones with a Null counterpart:
+There are fifteen interfaces under `core/`; these are the ones with a Null counterpart:
 
 | Port | Real | Null |
 | --- | --- | --- |
 | `Emr\SessionGateway` | `EmrSessionGateway` | `NullSessionGateway` |
 | `Emr\CartGateway` | `EmrCartGateway` | `NullCartGateway` |
 | `Emr\VerificationGateway` | `EmrVerificationGateway` | `NullVerificationGateway` |
+| `Emr\AddressAutofill` | `EmrAddressAutofill` | `NullAddressAutofill` |
 | `Forms\TeleformGateway` | `EmrTeleformGateway` | `NullTeleformGateway` |
 | `Forms\IntakeGateway` | `EmrIntakeGateway` | `NullIntakeGateway` |
+| `Forms\IntakeUploads` | `EmrIntakeUploads` | `NullIntakeUploads` |
 | `Forms\LeadGateway` | `EmrLeadGateway` | `NullLeadGateway` |
 | `Verification\IdentityGateway` | `EmrIdentityGateway` | `NullIdentityGateway` |
 | `Payment\PaymentAdapter` | `Vrio\VrioAdapter` | `NullPaymentAdapter` |
@@ -299,23 +301,31 @@ that names any step), and `Seo\StructuredData\Emitter`.
 
 ### What binds the Null ones
 
-Three configuration switches, all read inside `AppFactory::create()`:
+Four configuration switches, all read inside `AppFactory::create()`:
 
 - **`app.session.analytics`** governs the EMR gateway family — session, cart, teleform,
-  intake, lead. `config/app.php` derives it as `APP_ENV !== 'test'`, so **under the test
+  intake, intake uploads, lead. Uploads follow the submission's switch because a file
+  answer reaches a clinician only inside the submission. `config/app.php` derives it as `APP_ENV !== 'test'`, so **under the test
   suite the whole EMR family is Null-bound and no test run can reach the network or write
   to the dev EMR.** Tests that exercise session or intake flows inject their own gateway
   through the container instead.
 - **`verification.enabled`** governs `IdentityGateway`. Off as shipped, and therefore always
-  off under tests. It deliberately does *not* follow `app.features.emr_verification`: the
-  two govern different resources that happen to share an EMR endpoint family, and tying them
+  off under tests. It deliberately does *not* follow `app.features.emr_verify_*`: they
+  govern different resources that happen to share an EMR endpoint family, and tying them
   together would mean an operator could not have the checkout address check without also
-  running identity checks that, as recorded against the live integration, currently refuse
-  everybody.
-- **`app.features.emr_verification`** governs `VerificationGateway` (email deliverability
-  and address checks at checkout). Off by default, because the credential this storefront
-  ships with is refused for that whole resource — and a check that always fails is worse
+  running identity checks.
+- **`app.features.emr_verify_email` and `emr_verify_address`** govern `VerificationGateway`
+  (email deliverability and address checks at checkout), each check under its own switch;
+  the Null gateway is bound when both are off. Off by default, because whether the EMR
+  answers them depends on the organisation's grant — and a check that always fails is worse
   than none, since it would either block real buyers or teach an operator to ignore it.
+  `EMR_VERIFICATION`, the single switch they replaced, still sets both when neither is
+  given.
+- **`app.features.address_autofill`** governs `AddressAutofill`, checkout's address
+  suggestions when the deployment has no Google Maps key. It is not a deployment's switch:
+  `config/app.php` derives it as `APP_ENV !== 'test'`, so it is on everywhere but the test
+  suite. With a Maps key the browser asks Google Places directly and this port is never
+  called.
 
 `PaymentAdapter` is a fourth case and works differently: it is not switched by environment
 but resolved from the synced provider category (see [Payment](#payment)), falling back to
@@ -335,6 +345,9 @@ states:
   with analytics off must behave exactly like one whose mirror always succeeded; reporting
   `false` would be read as "the save failed" and could surface a retry or a warning to a
   visitor whose form is working exactly as configured.
+- `NullIntakeUploads` is the exception, and reports **failure**: a patient told their file
+  was attached would believe the clinician can see it, and with analytics off nothing ever
+  names the stored file.
 - `NullIdentityGateway` answers **inconclusive** to everything, and never `passed`. A
   deployment may run the identity step blocking, and a disabled gateway reporting a pass
   would let anyone through the moment an operator switched identity checks off — turning "we
@@ -912,8 +925,9 @@ provider was sent would be worse than no switch.
 whether the boundary above was drawn in the right place. It is not shaped like the first:
 **placement is two calls** (`/leads/import/` answers a `sessionId`, `/order/import/` bills
 it — calling the second alone answers "Customer not found"), **lines are numbered
-parameters** (`product1_id`, `product2_id`, …) rather than an array, there is no promotion
-endpoint, and the reusable credential is a single customer id rather than a pair. None of
+parameters** (`product1_id`, `product2_id`, …) rather than an array, a discount is quoted by
+`/order/coupon/` from a code and those same numbered lines, and the reusable credential is a
+single customer id rather than a pair. None of
 that reaches anything above `PaymentAdapter`.
 
 Two shapes of difference it forced, both worth knowing about:
@@ -947,8 +961,8 @@ an authorization that does not reserve the money is not doing the job it was ask
 The setting is deployment-wide under `payment.checkout_champ.*`, never per product: it is a
 property of the merchant arrangement, and a cart cannot be half one and half the other.
 The capability is the same either way, so nothing above the boundary knows which is set. It declares
-`supportsPromotions` and `supportsOrderSearch` **false**, each for a stated reason rather
-than as a stub; see [`INTEGRATION-NOTES.md`](INTEGRATION-NOTES.md) items 20–27.
+`supportsOrderSearch` **false**, for a stated reason rather than as a stub; see
+[`INTEGRATION-NOTES.md`](INTEGRATION-NOTES.md) items 20–28.
 
 Settling is why `PaymentAdapter::capture()` takes a {@see CaptureRequest} rather than a bare
 reference. A pre-authorized order at this provider carries **no line items** until the

@@ -289,6 +289,59 @@ final class FunnelPagesTest extends TestCase
         }
     }
 
+    /**
+     * The checkout page with the address-suggestion inputs set as named.
+     *
+     * @param array<string, mixed> $features merged over `app.features`
+     */
+    private function checkoutWithFeatures(array $features): string
+    {
+        /** @var array<string, mixed> $app */
+        $app = require dirname(__DIR__, 2) . '/config/app.php';
+        /** @var array<string, mixed> $shipped */
+        $shipped = $app['features'];
+        $app['features'] = $features + $shipped;
+
+        $this->seedCart();
+        $response = AppFactory::create(dirname(__DIR__, 2), [
+            \PDO::class => $this->tempPdo(),
+            Config::class => $this->configWith(['app' => $app]),
+            ProductCatalog::class => new FakeCatalog(SampleCatalog::products()),
+        ])->handle((new ServerRequestFactory())->createServerRequest('GET', '/checkout/'));
+
+        self::assertSame(200, $response->getStatusCode());
+
+        return (string) $response->getBody();
+    }
+
+    public function testAddressSuggestionsComeFromTheEmrWhenThereIsNoMapsKey(): void
+    {
+        $body = $this->checkoutWithFeatures(['google_maps_api_key' => null, 'address_autofill' => true]);
+
+        self::assertStringContainsString('data-address-autocomplete="emr" data-suggest-url="/checkout/address/suggest/"', $body);
+        self::assertStringNotContainsString('data-maps-key', $body);
+        self::assertStringContainsString('id="checkout-address-suggestions" role="listbox"', $body);
+        self::assertMatchesRegularExpression('#<script src="/assets/build/address-autocomplete\.[0-9a-f]+\.js" defer>#', $body);
+    }
+
+    public function testAddressSuggestionsComeFromGoogleWhenTheDeploymentHasAKey(): void
+    {
+        $body = $this->checkoutWithFeatures(['google_maps_api_key' => 'test-maps-key', 'address_autofill' => true]);
+
+        self::assertStringContainsString('data-address-autocomplete="google"', $body);
+        self::assertStringContainsString('data-maps-key="test-maps-key"', $body);
+    }
+
+    public function testWithNeitherSourceTheAddressIsAPlainField(): void
+    {
+        // The test suite's own state, and so this page under every other case.
+        $body = $this->checkoutWithFeatures(['google_maps_api_key' => null, 'address_autofill' => false]);
+
+        self::assertStringContainsString('id="checkout-address" name="address_line"', $body);
+        self::assertStringNotContainsString('data-address-autocomplete', $body);
+        self::assertStringNotContainsString('address-autocomplete.', $body);
+    }
+
     public function testEveryDocumentAConsentLinksToIsActuallyServed(): void
     {
         // `[26.9]`: the consent control renders, ticks and records agreement

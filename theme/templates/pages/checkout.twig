@@ -140,11 +140,19 @@
           </div>
         </div>
 
+        {# Suggestions are an enhancement `address-autocomplete.js` adds: from
+           Google when the deployment has a Maps key, from the storefront's own
+           endpoint otherwise. Picking one fills city, state and ZIP as well.
+           With the script absent this is a plain text field. #}
         <div class="relative">
           <input type="text" id="checkout-address" name="address_line" value="{{ checkout.prefill.address_line|default('') }}" autocomplete="street-address" placeholder=" " class="field-input w-full rounded-sm border border-border bg-background px-4 pr-10 text-sm text-heading"
-            {% if checkout.errors.address_line|default(null) %}aria-invalid="true" aria-describedby="checkout-error-address_line"{% endif %} />
-          <i data-lucide="search" class="pointer-events-none absolute right-4 top-1/2 size-4 -translate-y-1/2 text-icon-muted"></i>
+            {% if checkout.errors.address_line|default(null) %}aria-invalid="true" aria-describedby="checkout-error-address_line"{% endif %}
+            {% if address_autocomplete %}data-address-autocomplete="{{ address_autocomplete }}" data-suggest-url="{{ url('/checkout/address/suggest') }}" data-resolve-url="{{ url('/checkout/address/resolve') }}"{% if address_autocomplete == 'google' %} data-maps-key="{{ maps_api_key }}"{% endif %}{% endif %} />
+          <i data-lucide="search" class="pointer-events-none absolute right-4 top-6 size-4 -translate-y-1/2 text-icon-muted"></i>
           <label for="checkout-address" class="field-label">Address</label>
+          {% if address_autocomplete %}
+          <ul id="checkout-address-suggestions" role="listbox" aria-label="Address suggestions" hidden class="absolute inset-x-0 top-12 z-20 mt-1 max-h-72 overflow-y-auto rounded-sm border border-border bg-background py-1 shadow-lg"></ul>
+          {% endif %}
           {% include 'partials/checkout/field-error.twig' with { field: 'address_line' } %}
         </div>
 
@@ -487,4 +495,7 @@
 {% block scripts %}
 {{ parent() }}
 <script src="{{ asset('checkout.js') }}" defer></script>
+{% if address_autocomplete %}
+<script src="{{ asset('address-autocomplete.js') }}" defer></script>
+{% endif %}
 {% endblock %}

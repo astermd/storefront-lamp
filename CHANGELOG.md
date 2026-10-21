@@ -6,6 +6,217 @@ must say the same thing. `bin/console --version` reads `composer.json`, so it is
 not a fourth copy to keep in step. An update is applied by copying files, so every entry
 names exactly which ones changed.
 
+## [0.0.6]
+
+Sends a channel-mapped add-on to the payment provider as its own line item at
+`0.00`, where it used to be left off the order. The intake form collects
+file-upload and signature answers, checkout suggests US addresses from Google
+or the EMR, and the discount box is offered on CheckoutChamp. The treatments
+listing's filter, "Get Started" and the product page's plan price are fixed.
+
+Run `bin/console theme:sync --apply` after updating, so the catalog picks up
+add-on mappings. Five intake upload routes and two checkout address routes are
+added in `config/routes.php`, and two rate-limit buckets, `intake.upload` and
+`checkout.address`, in `config/payment.php`; a deployment that has edited
+either file merges them in by hand. `EMR_VERIFICATION` is split into
+`EMR_VERIFY_EMAIL` and `EMR_VERIFY_ADDRESS`, and an existing `.env` behaves as
+before. The shipped server configs and the new `public/.user.ini` raise the
+request limit to 12 MB for file uploads; a lower limit still works, at the cost
+`deploy/README.md` describes. `astermd/checkoutchamp-client` is raised to
+`^0.0.2`. No migration is added.
+
+### Add-ons reach the provider order
+
+An add-on in the channel now carries its own `product_mappings`, and
+`theme:sync` reads them: each add-on variant gets the offer and product ids its
+own mapping names, never its parent's. Before, every add-on and lab was built
+with no provider identity at all, so `theme:sync` warned that it needed one in
+the override layer and checkout left it off the provider order, logged as
+`payment.line_not_sent`.
+
+A mapped add-on is now a line item on the one charge (`[13.19]`), on Vrio and
+CheckoutChamp alike, sent at `0.00` as `[7.14a]` prices it -- the price is
+always sent, so the provider never charges its own catalog figure for
+something the buyer was shown as free. On CheckoutChamp an add-on's `offer_id`
+is its campaign, and a cart whose lines name two campaigns is refused, so map
+an add-on under the same campaign as the products it attaches to. A lab, or an
+add-on the channel leaves unmapped, behaves as before.
+
+Run `bin/console theme:sync --apply` to pick the mappings up.
+
+- `core/Catalog/CatalogBuilder.php`, `core/Payment/OrderLine.php`
+
+### File-upload and signature questions on the intake form
+
+The server-rendered intake form now collects the builder's `file-upload` and
+`signature` question types, which it used to refuse as unsupported (`[10.13]`).
+
+A file goes to the EMR as soon as it is picked, relayed through five new POST
+routes because the EMR call needs this deployment's credential:
+`/intake/upload/` takes a whole document or image, and
+`/intake/upload/start/`, `/part/`, `/finish/` and `/abort/` take a video, or
+anything over one request, in parts of up to 10 MB, three at a time. The
+EMR's answer, `{path, name, mime_type}`, is what the form posts and what the
+intake submission carries, one entry per file, under the type `file`.
+`docs/INTEGRATION-NOTES.md` item 30 records what the endpoints really accept:
+the single-request one refuses all video, the multipart one also takes
+documents and images, and neither takes HEIC yet.
+
+Each question is held to its own `maxFiles`, `allowMultipleFiles`,
+`maxFileSizeMb` and `fileTypes`, within the EMR's limits (its kinds, 200 MB a
+file), in the browser before a byte is sent and again on the server. The page
+shows each file's progress, a retry for a failed one and a remove button, and
+will not leave the page while a file is still going up or has failed. A
+reference the page posts is stored only when the EMR filed it under the
+visitor's own session, and an upload id is honoured only from the PHP session
+that started it, so no visitor can attach or write into another's file.
+
+A signature is drawn on a pad and kept as a PNG data URL in the answer itself,
+also sent under the type `file`. Every other field keeps the type it was
+authored with.
+
+Under `INTAKE_RENDERER=js-engine` both types stay unsupported: the hosted
+engine keeps a picked file's name and never its bytes, and draws no signature
+pad. That renderer's page now says so before the visitor starts, as the server
+renderer's always has.
+
+**Request size.** One upload request carries up to 10 MB, so the shipped
+`deploy/nginx.conf` sets `client_max_body_size 12m`, `deploy/apache-vhost.conf`
+sets `LimitRequestBody`, and a new `public/.user.ini` raises PHP's
+`upload_max_filesize` and `post_max_size` for php-fpm. A server left lower
+still works -- the page sends nothing larger than PHP will take -- but see
+`deploy/README.md` for what a limit under 5 MB costs. Uploads use the new
+`intake.upload` rate-limit bucket in `config/payment.php`, and follow
+`app.session.analytics`: with it off, nothing would ever name a stored file, so
+none is stored.
+
+- `core/Forms/FileRules.php`, `FileReference.php`, `IntakeUploads.php`,
+  `EmrIntakeUploads.php`, `NullIntakeUploads.php`, `UploadOutcome.php`,
+  `core/Http/Controller/IntakeUploadController.php` (all new)
+- `core/Forms/FieldTypes.php`, `Field.php`, `Definition.php`, `AnswerSet.php`,
+  `AnswerValidator.php`, `AnswerEncoder.php`, `FieldViewModel.php`,
+  `IntakeSession.php`, `core/Http/Controller/IntakeController.php`,
+  `core/Bootstrap/AppFactory.php`
+- `config/routes.php`, `config/payment.php`
+- `theme/templates/partials/intake/field-file-upload.twig`,
+  `field-signature.twig` (new), `theme/templates/pages/intake/form.twig`,
+  `form-js-engine.twig`, `theme/js/intake-files.js` (new), `theme/js/intake.js`,
+  `public/assets/build/`
+- `public/.user.ini` (new), `deploy/nginx.conf`, `deploy/apache-vhost.conf`,
+  `deploy/README.md`
+- `docs/INTEGRATION-NOTES.md`, `docs/ARCHITECTURE.md`
+
+### Address suggestions at checkout
+
+Typing in checkout's Address field now offers up to five US addresses, which
+narrow as the buyer types, and choosing one fills the address line, city,
+state and ZIP. It is the same for every payment provider, since the address
+form is shared.
+
+The source follows `GOOGLE_MAPS_API_KEY`, with no switch of its own. With a key,
+the browser asks Google Places (`AutocompleteSuggestion`, US only). Without
+one, it asks the storefront's new `GET /checkout/address/suggest/` and
+`/checkout/address/resolve/`, which ask the EMR through the new
+`Emr\AddressAutofill` port. The EMR's suggestions carry no ZIP, so resolving
+one goes through its address verifier, whose formatted address does
+(`docs/INTEGRATION-NOTES.md` item 29). A key Google refuses for Places falls
+back to the EMR without the buyer noticing. A Maps key restricted to the Embed
+API alone, as the deploy notes used to advise, should now also allow the Maps
+JavaScript API and the Places API (New).
+
+The endpoints are rate-limited per client address under the new
+`checkout.address` bucket in `config/payment.php`. With the script absent, the
+field is the plain text input it was.
+
+**`EMR_VERIFICATION` is split** into `EMR_VERIFY_EMAIL` and
+`EMR_VERIFY_ADDRESS`, so the email and address checks can be switched
+separately. `EMR_VERIFICATION` still sets both when neither is given, so an
+existing `.env` behaves as before.
+
+- `core/Emr/AddressAutofill.php`, `EmrAddressAutofill.php`,
+  `NullAddressAutofill.php`, `core/Checkout/FormattedAddress.php`,
+  `core/Http/Controller/AddressController.php` (all new)
+- `core/Emr/VerificationGateway.php`, `EmrVerificationGateway.php`,
+  `NullVerificationGateway.php`, `core/Bootstrap/AppFactory.php`,
+  `core/Http/Middleware/TemplateGlobalsMiddleware.php`
+- `config/app.php`, `config/payment.php`, `config/routes.php`, `.env.example`
+- `theme/templates/pages/checkout.twig`, `theme/js/address-autocomplete.js` (new),
+  `public/assets/build/`
+- `README.md`, `deploy/README.md`, `docs/ARCHITECTURE.md`,
+  `docs/INTEGRATION-NOTES.md`
+
+### Treatment listings and the product page
+
+- **The treatments filter works.** The sidebar's checkboxes were rendered with
+  nothing behind them. Each card now carries its kind and categories, and
+  `script.js` hides the cards that do not match: any ticked box within a group,
+  every group that has one. A "No treatments match" note replaces an empty grid.
+  Without the script every card stays shown.
+- **"Get Started" starts buying.** It adds the product's first plan to the
+  cart; the plan can be changed at checkout. A prescription then goes to the
+  questionnaire, as the product page's "Start Assessment" does, and anything
+  else straight to checkout. "Learn More" stays the way to the product page.
+  "Get Started" used to open the product page on the listing and the listing
+  on the home page. The button is the new `partials/get-started.twig`, shared
+  by both.
+- **Cards line up.** Price and actions sit at the foot of each listing card,
+  and descriptions on both grids are clamped to three lines.
+- **The home page's Our Treatments section ends with "View All Treatments"**,
+  a link to the full, filterable listing the header's "Treatments" also opens.
+- **An empty discount box is nothing to apply.** Pressing Apply with it empty,
+  or Enter in any checkout field (which lands on the promo button, so that no
+  keystroke can place an order), used to reload the page with "That discount
+  code could not be applied." The server now answers an empty code with no
+  notice and without spending the rate-limit bucket, and `checkout.js` keeps
+  the page where it is and moves focus to the discount box.
+- **A non-prescription product offers no "Start Assessment".** Checkout is its
+  only action, and the note about steps after checkout is not shown for it.
+- **Choosing a plan shows its price.** Each plan button carries its price and
+  `cart.js` writes it into the displayed figure. The charge was already the
+  chosen plan's; only the figure on the page stayed on the first plan.
+
+- `theme/templates/pages/treatments.twig`, `theme/templates/pages/home.twig`,
+  `theme/templates/pages/product.twig`, `theme/templates/partials/header.twig`,
+  `theme/templates/partials/get-started.twig` (new)
+- `theme/js/script.js`, `theme/js/cart.js`, `theme/js/checkout.js`,
+  `core/Checkout/CheckoutService.php`, `public/assets/build/`
+
+### Discount codes on CheckoutChamp
+
+Checkout now offers the discount box when the channel's provider is
+CheckoutChamp. A code is priced by `POST /order/coupon/` against the same
+numbered lines, prices and quantities the billing call sends, with the buyer's
+shipping country, so a country-scoped code prices correctly. The accepted code
+then travels on `/order/import/` as `couponCode`, and on the pre-authorized
+settle call as well, which re-prices the lines and would otherwise bill the
+undiscounted figure.
+
+The provider answers an unknown code exactly as it answers a real code worth
+nothing on the cart — SUCCESS with a zero discount — so a zero is refused as an
+invalid code rather than shown as applied. Only `priceDiscount` counts; a
+`shipDiscount` is logged, since the storefront charges no shipping line.
+`docs/INTEGRATION-NOTES.md` item 28 records the endpoint's answers.
+
+A code the provider refuses with a reason of its own -- "This coupon has
+already been redeemed. Please try again", "Coupon is expired" -- shows the
+buyer that reason instead of "That discount code could not be applied", so they
+know to stop trying rather than write to support. Only a refusal that names
+the coupon is passed on; one about the request itself ("No products exist in
+the order", a refused login) keeps the generic notice. `PromotionQuote` gains
+an optional `$notice` for this, which an adapter may leave null.
+
+Requires `astermd/checkoutchamp-client` 0.0.2, which adds `orderCoupon()`; the
+constraint in `composer.json` is raised to `^0.0.2`. Against an older client the
+quote fails closed: the code is rejected as `unavailable` and the order is
+placed at full price.
+
+- `core/Payment/CheckoutChamp/CheckoutChampAdapter.php`,
+  `core/Payment/CheckoutChamp/CheckoutChampPayload.php`
+- `core/Payment/CaptureRequest.php`, `core/Console/CaptureOrderCommand.php`
+- `core/Payment/PromotionQuote.php`, `core/Checkout/CheckoutService.php`
+- `composer.json`, `composer.lock`
+- `docs/INTEGRATION-NOTES.md`, `docs/ARCHITECTURE.md`
+
 ## [0.0.5]
 
 Lets one order carry several prescriptions. A second prescription added to the

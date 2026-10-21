@@ -2,11 +2,13 @@
 
 /** Route table. URL => handler. Handlers live in core; templates in theme/. */
 
+use AsterMD\Storefront\Http\Controller\AddressController;
 use AsterMD\Storefront\Http\Controller\CartController;
 use AsterMD\Storefront\Http\Controller\CheckoutController;
 use AsterMD\Storefront\Http\Controller\HealthController;
 use AsterMD\Storefront\Http\Controller\HomeController;
 use AsterMD\Storefront\Http\Controller\IntakeController;
+use AsterMD\Storefront\Http\Controller\IntakeUploadController;
 use AsterMD\Storefront\Http\Controller\NotEligibleController;
 use AsterMD\Storefront\Http\Controller\PageController;
 use AsterMD\Storefront\Http\Controller\VerifyController;
@@ -52,6 +54,13 @@ return function (App $app): void {
     $app->post('/intake/save/', IntakeController::class . ':save')->setName('intake.save');
     $app->post('/intake/submit/', IntakeController::class . ':submit')->setName('intake.submit');
     $app->post('/intake/capture/', IntakeController::class . ':capture')->setName('intake.capture');
+    // A file-upload question's file, relayed to the EMR as soon as it is
+    // picked: whole, or started, sent in parts and finished.
+    $app->post('/intake/upload/', IntakeUploadController::class . ':upload')->setName('intake.upload');
+    $app->post('/intake/upload/start/', IntakeUploadController::class . ':start')->setName('intake.upload.start');
+    $app->post('/intake/upload/part/', IntakeUploadController::class . ':part')->setName('intake.upload.part');
+    $app->post('/intake/upload/finish/', IntakeUploadController::class . ':finish')->setName('intake.upload.finish');
+    $app->post('/intake/upload/abort/', IntakeUploadController::class . ':abort')->setName('intake.upload.abort');
     $app->post('/intake/start-over/', NotEligibleController::class . ':startOver')->setName('intake.start-over');
     // Identity verification (`[22.13]`). A real step now rather than the
     // static page it once was: the GET renders what this
@@ -70,6 +79,11 @@ return function (App $app): void {
     $app->post('/checkout/promo/', CheckoutController::class . ':promoApply')->setName('checkout.promo.apply');
     $app->post('/checkout/promo/remove/', CheckoutController::class . ':promoRemove')->setName('checkout.promo.remove');
     $app->post('/checkout/plan/', CheckoutController::class . ':plan')->setName('checkout.plan');
+    // The address field's suggestions when the deployment has no Google key.
+    // GETs that change nothing, so they sit outside the step guard and the
+    // CSRF check like the other sub-actions, and are rate-limited instead.
+    $app->get('/checkout/address/suggest/', AddressController::class . ':suggest')->setName('checkout.address.suggest');
+    $app->get('/checkout/address/resolve/', AddressController::class . ':resolve')->setName('checkout.address.resolve');
     // One offer per step, so the page is a GET and each answer is its own POST
     // back to a 303. The two POSTs are sub-actions rather than funnel steps —
     // they name no path in `funnel.php`, so the step guard lets them through

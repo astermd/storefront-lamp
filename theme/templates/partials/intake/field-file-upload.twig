@@ -1,0 +1,56 @@
+{# A question answered with files. Each file goes to the EMR as soon as it is
+   picked (theme/js/intake-files.js), and what comes back -- where the EMR
+   stored it -- is what this field posts, one hidden input per file. The bytes
+   never travel with the form.
+
+   The first hidden input is always empty, so a question whose last file was
+   removed still posts, as nothing, rather than not at all and leaving that
+   file attached.
+
+   The picker has no name, so the form never posts it. The drop zone is its
+   label, which is what opens the picker on a click or a tap; dragging a file
+   onto it is the script's. #}
+{% include 'partials/intake/field-question.twig' with { field: field } only %}
+<div class="mt-2{% if field.runtime_class %} {{ field.runtime_class }}{% endif %}"
+     data-intake-upload
+     data-max-files="{{ field.upload.max_files }}"
+     data-max-bytes="{{ field.upload.max_bytes }}"
+     data-max-label="{{ field.upload.max_label }}"
+     data-accept="{{ field.upload.accept }}"
+     data-drag-drop="{{ field.upload.drag_drop ? '1' : '0' }}">
+  <input type="hidden" name="{{ field.name }}[]" value="" data-intake-file-blank />
+  <label for="intake-{{ field.name }}"
+         data-intake-file-drop
+         class="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-sm border-2 border-dashed border-border bg-background px-5 py-7 text-center transition-colors hover:border-primary hover:bg-primary-light has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-primary has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-60 data-[dragging]:border-primary data-[dragging]:bg-primary-light">
+    <i data-lucide="upload" class="size-6 text-primary" aria-hidden="true"></i>
+    <span class="text-sm font-medium text-heading">
+      {% if field.upload.drag_drop %}Drag &amp; drop {{ field.upload.max_files == 1 ? 'a file' : 'files' }} here, or <span class="text-primary underline">browse</span>{% else %}<span class="text-primary underline">Choose {{ field.upload.max_files == 1 ? 'a file' : 'files' }}</span>{% endif %}
+    </span>
+    <span class="text-xs text-muted">
+      {{ field.upload.accept|replace({'.': '', ',': ', '})|upper }} &middot; up to {{ field.upload.max_label }} each
+      {%- if field.upload.max_files is null %} &middot; any number of files{% elseif field.upload.max_files > 1 %} &middot; up to {{ field.upload.max_files }} files{% endif %}
+    </span>
+    <input type="file"
+           id="intake-{{ field.name }}"
+           class="sr-only"
+           accept="{{ field.upload.accept }}"
+           data-intake-file-input
+           {% if field.upload.max_files != 1 %}multiple{% endif %}
+           {% if field.disabled %}disabled{% endif %}
+           aria-describedby="intake-{{ field.name }}-label{% if field.error %} {{ field.error_id }}{% endif %}" />
+  </label>
+  <p role="alert" data-intake-file-message class="mt-2 hidden text-sm font-medium text-danger"></p>
+  <ul data-intake-file-list class="mt-3 flex flex-col gap-2 empty:hidden">
+    {%- for file in field.files -%}
+      <li data-intake-file class="flex items-center gap-3 rounded-sm border border-border bg-background px-3.5 py-2.5">
+        <input type="hidden" name="{{ field.name }}[]" value="{{ file.json }}" data-intake-file-ref />
+        <i data-lucide="file-check" class="size-4 shrink-0 text-success" aria-hidden="true"></i>
+        <span class="min-w-0 flex-1 truncate text-sm text-heading" data-intake-file-name>{{ file.label }}</span>
+        <button type="button" data-intake-file-remove
+                class="shrink-0 rounded-sm px-2 py-1 text-xs font-medium text-body underline transition-colors hover:text-danger focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+                aria-label="Remove {{ file.label }}">Remove</button>
+      </li>
+    {%- endfor -%}
+  </ul>
+</div>
+{% include 'partials/intake/field-error.twig' with { field: field } only %}

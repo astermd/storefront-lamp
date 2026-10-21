@@ -80,6 +80,16 @@ return [
         'checkout.submit' => ['limit' => 8, 'window_seconds' => 300],
         'checkout.promo' => ['limit' => 20, 'window_seconds' => 300],
 
+        // Address suggestions, one per pause in typing. An address is a dozen
+        // of them, so this is several honest attempts and stops a script that
+        // would spend the EMR's quota.
+        'checkout.address' => ['limit' => 120, 'window_seconds' => 300],
+
+        // Intake file uploads, one per request to the EMR. A 200 MB video is
+        // about twenty parts plus a start and a finish, so this is several
+        // large files and stops a script filling the EMR's storage.
+        'intake.upload' => ['limit' => 200, 'window_seconds' => 600],
+
         // Accepting a post-purchase upsell charges a card, so it is bucketed
         // like a submit rather than like a read. Tighter than checkout's,
         // because there is nothing here for an honest buyer to retype: a

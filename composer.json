@@ -2,7 +2,7 @@
     "name": "astermd/storefront-lamp",
     "description": "AsterMD telehealth storefront theme — PHP, Slim and Twig on a LAMP stack",
     "type": "project",
-    "version": "0.0.5",
+    "version": "0.0.6",
     "license": "MIT",
     "authors": [
         {
@@ -13,7 +13,7 @@
     ],
     "require": {
         "php": ">=8.4",
-        "astermd/checkoutchamp-client": "^0.0.1",
+        "astermd/checkoutchamp-client": "^0.0.2",
         "astermd/sdk": "^0.0.3",
         "astermd/vrio-client": "^0.0.1",
         "php-di/php-di": "^7.1",

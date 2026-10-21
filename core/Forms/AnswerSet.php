@@ -45,6 +45,15 @@ final class AnswerSet
     /** Scalars a checkbox-like field accepts as "checked"; everything else is unchecked. */
     private const array TRUTHY = ['true', '1', 'on'];
 
+    /**
+     * A drawn signature: a PNG and nothing else, as a base64 data URL. The
+     * pad draws a few kilobytes; the cap is there so the answer cannot be
+     * used to park megabytes in the journey.
+     */
+    private const string SIGNATURE_SHAPE = '#^data:image/png;base64,[A-Za-z0-9+/]+={0,2}$#';
+
+    private const int SIGNATURE_MAX_LENGTH = 1024 * 1024;
+
     /** @param array<string, mixed> $values */
     private function __construct(private readonly array $values)
     {
@@ -88,7 +97,7 @@ final class AnswerSet
 
             // An array posted for a single-value field is malformed rather
             // than empty, so the answer already on file is left alone.
-            if (is_array($value) && !$field->isMultiValue()) {
+            if (is_array($value) && !$field->isMultiValue() && !$field->isFileUpload()) {
                 continue;
             }
 
@@ -159,6 +168,15 @@ final class AnswerSet
      */
     private static function coerce(Field $field, mixed $value): mixed
     {
+        if ($field->isFileUpload()) {
+            return self::toFiles($value);
+        }
+
+        if ($field->isSignature()) {
+            return is_string($value) && strlen($value) <= self::SIGNATURE_MAX_LENGTH
+                && preg_match(self::SIGNATURE_SHAPE, $value) === 1 ? $value : '';
+        }
+
         if ($field->isMultiValue()) {
             return self::toList($value);
         }
@@ -168,6 +186,31 @@ final class AnswerSet
         }
 
         return is_scalar($value) ? (string) $value : '';
+    }
+
+    /**
+     * The files attached to a file-upload question, as stored references.
+     *
+     * The page posts one JSON reference per attached file beside an empty
+     * entry, so a question whose last file was removed still arrives, as a
+     * list with nothing in it, rather than not at all and leaving the removed
+     * file on file. Whose files they are is not decided here: the journey's
+     * session is checked before anything is merged
+     * ({@see IntakeSession::ownFiles()}).
+     *
+     * @return list<array{path: string, name: string, mime_type: string}>
+     */
+    private static function toFiles(mixed $value): array
+    {
+        $files = [];
+        foreach (is_array($value) ? $value : [$value] as $entry) {
+            $reference = FileReference::fromPosted($entry);
+            if ($reference !== null) {
+                $files[$reference->path] = $reference->toArray();
+            }
+        }
+
+        return array_values($files);
     }
 
     /** @return list<string> */

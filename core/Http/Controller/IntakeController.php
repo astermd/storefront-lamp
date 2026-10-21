@@ -10,6 +10,7 @@ use AsterMD\Storefront\Domain\Cart;
 use AsterMD\Storefront\Domain\FunnelRouter;
 use AsterMD\Storefront\Domain\ProductCatalog;
 use AsterMD\Storefront\Forms\FieldViewModel;
+use AsterMD\Storefront\Forms\FileRules;
 use AsterMD\Storefront\Forms\FormUnavailable;
 use AsterMD\Storefront\Forms\Definition;
 use AsterMD\Storefront\Forms\InjectedCss;
@@ -267,6 +268,9 @@ final class IntakeController
             'initial_values_json' => $answers === [] ? '{}' : self::embed($answers),
             'rules_json' => self::embed($rules),
             'form_errors' => $errors,
+            // The most the page may send this server in one request, so a
+            // file goes up whole or in parts this server can take.
+            'upload_request_bytes' => FileRules::requestBytes(),
         ];
 
         if ($renderer === 'js-engine') {

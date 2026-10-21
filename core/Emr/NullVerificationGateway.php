@@ -7,9 +7,10 @@ declare(strict_types=1);
 namespace AsterMD\Storefront\Emr;
 
 /**
- * The gateway bound when `features.emr_verification` is off — which is its
- * default, and always the case under the test suite, whose runs must never
- * reach the network.
+ * The gateway bound when `features.emr_verify_email` and
+ * `features.emr_verify_address` are both off — which is their default, and
+ * always the case under the test suite, whose runs must never reach the
+ * network.
  *
  * It answers "could not determine" to everything, which is the same answer a
  * live gateway gives when the credential is refused, so switching the feature

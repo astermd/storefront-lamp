@@ -103,7 +103,11 @@ final class CaptureOrderCommand extends Command
             return Command::FAILURE;
         }
 
-        $outcome = $adapter->capture(new CaptureRequest($reference, self::linesFrom($row)));
+        $outcome = $adapter->capture(new CaptureRequest(
+            $reference,
+            self::linesFrom($row),
+            self::nullableText($row['promotion_code'] ?? null),
+        ));
 
         if ($outcome->isCaptured()) {
             $output->writeln(sprintf('Captured order %s.', $reference));

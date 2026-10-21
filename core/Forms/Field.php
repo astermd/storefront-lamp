@@ -148,9 +148,19 @@ final class Field
         return FieldTypes::isBoolean($this->type);
     }
 
-    public function isSupported(): bool
+    public function isSupported(bool $collectsFiles = true): bool
     {
-        return FieldTypes::supported($this->type);
+        return FieldTypes::supported($this->type, $collectsFiles);
+    }
+
+    public function isFileUpload(): bool
+    {
+        return $this->type === FieldTypes::FILE_UPLOAD;
+    }
+
+    public function isSignature(): bool
+    {
+        return $this->type === FieldTypes::SIGNATURE;
     }
 
     /** The authored column span that drives layout (`[25.7]`), never narrower than one column. */

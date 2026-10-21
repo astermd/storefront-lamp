@@ -167,10 +167,10 @@ final class FieldViewModelTest extends TestCase
 
     public function testAnUnsupportedTypeGetsTheUnsupportedPartialRatherThanBeingOmitted(): void
     {
-        $model = self::viewModel(['fieldId' => 'a', 'name' => 'a', 'type' => 'signature', 'label' => 'Sign']);
+        $model = self::viewModel(['fieldId' => 'a', 'name' => 'a', 'type' => 'captcha', 'label' => 'Prove it']);
 
         self::assertSame('field-unsupported.twig', $model['template'], '[10.13]: fail loudly, never drop the question');
-        self::assertSame('signature', $model['type']);
+        self::assertSame('captcha', $model['type']);
     }
 
     public function testCarriesTheInputTypeForTextLikeFieldsSoTheKeyboardMatches(): void

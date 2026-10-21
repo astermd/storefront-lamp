@@ -18,7 +18,34 @@ final class AnswerSetTest extends TestCase
             ['fieldId' => 'consent', 'name' => 'consent', 'type' => 'terms', 'label' => 'Consent'],
             ['fieldId' => 'notice', 'name' => 'notice', 'type' => 'alert', 'label' => 'Notice'],
             ['fieldId' => 'weight_goal', 'name' => 'weight_goal', 'type' => 'number', 'label' => 'Goal'],
+            ['fieldId' => 'labs', 'name' => 'labs', 'type' => 'file-upload', 'label' => 'Labs'],
+            ['fieldId' => 'sig', 'name' => 'sig', 'type' => 'signature', 'label' => 'Signature'],
         ]]]]);
+    }
+
+    public function testAFileQuestionStoresOneReferencePerAttachedFileAndIgnoresTheBlankEntry(): void
+    {
+        $file = [
+            'path' => 'acct1/org1/intake_submissions/550e8400-e29b-41d4-a716-446655440000/labs-1.pdf',
+            'name' => 'labs-1.pdf',
+            'mime_type' => 'application/pdf',
+        ];
+
+        $answers = AnswerSet::empty()->merge([
+            'labs' => ['', json_encode($file), json_encode($file), '{"path":"../../etc/passwd"}', 'not json'],
+        ], self::definition());
+
+        self::assertSame([$file], $answers->value('labs'), 'deduplicated, and nothing that is not a stored file');
+    }
+
+    public function testASignatureIsKeptOnlyAsAPngDataUrl(): void
+    {
+        $png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+        self::assertSame($png, AnswerSet::empty()->merge(['sig' => $png], self::definition())->value('sig'));
+        self::assertSame('', AnswerSet::empty()->merge(['sig' => 'data:text/html;base64,PHNjcmlwdD4='], self::definition())->value('sig'));
+        self::assertSame('', AnswerSet::empty()->merge(['sig' => 'https://example.com/sig.png'], self::definition())->value('sig'));
+        self::assertSame('', AnswerSet::empty()->merge(['sig' => 'data:image/png;base64,' . str_repeat('A', 1024 * 1024)], self::definition())->value('sig'), 'too large to be a drawing');
     }
 
     public function testMergeAccumulatesRatherThanReplacingWholesale(): void

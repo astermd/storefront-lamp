@@ -49,6 +49,14 @@
     var wrapper = wrapperFor(name);
     if (!wrapper) return null;
 
+    // A file question's answer is its attached files, one hidden input each
+    // (theme/js/intake-files.js).
+    if (wrapper.querySelector('[data-intake-upload]')) {
+      return Array.prototype.map.call(wrapper.querySelectorAll('[data-intake-file-ref]'), function (ref) {
+        return ref.value;
+      });
+    }
+
     var checkboxes = wrapper.querySelectorAll('input[type="checkbox"][name$="[]"]');
     if (checkboxes.length) {
       return Array.prototype.filter.call(checkboxes, function (box) { return box.checked; })
@@ -207,8 +215,13 @@
       });
 
       wrapper.hidden = !visible;
+      wrapper.setAttribute('data-intake-required-now', required ? '1' : '0');
       Array.prototype.forEach.call(wrapper.querySelectorAll('input, select, textarea'), function (control) {
         control.disabled = disabled;
+        // A file picker is empty once its file has gone up, so it is never
+        // what says whether the question is answered; validatePage() asks
+        // the field instead.
+        if (control.hasAttribute('data-intake-file-input')) return;
         // The required marker has to track visibility ([10.19]): a required
         // control on a hidden branch is unfocusable, and native validation
         // would block the submit with nothing on screen to explain it.
@@ -294,9 +307,45 @@
       .filter(function (wrapper) { return !wrapper.hidden; });
   }
 
+  /**
+   * A file or signature question's own check, or null for any other field.
+   * Their answers sit in hidden inputs, which the browser never validates.
+   */
+  function fileProblem(wrapper) {
+    var upload = wrapper.querySelector('[data-intake-upload]');
+    var signature = wrapper.querySelector('[data-intake-signature]');
+    if (!upload && !signature) return null;
+
+    if (upload && wrapper.getAttribute('data-intake-busy') === '1') return 'Please wait for your file to finish uploading.';
+    if (upload && wrapper.getAttribute('data-intake-failed') === '1') return 'A file did not upload. Retry it or remove it.';
+
+    var now = wrapper.getAttribute('data-intake-required-now');
+    var required = (now === null ? wrapper.getAttribute('data-intake-required') : now) === '1';
+    var disabled = !!wrapper.querySelector('input[type="hidden"]:disabled');
+    if (!required || disabled) return '';
+
+    if (upload) {
+      return wrapper.querySelector('[data-intake-file-ref]') ? '' : 'Please attach a file.';
+    }
+
+    var drawn = wrapper.querySelector('[data-intake-signature-value]');
+    return drawn && drawn.value ? '' : 'Please sign in the box.';
+  }
+
   function validatePage(page) {
     var ok = true;
     visibleFieldsOf(page).forEach(function (wrapper) {
+      var problem = fileProblem(wrapper);
+      if (problem !== null) {
+        if (problem) {
+          showError(wrapper, problem);
+          ok = false;
+        } else {
+          clearError(wrapper);
+        }
+        return;
+      }
+
       var control = wrapper.querySelector('[required]');
       if (!control) return;
       if (!control.checkValidity()) {
@@ -512,6 +561,17 @@
 
   form.addEventListener('input', applyConditions);
   form.addEventListener('change', applyConditions);
+  // A file or signature question re-checks itself as it changes, so its
+  // message goes away once a file is attached or a signature drawn rather
+  // than staying until the next Continue.
+  form.addEventListener('change', function (event) {
+    var wrapper = event.target.closest ? event.target.closest('[data-intake-field]') : null;
+    var shown = wrapper ? wrapper.querySelector('[data-intake-error]:not(.hidden)') : null;
+    if (!shown) return;
+    var problem = fileProblem(wrapper);
+    if (problem === '') clearError(wrapper);
+    else if (problem) showError(wrapper, problem);
+  });
   form.addEventListener('blur', attemptCapture, true);
 
   applyConditions();

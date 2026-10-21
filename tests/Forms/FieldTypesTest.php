@@ -14,7 +14,7 @@ final class FieldTypesTest extends TestCase
         foreach ([
             'text', 'textarea', 'email', 'phone', 'number', 'password', 'picker-date',
             'choice-single', 'choice-multi', 'dropdown', 'checkbox', 'toggle',
-            'terms', 'agreement', 'bmi', 'hidden',
+            'terms', 'agreement', 'bmi', 'hidden', 'file-upload', 'signature',
             'heading', 'form-header', 'paragraph', 'divider', 'alert', 'image', 'form-progress', 'button',
         ] as $type) {
             self::assertTrue(FieldTypes::supported($type), $type . ' should be supported');
@@ -23,9 +23,21 @@ final class FieldTypesTest extends TestCase
 
     public function testTypesTheRendererDoesNotImplementAreRejectedRatherThanDroppedSilently(): void
     {
-        foreach (['file', 'signature', 'video', 'captcha', 'rating', 'slider', 'input-table', 'ranking', 'modal'] as $type) {
+        foreach (['file', 'video', 'captcha', 'rating', 'slider', 'input-table', 'ranking', 'modal'] as $type) {
             self::assertFalse(FieldTypes::supported($type), $type . ' should be unsupported');
         }
+    }
+
+    public function testAFileOrASignatureIsUnsupportedWhereTheRendererCannotCollectOne(): void
+    {
+        // The hosted engine keeps a picked file's name and never its bytes,
+        // and draws no signature pad, so under it both block the form.
+        foreach (['file-upload', 'signature'] as $type) {
+            self::assertTrue(FieldTypes::supported($type), $type . ' under the server renderer');
+            self::assertFalse(FieldTypes::supported($type, collectsFiles: false), $type . ' under the hosted engine');
+        }
+
+        self::assertTrue(FieldTypes::supported('text', collectsFiles: false), 'nothing else changes');
     }
 
     public function testAnUnknownTypeIsUnsupportedByDefaultRatherThanAssumedRenderable(): void

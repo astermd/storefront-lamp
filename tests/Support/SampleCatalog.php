@@ -206,7 +206,8 @@ final class SampleCatalog
      * directory, so this fixture directory needs nothing but the two
      * products files `CatalogProvider` itself reads.
      */
-    public static function provider(): CatalogProvider
+    /** @param array<string, array<string, mixed>>|null $products the catalog to serve, the sample one when null */
+    public static function provider(?array $products = null): CatalogProvider
     {
         $dir = sys_get_temp_dir() . '/astermd-sample-catalog-fixture';
         if (!is_dir($dir)) {
@@ -215,7 +216,7 @@ final class SampleCatalog
 
         file_put_contents(
             $dir . '/products.generated.php',
-            '<?php return ' . var_export(['products' => self::products()], true) . ';',
+            '<?php return ' . var_export(['products' => $products ?? self::products()], true) . ';',
         );
         file_put_contents(
             $dir . '/products.overrides.php',

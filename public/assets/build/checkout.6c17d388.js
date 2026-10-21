@@ -133,6 +133,18 @@
     var submitter = event.submitter;
     if (!submitter) return;
 
+    // Applying an empty discount box has nothing to send. That is the Apply
+    // button with the box empty, and also Enter in any other field, which
+    // lands on the page's first submit button -- the promo one. Staying put
+    // keeps the buyer where they were instead of reloading the page.
+    var discount = document.getElementById('checkout-discount');
+    var formAction = submitter.getAttribute('formaction') || '';
+    if (/\/checkout\/promo\/?$/.test(formAction) && (!discount || discount.value.trim() === '')) {
+      event.preventDefault();
+      if (discount && submitter.getAttribute('aria-hidden') !== 'true') discount.focus();
+      return;
+    }
+
     if (submitter === pay) {
       // Second click on an already-busy Pay Now: swallowed here rather than by
       // a `disabled` attribute, because disabling the button moves focus off

@@ -16,11 +16,10 @@ use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
 
 /**
- * The 403 test is the one that matters. This storefront's credential is
- * refused for the whole `verification()` resource — verified against a token
- * minted immediately after a cache clear, so it is a genuine refusal and not a
- * stale permission snapshot. The gateway therefore has to treat a denial as an
- * ordinary Tuesday: null, an info line, and an order that still goes through.
+ * The 403 test is the one that matters. An organisation without the grant is
+ * refused the whole `verification()` resource, so the gateway has to treat a
+ * denial as an ordinary Tuesday: null, an info line, and an order that still
+ * goes through.
  */
 final class VerificationGatewayTest extends TestCase
 {
@@ -72,13 +71,33 @@ final class VerificationGatewayTest extends TestCase
 
     public function testTheNullGatewayReportsItselfDisabledAndDeterminesNothing(): void
     {
-        // The bound gateway whenever features.emr_verification is off, which
-        // is its default and always the case under the test suite.
+        // The bound gateway whenever both features.emr_verify_* switches are
+        // off, which is their default and always the case under the test suite.
         $gateway = new NullVerificationGateway();
 
         self::assertFalse($gateway->isEnabled());
         self::assertNull($gateway->emailIsDeliverable('ada@example.com'));
         self::assertNull($gateway->normaliseAddress('350 5th Avenue, New York, NY 10118'));
+    }
+
+    public function testEachCheckRunsOnlyUnderItsOwnSwitch(): void
+    {
+        $http = new FakeEmrHttpClient(self::TOKEN_ROUTE + [
+            '/extensions/email-verify' => [200, ['success' => true, 'data' => ['result' => 'valid']]],
+            '/extensions/address-verify' => [200, ['success' => true, 'data' => [
+                'valid' => true, 'formatted_address' => '350 5th Avenue, New York, NY 10118-0110, USA',
+            ]]],
+        ]);
+
+        $emailOnly = new EmrVerificationGateway($this->clientFactory(), (new CapturedLog())->log, $http, checksEmail: true, checksAddress: false);
+        $addressOnly = new EmrVerificationGateway($this->clientFactory(), (new CapturedLog())->log, $http, checksEmail: false, checksAddress: true);
+
+        self::assertTrue($emailOnly->emailIsDeliverable('ada@example.com'));
+        self::assertNull($emailOnly->normaliseAddress('350 5th Avenue, New York, NY 10118'));
+        self::assertNull($addressOnly->emailIsDeliverable('ada@example.com'));
+        self::assertNotNull($addressOnly->normaliseAddress('350 5th Avenue, New York, NY 10118'));
+        self::assertCount(1, $this->callsTo($http, '/extensions/email-verify'), 'the switched-off check never reached the EMR');
+        self::assertCount(1, $this->callsTo($http, '/extensions/address-verify'));
     }
 
     public function testADeliverableEmailComesBackTrue(): void
@@ -176,10 +195,9 @@ final class VerificationGatewayTest extends TestCase
 
     public function testARefusedCredentialAnswersNullAndIsLoggedAtInfo(): void
     {
-        // The recorded live behaviour: the whole verification() resource is
-        // 403 on this credential. Expected, therefore info -- an alert an
-        // operator is told to expect is one they are trained to ignore
-        // ([20.10]).
+        // Without the grant the whole verification() resource answers 403.
+        // Expected, therefore info -- an alert an operator is told to expect
+        // is one they are trained to ignore ([20.10]).
         $captured = new CapturedLog();
         $http = new FakeEmrHttpClient(self::TOKEN_ROUTE + [
             '/extensions/email-verify' => [403, [

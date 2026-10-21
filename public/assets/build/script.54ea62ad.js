@@ -237,4 +237,57 @@
       if (event.key === 'Escape') closeCartPanel();
     });
   }
+
+  /* ---------- Treatments listing filters ---------- */
+  // Within a group a card matches any ticked box; across groups it must match
+  // every group that has one ticked. Nothing ticked shows every card.
+  var treatmentsGrid = document.getElementById('treatments-grid');
+  if (treatmentsGrid) {
+    var treatmentCards = Array.prototype.slice.call(treatmentsGrid.querySelectorAll('[data-treatment-card]'));
+    var treatmentsEmpty = document.getElementById('treatments-empty');
+    var filterBoxes = Array.prototype.slice.call(
+      document.querySelectorAll('input[name="filter-condition"], input[name="filter-type"]')
+    );
+
+    var categoriesOf = function (card) {
+      try {
+        var parsed = JSON.parse(card.getAttribute('data-categories') || '[]');
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (e) {
+        return [];
+      }
+    };
+
+    var ticked = function (name) {
+      return filterBoxes
+        .filter(function (box) { return box.name === name && box.checked; })
+        .map(function (box) { return box.value; });
+    };
+
+    var applyTreatmentFilters = function () {
+      var conditions = ticked('filter-condition');
+      var kinds = ticked('filter-type');
+      var shown = 0;
+
+      treatmentCards.forEach(function (card) {
+        var matchesCondition = conditions.length === 0 || categoriesOf(card).some(function (category) {
+          return conditions.indexOf(category) !== -1;
+        });
+        var matchesKind = kinds.length === 0 || kinds.indexOf(card.getAttribute('data-kind')) !== -1;
+        var visible = matchesCondition && matchesKind;
+
+        card.hidden = !visible;
+        if (visible) shown += 1;
+      });
+
+      // The attribute rather than a class: the cards carry `flex`, and the
+      // attribute's `display: none` wins over it outright.
+      treatmentsGrid.hidden = shown === 0;
+      if (treatmentsEmpty) treatmentsEmpty.hidden = shown !== 0;
+    };
+
+    filterBoxes.forEach(function (box) { box.addEventListener('change', applyTreatmentFilters); });
+    // A browser restoring ticked boxes on back navigation restores the filter too.
+    applyTreatmentFilters();
+  }
 })();

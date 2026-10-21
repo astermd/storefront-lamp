@@ -37,6 +37,7 @@ use AsterMD\Storefront\Payment\OrderEnvelope;
 use AsterMD\Storefront\Payment\PaymentCredential;
 use AsterMD\Storefront\Payment\PaymentDescriptor;
 use AsterMD\Storefront\Payment\PlacementOutcome;
+use AsterMD\Storefront\Payment\PromotionQuote;
 use AsterMD\Storefront\Payment\SettlementMode;
 use AsterMD\Storefront\Payment\Vrio\VrioAdapter;
 use AsterMD\Storefront\Payment\Vrio\VrioApiFactory;
@@ -458,6 +459,25 @@ final class CheckoutServiceTest extends TestCase
         self::assertFalse($result->outcome->isPlaced());
         self::assertSame(CheckoutService::UNAVAILABLE_LINE, $result->notice);
         self::assertSame([], $this->transport->requests);
+    }
+
+    public function testAMappedFreeAttachmentIsALineItemOnTheChargeAtZero(): void
+    {
+        // [13.19]: every line, free attachments included, is a line item on
+        // the one charge. The catalog prices the add-on at 5.00 standalone, so
+        // the charged 0.00 can only come from the cart's [7.14a] price.
+        $cart = new Cart();
+        $cart->put(new CartLine('tirzepatide', 'Tirzepatide', 'rx', null, null, 1, 12000, 't-3m'));
+        $cart->put(new CartLine('mapped-addon', 'Mapped Addon', 'free-addon', null, 'tirzepatide', 1, 0, null));
+        $this->cartStore->save($cart);
+
+        $result = $this->serviceThatPlaces()->submit($this->buyer(), $this->card(), ['terms' => 'on']);
+
+        self::assertTrue($result->outcome->isPlaced());
+        $offers = $this->transport->body(count($this->transport->requests) - 1)['offers'];
+        self::assertCount(2, $offers);
+        self::assertSame(['337', '3415', '120.00'], [$offers[0]['offer_id'], $offers[0]['item_id'], $offers[0]['order_offer_price']]);
+        self::assertSame(['340', '2846', '0.00'], [$offers[1]['offer_id'], $offers[1]['item_id'], $offers[1]['order_offer_price']]);
     }
 
     public function testARefusalBeforeTheChargeGivesBackOnlyAKeyItStillOwns(): void
@@ -1113,6 +1133,18 @@ final class CheckoutServiceTest extends TestCase
         self::assertSame('San Francisco', $view->prefill['city'], 'working state still fills the gaps');
     }
 
+    public function testAnEmptyCodeIsNothingToApplyAndSaysNothing(): void
+    {
+        // Enter in any checkout field arrives as an apply with an empty box,
+        // under a provider with promotions or without.
+        foreach ([true, false] as $promotions) {
+            $outcome = $this->serviceThatPlaces(promotions: $promotions)->applyPromotion('  ');
+
+            self::assertTrue($outcome->accepted);
+            self::assertNull($outcome->notice);
+        }
+    }
+
     public function testTheTotalsHonourAnAppliedPromotion(): void
     {
         // [13.12]: subtotal minus discount, clamped, in integer cents.
@@ -1247,6 +1279,27 @@ final class CheckoutServiceTest extends TestCase
         self::assertNotSame([], $this->log->eventsNamed('checkout.promotion_exceeds_cart'));
     }
 
+    public function testTheProvidersReasonForRefusingACodeIsWhatTheBuyerIsTold(): void
+    {
+        // "Already redeemed" tells the buyer to stop trying; "could not be
+        // applied" sends them to support.
+        $notice = 'This coupon has already been redeemed. Please try again';
+        $service = $this->service(null, quote: PromotionQuote::rejected('USED', 'invalid', $notice));
+
+        $outcome = $service->applyPromotion('USED');
+
+        self::assertFalse($outcome->accepted);
+        self::assertSame($notice, $outcome->notice);
+        self::assertNull($this->journey->promotion);
+    }
+
+    public function testARefusalWithNoReasonOfItsOwnKeepsTheGenericNotice(): void
+    {
+        $service = $this->service(null, quote: PromotionQuote::rejected('NOPE', 'invalid'));
+
+        self::assertSame('That discount code could not be applied.', $service->applyPromotion('NOPE')->notice);
+    }
+
     public function testAStoredQuoteWithNoCartBehindItIsRequotedRatherThanTrusted(): void
     {
         // Journey state survives a deploy, so a promotion written before the
@@ -1348,6 +1401,7 @@ final class CheckoutServiceTest extends TestCase
         array $upsells = self::UPSELLS,
         SettlementMode $settlement = SettlementMode::Capture,
         ?bool $supportsAuthorizeCapture = null,
+        ?PromotionQuote $quote = null,
     ): CheckoutService {
         return $this->service(
             'vrio-order-approved.json',
@@ -1534,6 +1588,7 @@ final class CheckoutServiceTest extends TestCase
         array $upsells = self::UPSELLS,
         SettlementMode $settlement = SettlementMode::Capture,
         ?bool $supportsAuthorizeCapture = null,
+        ?PromotionQuote $quote = null,
     ): CheckoutService {
         if ($sessionUuid !== self::SESSION_UUID) {
             $this->boot($sessionUuid);
@@ -1558,9 +1613,9 @@ final class CheckoutServiceTest extends TestCase
             journeys: $this->journeys,
             rules: new CartRules($catalog),
             catalog: $catalog,
-            adapter: $strategy === null && $promotions && $supportsAuthorizeCapture === null
+            adapter: $strategy === null && $promotions && $supportsAuthorizeCapture === null && $quote === null
                 ? $adapter
-                : new RedeclaredAdapter($adapter, $strategy, $promotions, $supportsAuthorizeCapture),
+                : new RedeclaredAdapter($adapter, $strategy, $promotions, $supportsAuthorizeCapture, $quote),
             consents: Consents::fromConfig((array) require dirname(__DIR__, 2) . '/config/consent.php'),
             bumps: OrderBumps::fromConfig(['max_on_page' => 3, 'bumps' => []], $catalog, $this->log->log),
             verification: new NullVerificationGateway(),
@@ -1682,6 +1737,15 @@ final class CheckoutServiceTest extends TestCase
                 'kind' => 'free-addon',
                 'geo_blocks' => ['NY'],
                 'variants' => [],
+            ],
+            // Free, and mapped by the channel the way an add-on's own
+            // `product_mappings` resolve: a single synthesised variant.
+            'mapped-addon' => [
+                'slug' => 'mapped-addon',
+                'name' => 'Mapped Addon',
+                'kind' => 'free-addon',
+                'price_cents' => 500,
+                'variants' => [['id' => 'ma-1', 'name' => 'Mapped Addon', 'price_cents' => 500, 'provider' => ['offer_id' => '340', 'product_id' => '2846']]],
             ],
             'unmapped' => [
                 'slug' => 'unmapped',

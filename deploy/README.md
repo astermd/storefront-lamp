@@ -73,10 +73,10 @@ Leaving `AMD_TRACKING_KEY` empty is a legitimate configuration — encrypted pay
 
 ### `GOOGLE_MAPS_API_KEY` costs something to fill in
 
-Blank is the shipped default, blank is safe, and blank is handled: the receipt simply renders no map. Filling it in has two consequences that are not obvious from the variable's name.
+Blank is the shipped default, blank is safe, and blank is handled: the receipt simply renders no map, and checkout's address suggestions come from the EMR through the storefront. Filling it in moves those suggestions to Google Places in the buyer's browser and adds a delivery map to the receipt. That has two consequences that are not obvious from the variable's name.
 
-- **It sends the buyer's shipping address to Google.** The receipt page embeds a Google Maps iframe whose query parameter *is* the delivery address, so every buyer reaching the receipt causes a third-party request carrying where they live. That is a data-sharing decision, not a styling one, and it is one to make deliberately and to reflect in the privacy copy at `/privacy/`.
-- **The key is rendered into page source.** It is a template global, so it is delivered as plain text in the HTML of every page that uses it and is readable by anyone who can view that page — there is no server-side proxying of the request. Restrict it before you use it, by HTTP referrer to your own domain and by API to the Maps Embed API alone; an unrestricted key in page source is billable by anyone who reads it.
+- **It sends the buyer's address to Google.** What the buyer types into checkout's address field goes to Google Places as they type, and the receipt page embeds a Google Maps iframe whose query parameter *is* the delivery address. That is a data-sharing decision, not a styling one, and it is one to make deliberately and to reflect in the privacy copy at `/privacy/`.
+- **The key is rendered into page source.** It is a template global, so it is delivered as plain text in the HTML of every page that uses it and is readable by anyone who can view that page — there is no server-side proxying of the request. Restrict it before you use it, by HTTP referrer to your own domain and by API to the Maps JavaScript API, the Places API (New) and the Maps Embed API; an unrestricted key in page source is billable by anyone who reads it. A key restricted to the Embed API alone still works: the address field finds Places refused and falls back to the EMR's suggestions.
 
 ## Theme Assets
 
@@ -151,6 +151,20 @@ If you front the app with something that legitimately sets these — Cloudflare 
 **`sessions` and `events` tables.** `sessions` holds one row per analytics session: the EMR-assigned session id, the opportunity id once one exists, the durable journey state, and the captured attribution. `events` is the storefront's own append-only audit trail of what happened in a journey — session creation, resume, and later journey milestones — independent of what the EMR itself recorded, which is what makes a "this exists at the provider but nowhere in our own records" investigation possible. Event payloads are redacted the same way the operator log is: nothing health-, identity-, or credential-shaped is ever written to either. Both tables are operational data, not clinical records — treat them as subject to your deployment's own data-retention policy, and retain and purge them on that schedule rather than indefinitely.
 
 The health endpoint (`/health/`) reports whether analytics sessions are enabled and whether `AMD_TRACKING_KEY` / `AMD_TRACKING_KEY_PREVIOUS` are configured, under its `info` block — presence only, never the key values themselves.
+
+## Request size: intake file uploads
+
+A file-upload question sends each file to the EMR as soon as it is picked, relayed through this server one request at a time: a whole document or image up to 10 MB, or a video or larger file in parts of up to 10 MB. Every layer between the browser and PHP has to let a request of that size through:
+
+| Layer | Setting | Shipped value | Where |
+|---|---|---|---|
+| nginx | `client_max_body_size` | `12m` (default `1m`) | `deploy/nginx.conf` |
+| Apache | `LimitRequestBody` | `12582912` | `deploy/apache-vhost.conf` |
+| PHP | `upload_max_filesize`, `post_max_size` | `11M`, `12M` (defaults `2M`, `8M`) | `public/.user.ini` |
+
+`public/.user.ini` is read by php-fpm and other CGI/FastCGI setups, and is not served (both samples deny dot-files). **mod_php ignores it**: under mod_php, set the two values with `php_value` in the vhost instead. A CDN or load balancer in front has a body limit of its own.
+
+Lower PHP limits do not break the form. The page reads what PHP will accept and sends nothing larger, so a file between that and 10 MB goes up in parts instead of whole. Below 5 MB, though, a file larger than the limit cannot go up at all, because the EMR needs every part but the last to be at least 5 MB, and the page says so.
 
 ## Apache Deployment
 

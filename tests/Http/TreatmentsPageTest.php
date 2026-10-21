@@ -15,9 +15,74 @@ use Slim\Psr7\Factory\ServerRequestFactory;
 final class TreatmentsPageTest extends TestCase
 {
     /** @see \AsterMD\Storefront\Tests\Http\ProductPageTest::app() for why the sample catalog is injected as a concrete CatalogProvider */
-    private function app(): App
+    /** @param array<string, array<string, mixed>>|null $products */
+    private function app(?array $products = null): App
     {
-        return AppFactory::create(dirname(__DIR__, 2), [CatalogProvider::class => SampleCatalog::provider()]);
+        return AppFactory::create(dirname(__DIR__, 2), [CatalogProvider::class => SampleCatalog::provider($products)]);
+    }
+
+    private function page(string $path, ?array $products = null): string
+    {
+        $response = $this->app($products)->handle((new ServerRequestFactory())->createServerRequest('GET', $path));
+        self::assertSame(200, $response->getStatusCode());
+
+        return (string) $response->getBody();
+    }
+
+    /** The sample catalog with one product made non-prescription, since the sample holds none. */
+    private static function withOtc(string $slug): array
+    {
+        $products = SampleCatalog::products();
+        $products[$slug]['kind'] = 'otc';
+        $products[$slug]['teleform_id'] = null;
+
+        return $products;
+    }
+
+    public function testEachCardCarriesWhatTheSidebarFiltersOn(): void
+    {
+        // The filter script compares checkbox values with these attributes, so
+        // the two have to be spelled from the same source: the category name
+        // and the catalog kind, untransformed.
+        $body = $this->page('/treatments/', self::withOtc('tadalafil'));
+
+        self::assertStringContainsString('name="filter-condition" value="Weight Loss"', $body);
+        self::assertStringContainsString('name="filter-type" value="rx"', $body);
+        self::assertStringContainsString('name="filter-type" value="otc"', $body);
+        self::assertStringContainsString('data-kind="rx" data-categories="[&quot;Weight Loss&quot;]"', $body);
+        self::assertStringContainsString('data-kind="otc" data-categories="[&quot;Sexual Health&quot;]"', $body);
+        self::assertStringContainsString('id="treatments-empty" hidden', $body);
+    }
+
+    public function testAPrescriptionsGetStartedStartsTheAssessmentOnItsFirstPlan(): void
+    {
+        $body = $this->page('/treatments/');
+
+        self::assertMatchesRegularExpression(
+            '#name="slug" value="semaglutide" />\s*<input type="hidden" name="variant_id" value="semaglutide-1m" />.*?name="intent" value="assessment"#s',
+            $body,
+        );
+    }
+
+    public function testANonPrescriptionsGetStartedGoesStraightToCheckout(): void
+    {
+        // There is no questionnaire to start, so its first plan is added and
+        // the buyer goes on to checkout, where the plan can still be changed.
+        $body = $this->page('/treatments/', self::withOtc('tadalafil'));
+
+        self::assertMatchesRegularExpression(
+            '#name="slug" value="tadalafil" />\\s*<input type="hidden" name="variant_id" value="tadalafil-1m" />.*?name="intent" value="checkout"#s',
+            $body,
+        );
+    }
+
+    public function testTheHeaderAndTheHomeSectionBothLeadToTheListing(): void
+    {
+        $home = $this->page('/');
+
+        self::assertMatchesRegularExpression('#<a href="/treatments/" class="text-base text-body#', $home, 'desktop navigation');
+        self::assertMatchesRegularExpression('#<a href="/treatments/" class="block#', $home, 'mobile navigation');
+        self::assertStringContainsString('View All Treatments', $home);
     }
 
     public function testTreatmentsPageListsCatalogProducts(): void

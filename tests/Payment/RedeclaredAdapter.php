@@ -28,6 +28,9 @@ use AsterMD\Storefront\Payment\PromotionQuote;
  * own answer, and only the cases about a provider that cannot hold funds set
  * it. A non-nullable bool would have made every existing construction site
  * state an opinion it does not have.
+ *
+ * `$quote`, when given, is the answer to every promotion quote: the way a case
+ * states a provider's refusal without a provider whose wire format can say it.
  */
 final class RedeclaredAdapter implements PaymentAdapter
 {
@@ -36,6 +39,7 @@ final class RedeclaredAdapter implements PaymentAdapter
         private readonly ?string $credentialStrategy,
         private readonly bool $supportsPromotions,
         private readonly ?bool $supportsAuthorizeCapture = null,
+        private readonly ?PromotionQuote $quote = null,
     ) {
     }
 
@@ -66,7 +70,7 @@ final class RedeclaredAdapter implements PaymentAdapter
 
     public function quotePromotion(OrderEnvelope $order, string $code): PromotionQuote
     {
-        return $this->inner->quotePromotion($order, $code);
+        return $this->quote ?? $this->inner->quotePromotion($order, $code);
     }
 
     public function searchOrders(OrderSearch $search): OrderSearchResult

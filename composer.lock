@@ -4,20 +4,20 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "2749815456aa3d3bc411c8adae2052de",
+    "content-hash": "b0a7798f311a81b56dacc5bc4f948c36",
     "packages": [
         {
             "name": "astermd/checkoutchamp-client",
-            "version": "v0.0.1",
+            "version": "v0.0.2",
             "source": {
                 "type": "git",
                 "url": "https://github.com/astermd/checkoutchamp-client.git",
-                "reference": "e38c1d415626e35f5b4ef4c30012abcc64295b5c"
+                "reference": "260242292a11b2e2512397112f39b91949d74dce"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/astermd/checkoutchamp-client/zipball/e38c1d415626e35f5b4ef4c30012abcc64295b5c",
-                "reference": "e38c1d415626e35f5b4ef4c30012abcc64295b5c",
+                "url": "https://api.github.com/repos/astermd/checkoutchamp-client/zipball/260242292a11b2e2512397112f39b91949d74dce",
+                "reference": "260242292a11b2e2512397112f39b91949d74dce",
                 "shasum": ""
             },
             "require": {
@@ -62,7 +62,7 @@
                 "issues": "https://github.com/astermd/checkoutchamp-client/issues",
                 "source": "https://github.com/astermd/checkoutchamp-client"
             },
-            "time": "2026-08-16T13:06:23+00:00"
+            "time": "2026-10-14T12:04:40+00:00"
         },
         {
             "name": "astermd/sdk",
@@ -2387,12 +2387,12 @@
             "version": "v5.7.0",
             "source": {
                 "type": "git",
-                "url": "https://github.com/vlucas/phpdotenv.git",
+                "url": "https://github.com/phpdotenv/phpdotenv.git",
                 "reference": "301c07936b16d88628b126b01d082ba153cf4c40"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/vlucas/phpdotenv/zipball/301c07936b16d88628b126b01d082ba153cf4c40",
+                "url": "https://api.github.com/repos/phpdotenv/phpdotenv/zipball/301c07936b16d88628b126b01d082ba153cf4c40",
                 "reference": "301c07936b16d88628b126b01d082ba153cf4c40",
                 "shasum": ""
             },

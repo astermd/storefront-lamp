@@ -12,16 +12,21 @@ use AsterMD\Storefront\Database\Migrator;
 use AsterMD\Storefront\Domain\CartRules;
 use AsterMD\Storefront\Domain\FunnelRouter;
 use AsterMD\Storefront\Domain\ProductCatalog;
+use AsterMD\Storefront\Emr\AddressAutofill;
 use AsterMD\Storefront\Emr\CartGateway;
 use AsterMD\Storefront\Emr\CartMirror;
 use AsterMD\Storefront\Emr\ClientFactory as EmrClientFactory;
+use AsterMD\Storefront\Emr\EmrAddressAutofill;
 use AsterMD\Storefront\Emr\EmrCartGateway;
 use AsterMD\Storefront\Emr\EmrSessionGateway;
+use AsterMD\Storefront\Emr\NullAddressAutofill;
 use AsterMD\Storefront\Emr\NullCartGateway;
 use AsterMD\Storefront\Emr\NullSessionGateway;
 use AsterMD\Storefront\Emr\SessionGateway;
 use AsterMD\Storefront\Funnel\FlowDefinition;
 use AsterMD\Storefront\Funnel\StepPreconditions;
+use AsterMD\Storefront\Http\Controller\AddressController;
+use AsterMD\Storefront\Http\Controller\IntakeUploadController;
 use AsterMD\Storefront\Http\Controller\VerifyController;
 use AsterMD\Storefront\Verification\EmrIdentityGateway;
 use AsterMD\Storefront\Verification\IdentityGateway;
@@ -48,12 +53,15 @@ use AsterMD\Storefront\Http\TwigExtensions;
 use AsterMD\Storefront\Forms\AnswerValidator;
 use AsterMD\Storefront\Forms\Disqualification;
 use AsterMD\Storefront\Forms\EmrIntakeGateway;
+use AsterMD\Storefront\Forms\EmrIntakeUploads;
 use AsterMD\Storefront\Forms\EmrLeadGateway;
 use AsterMD\Storefront\Forms\IntakeGateway;
 use AsterMD\Storefront\Forms\IntakeSession;
+use AsterMD\Storefront\Forms\IntakeUploads;
 use AsterMD\Storefront\Forms\LeadGateway;
 use AsterMD\Storefront\Forms\LeadWriter;
 use AsterMD\Storefront\Forms\NullIntakeGateway;
+use AsterMD\Storefront\Forms\NullIntakeUploads;
 use AsterMD\Storefront\Forms\NullLeadGateway;
 use AsterMD\Storefront\Forms\RecordMapper;
 use AsterMD\Storefront\Forms\RecordingIntakeGateway;
@@ -331,6 +339,28 @@ final class AppFactory
             $c->get(LeadWriter::class),
             $c->get(RecordMapper::class),
             $c->get(OperatorLog::class),
+            // The hosted engine keeps a picked file's name and never its
+            // bytes, so under it a file or a signature cannot be collected.
+            collectsFiles: $config->get('intake.renderer', 'server') !== 'js-engine',
+        ));
+        // A file answer reaches the clinician only inside the intake
+        // submission, so uploads follow the same switch the submission does:
+        // with analytics off nothing would ever name the stored file.
+        $container->set(IntakeUploads::class, static function (Container $c) use ($config): IntakeUploads {
+            if ($config->get('app.session.analytics') !== true) {
+                return new NullIntakeUploads();
+            }
+
+            return new EmrIntakeUploads($c->get(EmrClientFactory::class), $c->get(OperatorLog::class));
+        });
+        $container->set(IntakeUploadController::class, static fn (Container $c): IntakeUploadController => new IntakeUploadController(
+            $c->get(IntakeSession::class),
+            $c->get(IntakeUploads::class),
+            $c->get(CartStore::class),
+            $c->get(JourneyStore::class),
+            $c->get(ProductCatalog::class),
+            $c->get(DatabaseRateLimiter::class),
+            $c->get(OperatorLog::class),
         ));
         $container->set(IntakeController::class, static fn (Container $c): IntakeController => new IntakeController(
             $c->get(IntakeSession::class),
@@ -556,12 +586,11 @@ final class AppFactory
             static fn (Container $c): FlowDefinition => FlowDefinition::fromConfig($c->get(Config::class)),
         );
         // The identity gateway follows `verification.enabled`, not
-        // `app.features.emr_verification`. The two govern different resources
-        // that happen to share one EMR endpoint family -- the feature flag is
-        // the email-deliverability and address checks at checkout -- and tying
+        // `app.features.emr_verify_*`. The two govern different resources that
+        // happen to share one EMR endpoint family -- the feature flags are the
+        // email-deliverability and address checks at checkout -- and tying
         // them together would mean an operator could not have the address
-        // check without also running identity checks that, as recorded,
-        // currently refuse everybody.
+        // check without also running identity checks.
         $container->set(IdentityGateway::class, static function (Container $c): IdentityGateway {
             if ((bool) $c->get(Config::class)->get('verification.enabled', false) !== true) {
                 return new NullIdentityGateway();
@@ -632,15 +661,38 @@ final class AppFactory
         // database connection on construction turns an analytics outage into a
         // storefront that cannot take money (`[20.1]`).
         $container->set(VerificationGateway::class, static function (Container $c) use ($config): VerificationGateway {
-            // Off by default, and the whole resource is refused for the
-            // credential this ships with. A check that can never answer must
-            // not be the one deciding whether an order proceeds.
-            if ($config->get('app.features.emr_verification') !== true) {
+            // Off by default, each check under its own switch. Whether the EMR
+            // answers depends on the organisation's grant, and a check that
+            // can never answer must not be the one deciding whether an order
+            // proceeds.
+            $email = $config->get('app.features.emr_verify_email') === true;
+            $address = $config->get('app.features.emr_verify_address') === true;
+
+            if (!$email && !$address) {
                 return new NullVerificationGateway();
             }
 
-            return new EmrVerificationGateway($c->get(EmrClientFactory::class), $c->get(OperatorLog::class));
+            return new EmrVerificationGateway(
+                $c->get(EmrClientFactory::class),
+                $c->get(OperatorLog::class),
+                checksEmail: $email,
+                checksAddress: $address,
+            );
         });
+        // Address suggestions are not a deployment's switch -- with a Google
+        // key the browser never calls this -- and are off only under the test
+        // suite, so no test run reaches the EMR.
+        $container->set(AddressAutofill::class, static function (Container $c) use ($config): AddressAutofill {
+            if ($config->get('app.features.address_autofill') !== true) {
+                return new NullAddressAutofill();
+            }
+
+            return new EmrAddressAutofill($c->get(EmrClientFactory::class), $c->get(OperatorLog::class));
+        });
+        $container->set(AddressController::class, static fn (Container $c): AddressController => new AddressController(
+            $c->get(AddressAutofill::class),
+            $c->get(DatabaseRateLimiter::class),
+        ));
         $container->set(OrderRepository::class, static fn (Container $c): OrderRepository => new OrderRepository(
             static fn (): \PDO => $c->get(\PDO::class),
         ));

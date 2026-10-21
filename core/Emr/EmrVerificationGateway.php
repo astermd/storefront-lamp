@@ -13,13 +13,12 @@ use Psr\Http\Client\ClientInterface;
 /**
  * {@see VerificationGateway} over the SDK's `verification()` resource.
  *
- * Bound only when `features.emr_verification` is on, because on this
- * deployment the whole resource is refused: `verifyEmail` and `verifyAddress`
- * both answer 403 "You do not have permission to perform this action" against
- * a token minted moments earlier. That is why every failure here is an
- * **info** line rather than a warning — a refusal is the expected state until
- * the grant lands, and an alert an operator is told to expect is an alert they
- * learn to ignore (`[20.10]`). It is also why every `\Throwable` is caught: a
+ * Bound when `features.emr_verify_email` or `features.emr_verify_address` is
+ * on, and each check runs only under its own switch; the other answers "could
+ * not determine". Every failure here is an **info** line rather than a
+ * warning, because an organisation without the grant answers 403 "You do not
+ * have permission to perform this action" to every call, and an alert an
+ * operator is told to expect is an alert they learn to ignore (`[20.10]`). It is also why every `\Throwable` is caught: a
  * verification outage must degrade the form, never the order (`[20.1]`).
  *
  * Nothing about the buyer reaches the log. The email being checked is the
@@ -59,6 +58,8 @@ final class EmrVerificationGateway implements VerificationGateway
         private readonly ClientFactory $clients,
         private readonly OperatorLog $log,
         private readonly ?ClientInterface $httpClient = null,
+        private readonly bool $checksEmail = true,
+        private readonly bool $checksAddress = true,
     ) {
     }
 
@@ -72,6 +73,10 @@ final class EmrVerificationGateway implements VerificationGateway
      */
     public function emailIsDeliverable(string $email): ?bool
     {
+        if (!$this->checksEmail) {
+            return null;
+        }
+
         if (array_key_exists($email, $this->emailVerdicts)) {
             return $this->emailVerdicts[$email];
         }
@@ -104,6 +109,10 @@ final class EmrVerificationGateway implements VerificationGateway
      */
     public function normaliseAddress(string $address): ?array
     {
+        if (!$this->checksAddress) {
+            return null;
+        }
+
         try {
             $data = $this->client()->verification()->verifyAddress($address)->data();
         } catch (\Throwable $e) {
@@ -123,7 +132,7 @@ final class EmrVerificationGateway implements VerificationGateway
 
     public function isEnabled(): bool
     {
-        return true;
+        return $this->checksEmail || $this->checksAddress;
     }
 
     /** Records a check that could not be run, naming which one and why, and never what was checked. */

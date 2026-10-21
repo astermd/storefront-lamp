@@ -26,6 +26,13 @@ namespace AsterMD\Storefront\Forms;
  * nothing". An answer set with nothing to send encodes as `[]`, which is what
  * the API expects rather than an omitted key.
  *
+ * A file-upload answer is one entry per file, each holding the `{path, name,
+ * mime_type}` the upload returned, and a signature is one entry holding its
+ * PNG data URL. Both are sent with the type `file`: the submission API files
+ * them under that one type, and a reader of the submission needs to know the
+ * value is a stored object or an image rather than text. Every other field
+ * keeps its authored type.
+ *
  * `sendToProvider: false` is deliberately **not** a third exclusion here: it
  * governs whether {@see RecordMapper} writes a field into the EMR's clinical
  * record — that class gates on `db_field` instead, and a field with no
@@ -57,7 +64,9 @@ final class AnswerEncoder
                 'id' => $field->id,
                 'name' => $field->name,
                 'label' => $field->label,
-                'type' => $field->type,
+                'type' => $field->isFileUpload() || $field->isSignature()
+                    ? FieldTypes::SUBMITTED_FILE_TYPE
+                    : $field->type,
                 'value' => $values,
             ];
         }
@@ -77,6 +86,18 @@ final class AnswerEncoder
      */
     private static function values(Field $field, mixed $answer): array
     {
+        if ($field->isFileUpload()) {
+            $values = [];
+            foreach (is_array($answer) ? $answer : [] as $entry) {
+                $reference = FileReference::fromArray($entry);
+                if ($reference !== null) {
+                    $values[] = ['value' => $reference->toArray()];
+                }
+            }
+
+            return $values;
+        }
+
         if (is_array($answer)) {
             $values = [];
             foreach ($answer as $entry) {

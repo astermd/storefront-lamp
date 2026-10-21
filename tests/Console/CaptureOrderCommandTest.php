@@ -55,7 +55,7 @@ final class CaptureOrderCommandTest extends TestCase
     }
 
     /** @param list<array<string, mixed>> $lines */
-    private function seedOrder(string $reference, string $settlement, array $lines = []): void
+    private function seedOrder(string $reference, string $settlement, array $lines = [], ?string $promotionCode = null): void
     {
         (new SessionRepository(fn (): \PDO => $this->pdo))->insert(self::SESSION, [], null);
         (new OrderRepository(fn (): \PDO => $this->pdo))->insert(
@@ -67,6 +67,7 @@ final class CaptureOrderCommandTest extends TestCase
                 'currency' => 'USD',
                 'status' => 'placed',
                 'settlement' => $settlement,
+                'promotion_code' => $promotionCode,
             ],
             $lines,
             [],
@@ -159,6 +160,21 @@ final class CaptureOrderCommandTest extends TestCase
         self::assertSame('459', $adapter->seen?->lines[0]->providerOffer);
         self::assertSame('15271', $adapter->seen?->lines[0]->providerItem);
         self::assertSame(2, $adapter->seen?->lines[0]->quantity);
+    }
+
+    public function testTheOrdersPromotionCodeIsHandedToTheAdapterWithItsLines(): void
+    {
+        // A settle call that re-prices the lines re-prices them at full price
+        // unless it is told the code the order was placed with.
+        $this->seedOrder('36728', 'authorize', [
+            ['slug' => 'nad-500', 'name' => 'NAD+ (500mg)', 'kind' => 'rx', 'provider_offer' => '459', 'provider_item' => '15271', 'unit_price_cents' => 12000, 'quantity' => 1],
+        ], 'SAVE10');
+        $adapter = new RecordingCaptureAdapter();
+
+        $tester = new CommandTester($this->command(new FakeVrioTransport(), adapter: $adapter));
+
+        self::assertSame(0, $tester->execute(['reference' => '36728']));
+        self::assertSame('SAVE10', $adapter->seen?->promotionCode);
     }
 
     public function testARefusalFromTheProviderCarriesItsOwnCodeAndExitsOne(): void

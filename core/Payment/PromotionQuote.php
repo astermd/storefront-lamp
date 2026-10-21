@@ -15,6 +15,12 @@ namespace AsterMD\Storefront\Payment;
  * recorded provider already makes that distinction itself -- an offer-less
  * request answers `offer_invalid` and a bad code answers `discount_invalid` --
  * so the adapter maps rather than invents.
+ *
+ * `$notice` is the provider's own explanation of a refusal, when it gave one
+ * a buyer can act on -- "This coupon has already been redeemed" tells them to
+ * stop trying, where "could not be applied" sends them to support. It is
+ * shown as given, so an adapter sets it only from text it knows is about the
+ * code, never from an error about its own request.
  */
 final class PromotionQuote
 {
@@ -23,6 +29,7 @@ final class PromotionQuote
         public readonly string $code,
         public readonly int $discountCents,
         public readonly ?string $reason,
+        public readonly ?string $notice = null,
     ) {
     }
 
@@ -31,8 +38,8 @@ final class PromotionQuote
         return new self(true, $code, max(0, $discountCents), null);
     }
 
-    public static function rejected(string $code, string $reason): self
+    public static function rejected(string $code, string $reason, ?string $notice = null): self
     {
-        return new self(false, $code, 0, $reason);
+        return new self(false, $code, 0, $reason, $notice);
     }
 }
