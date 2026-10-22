@@ -28,6 +28,25 @@ final class TeleformMetadata
     ) {
     }
 
+    /**
+     * The same record with `dbFields` keyed by answer name instead of field id.
+     *
+     * The map arrives keyed by field id, while answers are stored under the
+     * field's name; the two coincide only when the author kept the default.
+     * Re-keying once lets a reader that has an {@see AnswerSet} and no form
+     * definition look answers up directly. A key naming no field's id is kept
+     * as it is, so a map already keyed by name still resolves.
+     */
+    public function keyedByName(Definition $definition): self
+    {
+        $dbFields = [];
+        foreach ($this->dbFields as $key => $target) {
+            $dbFields[$definition->fieldById((string) $key)?->name ?? (string) $key] ??= $target;
+        }
+
+        return new self($this->id, $this->identifier, $this->type, $this->layout, $dbFields);
+    }
+
     /** @param array<string, mixed> $payload the `teleforms()->view()` data block */
     public static function fromPayload(string $teleformId, array $payload): ?self
     {

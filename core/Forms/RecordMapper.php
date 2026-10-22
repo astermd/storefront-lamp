@@ -90,7 +90,15 @@ final class RecordMapper
         /** @var list<string> $reported */
         $reported = [];
 
-        foreach ($metadata->dbFields as $name => $target) {
+        foreach ($metadata->dbFields as $key => $target) {
+            // The map is keyed by field id, while answers are stored under the
+            // field's name; the two coincide only when the author left the
+            // default, so `date-of-birth-1792…-359` would otherwise find no
+            // answer and the date would vanish without a trace. A key that is
+            // no field's id is read as a name.
+            $field = $definition->fieldById((string) $key) ?? $definition->field((string) $key);
+            $name = $field?->name ?? (string) $key;
+
             $segments = self::segments($target);
             $root = array_shift($segments);
 
@@ -125,7 +133,7 @@ final class RecordMapper
                 $value = reset($value);
             }
 
-            $payload = self::place($payload, $segments, self::normalise($target, $value, $unitSystem, $definition->field($name)));
+            $payload = self::place($payload, $segments, self::normalise($target, $value, $unitSystem, $field));
         }
 
         return $payload;

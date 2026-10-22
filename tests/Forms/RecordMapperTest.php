@@ -81,6 +81,37 @@ final class RecordMapperTest extends TestCase
         self::assertSame(['date_of_birth' => 'last tuesday'], $payload);
     }
 
+    public function testAMapKeyedByFieldIdFindsTheAnswerStoredUnderTheFieldName(): void
+    {
+        $definition = self::definition();
+
+        // The precondition: id and name differ, as they do on a form whose
+        // author did not keep the default, so a lookup by the wrong one finds
+        // nothing and the test would otherwise pass on a form where they match.
+        self::assertSame('date_of_birth', $definition->fieldById('dob')?->name);
+        self::assertSame('sex_at_birth', $definition->fieldById('gender')?->name);
+
+        $payload = $this->mapper()->build(
+            self::metadata(['dob' => 'opportunity.dob', 'gender' => 'opportunity.gender']),
+            AnswerSet::fromArray(['date_of_birth' => '04 / 03 / 2001', 'sex_at_birth' => 'male']),
+            $definition,
+        );
+
+        // The date is still normalised, which needs the field resolved too.
+        self::assertSame(['dob' => '2001-04-03', 'gender' => 'male'], $payload);
+    }
+
+    public function testASubfieldIsFoundByItsIdAsWell(): void
+    {
+        $payload = $this->mapper()->build(
+            self::metadata(['bmi_height' => 'opportunity.clinical.height.value']),
+            AnswerSet::fromArray(['bmi_height' => '60', 'bmi_unit_system' => 'Metric (kg/cm)']),
+            self::definition(),
+        );
+
+        self::assertSame(['clinical' => ['height' => ['value' => 60]]], $payload);
+    }
+
     public function testOnlyADateFieldIsTreatedAsADate(): void
     {
         // A free-text answer that happens to look like a date is still text.

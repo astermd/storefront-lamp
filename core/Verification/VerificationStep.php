@@ -279,7 +279,7 @@ final class VerificationStep
         }
 
         try {
-            $metadata = $this->forms->metadataFor($teleformId);
+            $metadata = $this->forms->metadataByNameFor($teleformId);
         } catch (\Throwable $e) {
             $this->log->warning('verify.intake_unavailable', [
                 'teleform' => $teleformId,

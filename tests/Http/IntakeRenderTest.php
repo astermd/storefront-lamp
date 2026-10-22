@@ -318,6 +318,27 @@ final class IntakeRenderTest extends TestCase
         yield 'checkbox group' => ['choice-multi', ['choiceInputType' => 'checkbox', 'multiSelect' => true, 'options' => [['value' => 'a', 'label' => 'A']]]];
     }
 
+    /**
+     * `theme/js/datepicker.js` returns before binding anything when the input,
+     * the panel or the days grid is missing, which leaves a text box whose
+     * calendar icon does nothing. Every hook it reads has to be rendered.
+     */
+    public function testADateFieldRendersEveryHookTheDatePickerScriptNeeds(): void
+    {
+        $html = self::render(['fieldId' => 'd', 'name' => 'd', 'type' => 'picker-date', 'label' => 'Date of Birth']);
+
+        foreach ([
+            'data-datepicker', 'data-datepicker-input', 'data-datepicker-toggle', 'data-datepicker-panel',
+            'data-datepicker-month-label', 'data-datepicker-prev', 'data-datepicker-next',
+            'data-datepicker-days', 'data-datepicker-clear', 'data-datepicker-today',
+        ] as $hook) {
+            self::assertMatchesRegularExpression('/\s' . preg_quote($hook, '/') . '[\s=>]/', $html, $hook . ' is missing');
+        }
+
+        // Closed until opened: the script shows it by removing this class.
+        self::assertMatchesRegularExpression('/<div data-datepicker-panel class="hidden /', $html);
+    }
+
     /** And it is still on the wrapper, so hiding a field still takes its label with it. */
     public function testTheAuthoredClassIsStillOnTheWrapperSoHidingTakesTheWholeField(): void
     {

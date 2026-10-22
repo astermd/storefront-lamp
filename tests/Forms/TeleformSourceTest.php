@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace AsterMD\Storefront\Tests\Forms;
 
+use AsterMD\Storefront\Checkout\Prefill;
+use AsterMD\Storefront\Forms\AnswerSet;
+use AsterMD\Storefront\Forms\Definition;
 use AsterMD\Storefront\Forms\DefinitionCache;
 use AsterMD\Storefront\Forms\FormUnavailable;
 use AsterMD\Storefront\Forms\TeleformGateway;
@@ -79,6 +82,85 @@ final class TeleformSourceTest extends TestCase
 
         self::assertNotNull($metadata);
         self::assertSame('opportunity.dob', $metadata->dbFields['date_of_birth']);
+    }
+
+    public function testTheMappingIsRekeyedFromFieldIdToTheNameAnswersAreStoredUnder(): void
+    {
+        $gateway = $this->idKeyedGateway();
+        $source = $this->source($gateway);
+
+        // The precondition: the id the map arrives with is not the answer name.
+        $arrived = $source->metadataFor('tf-1');
+        self::assertArrayHasKey('dob-1792650716016-359', $arrived?->dbFields ?? []);
+
+        $metadata = $source->metadataByNameFor('tf-1');
+
+        self::assertSame(
+            ['date_of_birth_1792650716' => 'opportunity.dob', 'email_address' => 'opportunity.email'],
+            $metadata?->dbFields,
+        );
+
+        // And the answer the id-keyed map names is now found by what reads it.
+        self::assertSame(
+            ['email' => 'ada@example.com'],
+            Prefill::from($metadata, AnswerSet::fromArray(['email_address' => 'ada@example.com']), []),
+        );
+    }
+
+    public function testAMappingIsLeftAsItArrivedWhenTheDefinitionCannotBeHad(): void
+    {
+        $gateway = $this->idKeyedGateway();
+        $gateway->definitionFails = true;
+
+        $metadata = $this->source($gateway)->metadataByNameFor('tf-1');
+
+        self::assertSame(
+            ['dob-1792650716016-359' => 'opportunity.dob', 'email-17' => 'opportunity.email'],
+            $metadata?->dbFields,
+        );
+    }
+
+    public function testAMappingAlreadyKeyedByNameIsKeptAsItIs(): void
+    {
+        $definition = Definition::fromArray(['pages' => [['pageId' => 'p1', 'order' => 0, 'fields' => [
+            ['fieldId' => 'dob', 'name' => 'date_of_birth', 'type' => 'picker-date', 'label' => 'DOB'],
+        ]]]]);
+        $metadata = new TeleformMetadata('tf-1', 'x.json', 'intake', 'five-column', ['date_of_birth' => 'opportunity.dob']);
+
+        self::assertSame(['date_of_birth' => 'opportunity.dob'], $metadata->keyedByName($definition)->dbFields);
+    }
+
+    private function idKeyedGateway(): object
+    {
+        return new class implements TeleformGateway {
+            public bool $definitionFails = false;
+
+            public function metadata(string $teleformId): ?TeleformMetadata
+            {
+                return new TeleformMetadata(
+                    id: $teleformId,
+                    identifier: 'acct/org/intake_29_1792650716.json',
+                    type: 'intake',
+                    layout: 'six-column',
+                    dbFields: [
+                        'dob-1792650716016-359' => 'opportunity.dob',
+                        'email-17' => 'opportunity.email',
+                    ],
+                );
+            }
+
+            public function definition(TeleformMetadata $metadata): ?array
+            {
+                if ($this->definitionFails) {
+                    return null;
+                }
+
+                return ['pages' => [['pageId' => 'p1', 'order' => 0, 'fields' => [
+                    ['fieldId' => 'email-17', 'name' => 'email_address', 'type' => 'email', 'label' => 'Email'],
+                    ['fieldId' => 'dob-1792650716016-359', 'name' => 'date_of_birth_1792650716', 'type' => 'picker-date', 'label' => 'DOB'],
+                ]]]];
+            }
+        };
     }
 
     private function source(TeleformGateway $gateway): TeleformSource

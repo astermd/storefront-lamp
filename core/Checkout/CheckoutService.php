@@ -1596,7 +1596,7 @@ final class CheckoutService
 
         $metadata = null;
         try {
-            $metadata = $this->forms->metadataFor($teleformId);
+            $metadata = $this->forms->metadataByNameFor($teleformId);
         } catch (\Throwable $error) {
             $this->log->warning('checkout.prefill_unavailable', ['reason' => $error->getMessage()]);
         }

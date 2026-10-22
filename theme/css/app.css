@@ -231,7 +231,10 @@ select {
 .field-label {
   position: absolute;
   left: 1rem;
-  top: 50%;
+  /* Half the 48px control, not 50% of the wrapper: a checkout field's inline
+     error is a child of the same wrapper, so 50% drifts down the moment one
+     appears and the label stops sitting in the box. */
+  top: 24px;
   transform: translateY(-50%);
   font-size: 0.875rem;
   color: var(--text-muted);

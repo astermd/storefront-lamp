@@ -1,23 +1,43 @@
-{# Reuses the mockup's datepicker markup and theme/js/datepicker.js unchanged.
-   The input is type=text with a numeric inputmode, exactly as the mockup has
-   it, so the calendar panel and the typed format stay in agreement. #}
+{# The markup contract theme/js/datepicker.js documents. Without the panel and
+   its days grid the script returns before binding anything, leaving a plain
+   text box with a calendar icon that does nothing.
+   The input is type=text with a numeric inputmode so the calendar panel and
+   the typed format stay in agreement. #}
 {% include 'partials/intake/field-label.twig' with { field: field } only %}
-<div class="relative mt-2" data-datepicker>
-  <input
-    id="intake-{{ field.name }}"
-    name="{{ field.name }}"
-    type="text"
-    inputmode="numeric"
-    value="{{ field.value }}"
-    placeholder="{{ field.placeholder ?: 'MM / DD / YYYY' }}"
-    data-datepicker-input
-    {% if field.required %}required aria-required="true"{% endif %}
-    {% if field.disabled %}disabled{% endif %}
-    {% if field.error %}aria-invalid="true" aria-describedby="{{ field.error_id }}"{% endif %}
-    class="w-full rounded-sm border border-border bg-background px-3.5 py-2.5 pr-11 text-sm text-heading placeholder:text-muted transition-colors hover:border-border-darker focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-60 aria-[invalid=true]:border-danger{% if field.runtime_class %} {{ field.runtime_class }}{% endif %}"
-  />
-  <button type="button" data-datepicker-toggle aria-label="Open calendar" aria-expanded="false" class="absolute right-3.5 top-[38px] -translate-y-1/2 text-icon-muted transition-colors hover:text-heading">
-    <i data-lucide="calendar" class="size-4"></i>
-  </button>
+<div class="mt-2" data-datepicker>
+  <div class="relative">
+    <input
+      id="intake-{{ field.name }}"
+      name="{{ field.name }}"
+      type="text"
+      inputmode="numeric"
+      autocomplete="off"
+      value="{{ field.value }}"
+      placeholder="{{ field.placeholder ?: 'MM / DD / YYYY' }}"
+      data-datepicker-input
+      {% if field.required %}required aria-required="true"{% endif %}
+      {% if field.disabled %}disabled{% endif %}
+      {% if field.error %}aria-invalid="true" aria-describedby="{{ field.error_id }}"{% endif %}
+      class="w-full rounded-sm border border-border bg-background px-3.5 py-2.5 pr-11 text-sm text-heading placeholder:text-muted transition-colors hover:border-border-darker focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-60 aria-[invalid=true]:border-danger{% if field.runtime_class %} {{ field.runtime_class }}{% endif %}"
+    />
+    <button type="button" data-datepicker-toggle aria-label="Open calendar" aria-expanded="false" {% if field.disabled %}disabled{% endif %} class="absolute right-3.5 top-1/2 -translate-y-1/2 text-icon-muted transition-colors hover:text-heading">
+      <i data-lucide="calendar" class="size-4"></i>
+    </button>
+    <div data-datepicker-panel class="hidden absolute left-0 top-full z-20 mt-1 w-72 rounded-sm border border-border bg-background p-3 shadow-lg">
+      <div class="mb-2 flex items-center justify-between">
+        <button type="button" data-datepicker-prev aria-label="Previous month" class="flex size-8 items-center justify-center rounded-full text-heading transition-colors hover:bg-divider">&lsaquo;</button>
+        <span data-datepicker-month-label class="text-sm font-medium text-heading" aria-live="polite"></span>
+        <button type="button" data-datepicker-next aria-label="Next month" class="flex size-8 items-center justify-center rounded-full text-heading transition-colors hover:bg-divider">&rsaquo;</button>
+      </div>
+      <div class="grid grid-cols-7 text-center text-xs text-muted" aria-hidden="true">
+        {% for day in ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'] %}<span class="py-1">{{ day }}</span>{% endfor %}
+      </div>
+      <div data-datepicker-days class="grid grid-cols-7 gap-y-1"></div>
+      <div class="mt-2 flex items-center justify-between border-t border-divider pt-2 text-sm">
+        <button type="button" data-datepicker-clear class="text-muted transition-colors hover:text-heading">Clear</button>
+        <button type="button" data-datepicker-today class="font-medium text-primary transition-colors hover:text-heading">Today</button>
+      </div>
+    </div>
+  </div>
   {% include 'partials/intake/field-error.twig' with { field: field } only %}
 </div>

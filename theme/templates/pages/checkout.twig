@@ -102,7 +102,7 @@
         <div class="relative">
           <input type="tel" id="checkout-phone" name="phone" value="{{ checkout.prefill.phone|default('') }}" autocomplete="tel" placeholder=" " class="field-input w-full rounded-sm border border-border bg-background px-4 pr-16 text-sm text-heading"
             {% if checkout.errors.phone|default(null) %}aria-invalid="true" aria-describedby="checkout-error-phone"{% endif %} />
-          <span class="pointer-events-none absolute right-4 top-1/2 flex -translate-y-1/2 items-center gap-1 text-base text-muted" aria-hidden="true">
+          <span class="pointer-events-none absolute right-4 top-6 flex -translate-y-1/2 items-center gap-1 text-base text-muted" aria-hidden="true">
             <img src="/assets/img/usa.svg" alt="" class="h-[19px] w-[34px] rounded-[2px]" />
             <i data-lucide="chevron-down" class="size-4"></i>
           </span>
@@ -188,7 +188,7 @@
               <option value="{{ code }}"{% if checkout.prefill.territory|default('') == code %} selected{% endif %}>{{ name }}</option>
               {% endfor %}
             </select>
-            <i data-lucide="chevron-down" class="pointer-events-none absolute right-4 top-1/2 size-4 -translate-y-1/2 text-heading"></i>
+            <i data-lucide="chevron-down" class="pointer-events-none absolute right-4 top-6 size-4 -translate-y-1/2 text-heading"></i>
             {% include 'partials/checkout/field-error.twig' with { field: 'territory' } %}
           </div>
           <div class="relative">

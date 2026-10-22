@@ -50,6 +50,28 @@ final class TeleformSource
     }
 
     /**
+     * The metadata with its mapping keyed by answer name, for a reader that
+     * holds answers but no definition ({@see TeleformMetadata::keyedByName()}).
+     *
+     * A definition that cannot be had leaves the mapping as it arrived rather
+     * than failing: a form whose map is already keyed by name loses nothing,
+     * and the callers that use this treat the intake as optional.
+     */
+    public function metadataByNameFor(string $teleformId): ?TeleformMetadata
+    {
+        $metadata = $this->metadataFor($teleformId);
+        if ($metadata === null) {
+            return null;
+        }
+
+        try {
+            return $metadata->keyedByName(Definition::fromArray($this->definitionFor($teleformId)));
+        } catch (FormUnavailable) {
+            return $metadata;
+        }
+    }
+
+    /**
      * @return array<string, mixed>
      *
      * @throws FormUnavailable when the definition is neither cached nor fetchable
