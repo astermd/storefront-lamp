@@ -65,7 +65,9 @@ final class CatalogBuilder
             }
 
             // Rule 7 [2.13]: every add_ons entry becomes a standalone
-            // `free-addon` product, recorded in the parent's `attachments`.
+            // product, recorded in the parent's `attachments`. It is a
+            // `free-addon` unless the channel prices it, in which case it is
+            // a `priced-addon` (see addNestedProduct).
             $attachments = [];
             foreach ($entry['add_ons'] ?? [] as $addOn) {
                 if (is_array($addOn)) {
@@ -156,6 +158,14 @@ final class CatalogBuilder
 
         $mappings = is_array($item['product_mappings'] ?? null) ? $item['product_mappings'] : [];
         $variants = self::buildVariants($item['variants'] ?? [], $item, $mappings);
+
+        // An add-on the channel gives a price is sold at that price, attached
+        // to its parent like a free one: `free-addon` is the kind the cart
+        // forces to zero, so a priced add-on must not carry it. Labs keep
+        // their kind whatever they cost.
+        if ($kind === 'free-addon' && ($variants[0]['price_cents'] ?? 0) > 0) {
+            $kind = 'priced-addon';
+        }
 
         $products[$slug] = [
             'slug' => $slug,

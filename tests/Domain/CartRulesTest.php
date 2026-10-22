@@ -41,6 +41,10 @@ final class CartRulesTest extends TestCase
                 'variants' => [['id' => 'syr-1', 'name' => 'Kit', 'price_cents' => 900]],
                 'geo_blocks' => ['AK'],
             ],
+            'vitamin' => [
+                'slug' => 'vitamin', 'name' => 'Multivitamin', 'kind' => 'priced-addon', 'emr_product_id' => 'emr-vit',
+                'variants' => [['id' => 'vit-1', 'name' => 'Multivitamin', 'price_cents' => 2500]],
+            ],
             'kit-parent' => [
                 'slug' => 'kit-parent', 'name' => 'Kit Parent', 'kind' => 'otc', 'emr_product_id' => 'emr-kit',
                 'variants' => [['id' => 'kit-1', 'name' => 'Kit', 'price_cents' => 1000]],
@@ -61,6 +65,21 @@ final class CartRulesTest extends TestCase
                 self::assertSame(0, $line->unitPriceCents);
             }
         }
+    }
+
+    public function testAPricedAttachmentComesAlongAtItsOwnPrice(): void
+    {
+        $data = $this->catalogData();
+        $data['organizer']['attachments'] = ['vitamin'];
+        $cart = new Cart();
+
+        (new CartRules(new FakeCatalog($data)))->add($cart, 'organizer');
+
+        $vitamin = $cart->line('vitamin');
+        self::assertSame('organizer', $vitamin?->parentSlug);
+        self::assertSame(2500, $vitamin?->unitPriceCents);
+        self::assertSame(499 + 2500, $cart->subtotalCents());
+        self::assertSame(1, $cart->itemCount(), 'the attachment is not a second thing the buyer chose');
     }
 
     public function testAddingAnUnknownProductIsRejected(): void

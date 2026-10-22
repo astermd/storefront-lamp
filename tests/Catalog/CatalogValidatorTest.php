@@ -85,7 +85,7 @@ final class CatalogValidatorTest extends TestCase
         $result = $this->validator()->validate($catalog);
 
         self::assertSame(
-            ['product abc123-tadalafil: kind "supplement" is not one of rx, otc, lab, free-addon'],
+            ['product abc123-tadalafil: kind "supplement" is not one of rx, otc, lab, free-addon, priced-addon'],
             $result['errors'],
         );
     }

@@ -480,6 +480,22 @@ final class CheckoutServiceTest extends TestCase
         self::assertSame(['340', '2846', '0.00'], [$offers[1]['offer_id'], $offers[1]['item_id'], $offers[1]['order_offer_price']]);
     }
 
+    public function testAPricedAttachmentIsChargedAsItsOwnLineAtItsPrice(): void
+    {
+        $cart = new Cart();
+        $cart->put(new CartLine('tirzepatide', 'Tirzepatide', 'rx', null, null, 1, 12000, 't-3m'));
+        $cart->put(new CartLine('paid-addon', 'Paid Addon', 'priced-addon', null, 'tirzepatide', 1, 2500, null));
+        $this->cartStore->save($cart);
+
+        $result = $this->serviceThatPlaces()->submit($this->buyer(), $this->card(), ['terms' => 'on']);
+
+        self::assertTrue($result->outcome->isPlaced());
+        self::assertSame(14500, $result->totals->subtotalCents);
+        $offers = $this->transport->body(count($this->transport->requests) - 1)['offers'];
+        self::assertSame(['120.00', '25.00'], array_column($offers, 'order_offer_price'));
+        self::assertSame(['3415', '3325'], array_column($offers, 'item_id'));
+    }
+
     public function testARefusalBeforeTheChargeGivesBackOnlyAKeyItStillOwns(): void
     {
         // The release is conditional on the token this request claimed with,
@@ -1746,6 +1762,13 @@ final class CheckoutServiceTest extends TestCase
                 'kind' => 'free-addon',
                 'price_cents' => 500,
                 'variants' => [['id' => 'ma-1', 'name' => 'Mapped Addon', 'price_cents' => 500, 'provider' => ['offer_id' => '340', 'product_id' => '2846']]],
+            ],
+            'paid-addon' => [
+                'slug' => 'paid-addon',
+                'name' => 'Paid Addon',
+                'kind' => 'priced-addon',
+                'price_cents' => 2500,
+                'variants' => [['id' => 'pa-1', 'name' => 'Paid Addon', 'price_cents' => 2500, 'provider' => ['offer_id' => '338', 'product_id' => '3325']]],
             ],
             'unmapped' => [
                 'slug' => 'unmapped',

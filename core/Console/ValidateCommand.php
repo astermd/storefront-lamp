@@ -36,8 +36,8 @@ use Symfony\Component\Console\Output\OutputInterface;
  * look at this" signals of the same kind.
  *
  * `--live` additionally resolves every `rx`/`otc` product's
- * `emr_product_id` against the live EMR via `products()->view()` — `lab` and
- * `free-addon` products are exempt since they aren't sold as standalone EMR
+ * `emr_product_id` against the live EMR via `products()->view()` — `lab`,
+ * `free-addon` and `priced-addon` products are exempt since they aren't sold as standalone EMR
  * products. A non-2xx response or transport failure for any one product is
  * reported as an error naming the slug and id; it does not stop the rest of
  * the sweep.

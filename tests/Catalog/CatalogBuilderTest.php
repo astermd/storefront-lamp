@@ -132,7 +132,9 @@ final class CatalogBuilderTest extends TestCase
         self::assertArrayHasKey('6a1c26-syringe', $catalog['products']);
 
         $syringe = $catalog['products']['6a1c26-syringe'];
-        self::assertSame('free-addon', $syringe['kind']);
+        // The channel prices this add-on, so it is sold at that price rather
+        // than given away.
+        self::assertSame('priced-addon', $syringe['kind']);
         self::assertSame(200, $syringe['price_cents']);
 
         // First-match-in-array-order provider resolution (rule 5): each
@@ -538,6 +540,38 @@ final class CatalogBuilderTest extends TestCase
             ['offer_id' => '338', 'product_id' => '9001'],
             $catalog['products']['parent-parent-product']['variants'][0]['provider'],
         );
+    }
+
+    public function testAnAddOnWithNoPriceStaysFree(): void
+    {
+        $entry = self::minimalEntry('entry01', 'parent01xxxxxxxxxxxxxxxxxx', 'Parent Product');
+        $entry['add_ons'] = [[
+            '_id' => 'addon01xxxxxxxxxxxxxxxxxxx',
+            'name' => 'Free Addon',
+            'variants' => [],
+        ]];
+
+        $catalog = CatalogBuilder::build(['_id' => 'chan01', 'name' => 'Synthetic Channel', 'products' => [$entry]]);
+
+        self::assertSame('free-addon', $catalog['products']['addon0-free-addon']['kind']);
+    }
+
+    public function testAnAddOnWithAPositivePriceIsPricedAndKeepsItsPrice(): void
+    {
+        $entry = self::minimalEntry('entry01', 'parent01xxxxxxxxxxxxxxxxxx', 'Parent Product');
+        $entry['add_ons'] = [[
+            '_id' => 'addon01xxxxxxxxxxxxxxxxxxx',
+            'name' => 'Paid Addon',
+            'single' => [['default_price' => 25]],
+            'variants' => [],
+        ]];
+
+        $catalog = CatalogBuilder::build(['_id' => 'chan01', 'name' => 'Synthetic Channel', 'products' => [$entry]]);
+        $addOn = $catalog['products']['addon0-paid-addon'];
+
+        self::assertSame('priced-addon', $addOn['kind']);
+        self::assertSame(2500, $addOn['variants'][0]['price_cents']);
+        self::assertSame(['addon0-paid-addon'], $catalog['products']['parent-parent-product']['attachments']);
     }
 
     public function testAddOnNeverInheritsItsParentsMappings(): void

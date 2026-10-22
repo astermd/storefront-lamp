@@ -6,6 +6,24 @@ must say the same thing. `bin/console --version` reads `composer.json`, so it is
 not a fourth copy to keep in step. An update is applied by copying files, so every entry
 names exactly which ones changed.
 
+## [Unreleased]
+
+### Priced add-ons are charged
+
+An add-on the channel gives a price is now a `priced-addon`, not a `free-addon`.
+It still comes into the cart with its parent, but at its own configured price:
+checkout lists it as its own line, the subtotal includes it, and the provider
+order carries it at that price. Before, every add-on was forced to `0.00`, and a
+provider offer with a minimum line price refused the order ("0.00 is less than
+the minimum amount allowed on the offer"). An add-on with no price stays free.
+
+Run `bin/console theme:sync --apply` to pick the new kind up. A cart opened
+before the sync keeps an add-on at its old price until the product is removed
+and added again.
+
+- `core/Catalog/CatalogBuilder.php`, `core/Catalog/CatalogValidator.php`,
+  `core/Console/ValidateCommand.php`, `core/Domain/CartRules.php`
+
 ## [0.0.6]
 
 Sends a channel-mapped add-on to the payment provider as its own line item at

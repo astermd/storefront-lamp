@@ -30,7 +30,7 @@ namespace AsterMD\Storefront\Catalog;
 final class CatalogValidator
 {
     /** @var list<string> */
-    private const array ALLOWED_KINDS = ['rx', 'otc', 'lab', 'free-addon'];
+    private const array ALLOWED_KINDS = ['rx', 'otc', 'lab', 'free-addon', 'priced-addon'];
 
     /**
      * @param array<string, mixed> $catalog
