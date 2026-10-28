@@ -28,13 +28,18 @@ final class CatalogBuilder
 
     /**
      * @param array<string, mixed> $channelData the `data` subtree of a Channel Details response
+     * @param list<array<string, mixed>> $plans the EMR's sellable subscription plans for the
+     *                                          channel, each naming the product and variant it
+     *                                          sells; empty when the EMR lists none
      * @return array{
      *     channel: array{id: mixed, name: mixed, currency: string},
      *     products: array<string, array<string, mixed>>,
      * }
      */
-    public static function build(array $channelData, string $currency = 'USD'): array
+    public static function build(array $channelData, string $currency = 'USD', array $plans = []): array
     {
+        $planIndex = self::planIndex($plans);
+
         /** @var array<string, array<string, mixed>> $products keyed by slug, in first-seen order */
         $products = [];
 
@@ -93,7 +98,11 @@ final class CatalogBuilder
                 ));
             }
 
-            $variants = self::buildVariants($product['variants'] ?? [], $product, $mappings);
+            $variants = self::attachPlans(
+                self::buildVariants($product['variants'] ?? [], $product, $mappings),
+                (string) $product['_id'],
+                $planIndex,
+            );
 
             $products[$slug] = [
                 'slug' => $slug,
@@ -238,6 +247,90 @@ final class CatalogBuilder
         }
 
         return $out;
+    }
+
+    /**
+     * The EMR's sellable subscription plans, keyed by the product and variant
+     * each one sells.
+     *
+     * Where two plans sell the same variant, the lower plan id wins, so a
+     * re-sync of the same plans always writes the same catalog. A row missing
+     * any identifier, or whose first payment is not a non-negative integer, is
+     * skipped rather than repaired: a plan the storefront cannot price is one
+     * it must not sell.
+     *
+     * @param list<array<string, mixed>> $plans as the EMR lists them
+     * @return array<string, array{id: string, name: string, first_payment_cents: int, allow_coupons: bool}>
+     */
+    private static function planIndex(array $plans): array
+    {
+        $index = [];
+
+        foreach ($plans as $plan) {
+            if (!is_array($plan)) {
+                continue;
+            }
+
+            $id = $plan['plan_id'] ?? null;
+            $productId = $plan['product_id'] ?? null;
+            $variantId = $plan['variant_id'] ?? null;
+            $firstPayment = $plan['first_payment_cents'] ?? null;
+
+            if (!is_string($id) || $id === '' || !is_string($productId) || !is_string($variantId)
+                || !is_int($firstPayment) || $firstPayment < 0) {
+                continue;
+            }
+
+            $key = $productId . '|' . $variantId;
+            if (isset($index[$key]) && strcmp($index[$key]['id'], $id) < 0) {
+                continue;
+            }
+
+            $name = $plan['display_name'] ?? $plan['name'] ?? '';
+            $index[$key] = [
+                'id' => $id,
+                'name' => is_string($name) ? $name : '',
+                'first_payment_cents' => $firstPayment,
+                'allow_coupons' => ($plan['allow_coupons'] ?? true) !== false,
+            ];
+        }
+
+        return $index;
+    }
+
+    /**
+     * Puts each variant the EMR sells on a plan onto that plan.
+     *
+     * A variant on a plan is sold at the plan's first payment, which is what
+     * the EMR's own checkout charges for it and what the buyer must be shown,
+     * so `price_cents` becomes that figure and the variant's own price is kept
+     * beside it as `list_price_cents`. Done here, once, rather than at each
+     * place a price is read, so the product page, the cart and the charge
+     * cannot disagree. A deployment that sells the variant one-off instead
+     * sets `plan` to null and `price_cents` back in the override layer.
+     *
+     * @param list<array<string, mixed>> $variants
+     * @param array<string, array{id: string, name: string, first_payment_cents: int, allow_coupons: bool}> $planIndex
+     * @return list<array<string, mixed>>
+     */
+    private static function attachPlans(array $variants, string $productId, array $planIndex): array
+    {
+        if ($planIndex === []) {
+            return $variants;
+        }
+
+        foreach ($variants as $i => $variant) {
+            $plan = $planIndex[$productId . '|' . (string) $variant['id']] ?? null;
+            if ($plan === null) {
+                continue;
+            }
+
+            $variants[$i]['list_price_cents'] = $variant['price_cents'];
+            $variants[$i]['price_cents'] = $plan['first_payment_cents'];
+            $variants[$i]['plan'] = $plan;
+        }
+
+        return $variants;
     }
 
     /**

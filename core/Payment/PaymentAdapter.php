@@ -50,6 +50,26 @@ interface PaymentAdapter
     public function place(OrderEnvelope $order, PaymentCredential $credential): PlacementOutcome;
 
     /**
+     * Re-read an order {@see self::place()} left pending, and say what has
+     * happened to it since (`[14.22]`).
+     *
+     * The second half of the challenge round trip: the buyer completed (or
+     * abandoned) the provider's verification step in the browser, and only the
+     * provider knows which. Answers placed, declined, or still pending -- the
+     * last carrying what the page needs to show the challenge again.
+     *
+     * Only meaningful when {@see AdapterCapabilities::$supportsClientAction} is
+     * true. An adapter that declares it false answers a decline for the
+     * reference rather than throwing, on the same terms as
+     * {@see self::capture()}, and is never asked in the first place: its
+     * pending outcome stops the checkout instead.
+     *
+     * **Must never throw for a provider-side outcome**, for the reason
+     * {@see self::place()} must not: a buyer is waiting on the answer.
+     */
+    public function resume(string $reference): PlacementOutcome;
+
+    /**
      * Capability 6: validate a code against the order's lines and price it.
      *
      * Only called when {@see AdapterCapabilities::$supportsPromotions} is true;

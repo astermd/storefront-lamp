@@ -199,7 +199,7 @@ final class JourneyState
      * Dropped after a successful checkout so it cannot bleed into the upsell
      * flow (`[13.17]`).
      *
-     * @var array{code: string, discount_cents: int}|null
+     * @var array{code: string, discount_cents: int, reference?: string}|null
      */
     public ?array $promotion = null;
 
@@ -299,6 +299,26 @@ final class JourneyState
      * @var array{kind: string, handle: array<string, string>}|null
      */
     public ?array $paymentHandle = null;
+
+    /**
+     * The checkout payment the provider is waiting on the buyer to verify
+     * (`[14.22]`), or null when nothing is pending.
+     *
+     * Durable because the challenge spans requests: the page runs it, and a
+     * later request -- or the provider's own redirect back -- finishes the order
+     * against what is recorded here. It holds identifiers only: the provider's
+     * reference, and the idempotency key with the claim time that owns its
+     * `checkout_attempts` row. The client action that runs the challenge is a
+     * secret and is never stored; a request that needs it again asks the
+     * adapter ({@see \AsterMD\Storefront\Payment\PaymentAdapter::resume()}).
+     *
+     * The reference the order is finished against comes from here and never
+     * from a request, so nothing a visitor posts can point this journey at
+     * somebody else's payment.
+     *
+     * @var array{reference: string, idempotency_key: string, claimed_at: string}|null
+     */
+    public ?array $pendingPayment = null;
 
     /**
      * The offer keys this journey will be shown, in configuration order
@@ -459,6 +479,7 @@ final class JourneyState
         $state->consents = self::consentList($journeyState['consents'] ?? null);
         $state->placedOrders = self::stringList($journeyState['placed_orders'] ?? null);
         $state->paymentHandle = self::storableHandle($journeyState['payment_handle'] ?? null);
+        $state->pendingPayment = self::pendingPayment($journeyState['pending_payment'] ?? null);
         $state->upsellQueue = self::stringList($journeyState['upsell_queue'] ?? null);
         $cursor = $journeyState['upsell_cursor'] ?? null;
         // A cursor that is not a number, or is negative, is read as "at the
@@ -494,7 +515,7 @@ final class JourneyState
      * writes to the `sessions` table, so a card here is a card at rest in the
      * database (`[15.8]`).
      *
-     * @return array{furthest_step: ?string, emr_events: list<string>, reconciled: bool, read_model_shape: ?int, cart: array<string, mixed>, cart_mirrored: bool, form_answers: array<string, array<string, mixed>>, form_status: array<string, string>, disqualified_rule: ?string, disqualified_teleform: ?string, buyer: array<string, string>, promotion: array{code: string, discount_cents: int}|null, promotion_quoted_against: ?string, accepted_bumps: list<string>, consents: list<array{key: string, granted: bool, copy_version: string, copy_shown: string, at: string}>, placed_orders: list<string>, payment_handle: array{kind: string, handle: array<string, string>}|null, upsell_queue: list<string>, upsell_cursor: int, upsell_outcomes: array<string, string>, upsell_quotes: array<string, int>, verification: array{status: string, at: string, basis: ?string, check: ?string}|null, receipt: array<string, mixed>|null, completed_at: ?string, session_retired: bool}
+     * @return array{furthest_step: ?string, emr_events: list<string>, reconciled: bool, read_model_shape: ?int, cart: array<string, mixed>, cart_mirrored: bool, form_answers: array<string, array<string, mixed>>, form_status: array<string, string>, disqualified_rule: ?string, disqualified_teleform: ?string, buyer: array<string, string>, promotion: array{code: string, discount_cents: int, reference?: string}|null, promotion_quoted_against: ?string, accepted_bumps: list<string>, consents: list<array{key: string, granted: bool, copy_version: string, copy_shown: string, at: string}>, placed_orders: list<string>, payment_handle: array{kind: string, handle: array<string, string>}|null, pending_payment: array{reference: string, idempotency_key: string, claimed_at: string}|null, upsell_queue: list<string>, upsell_cursor: int, upsell_outcomes: array<string, string>, upsell_quotes: array<string, int>, verification: array{status: string, at: string, basis: ?string, check: ?string}|null, receipt: array<string, mixed>|null, completed_at: ?string, session_retired: bool}
      */
     public function toArray(): array
     {
@@ -521,6 +542,7 @@ final class JourneyState
             // array is what the `sessions` table is handed, so this is the last
             // place a card can be stopped before it is at rest (`[15.8]`).
             'payment_handle' => self::storableHandle($this->paymentHandle),
+            'pending_payment' => self::pendingPayment($this->pendingPayment),
             'upsell_queue' => $this->upsellQueue,
             'upsell_cursor' => $this->upsellCursor,
             'upsell_outcomes' => $this->upsellOutcomes,
@@ -821,6 +843,7 @@ final class JourneyState
         $this->consents = [];
         $this->paymentCredential = null;
         $this->paymentHandle = null;
+        $this->pendingPayment = null;
         $this->attribution = null;
         $this->upsellQueue = [];
         $this->upsellCursor = 0;
@@ -1003,6 +1026,33 @@ final class JourneyState
     }
 
     /**
+     * Reads back a pending payment, or null when what is there is not one.
+     *
+     * All three identifiers or nothing: a reference without its attempt row
+     * could be finished but never released, and a row without a reference has
+     * nothing to ask the provider about.
+     *
+     * @return array{reference: string, idempotency_key: string, claimed_at: string}|null
+     */
+    private static function pendingPayment(mixed $raw): ?array
+    {
+        if (!is_array($raw)) {
+            return null;
+        }
+
+        $pending = [];
+        foreach (['reference', 'idempotency_key', 'claimed_at'] as $key) {
+            $value = $raw[$key] ?? null;
+            if (!is_string($value) || $value === '') {
+                return null;
+            }
+            $pending[$key] = $value;
+        }
+
+        return $pending;
+    }
+
+    /**
      * Reads back a stored promotion, or null when what was stored is no longer
      * a promotion.
      *
@@ -1010,7 +1060,7 @@ final class JourneyState
      * discount would show the buyer a badge for money they are not saving, and
      * a discount with no code could never be explained on the receipt.
      *
-     * @return array{code: string, discount_cents: int}|null
+     * @return array{code: string, discount_cents: int, reference?: string}|null
      */
     private static function promotion(mixed $raw): ?array
     {
@@ -1025,7 +1075,14 @@ final class JourneyState
             return null;
         }
 
-        return ['code' => $code, 'discount_cents' => (int) $discount];
+        $promotion = ['code' => $code, 'discount_cents' => (int) $discount];
+
+        $reference = $raw['reference'] ?? null;
+        if (is_string($reference) && $reference !== '') {
+            $promotion['reference'] = $reference;
+        }
+
+        return $promotion;
     }
 
     /**

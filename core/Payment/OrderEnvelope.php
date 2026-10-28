@@ -36,6 +36,11 @@ namespace AsterMD\Storefront\Payment;
  * direction that matters: an envelope built without one behaves exactly as it
  * used to, and turning the behaviour on is something a deployment has to
  * spell.
+ *
+ * `$promotionReference` is the pricing system's own id for `$promotionCode`,
+ * from {@see PromotionQuote::$reference}, for a provider whose order names the
+ * discount by id. `$followOn` marks an order taken after the main one on the
+ * same journey -- an upsell -- for a provider whose order says so.
  */
 final class OrderEnvelope
 {
@@ -58,6 +63,8 @@ final class OrderEnvelope
         public readonly string $idempotencyKey,
         public readonly string $anchorSlug,
         public readonly SettlementMode $settlement = SettlementMode::Capture,
+        public readonly ?string $promotionReference = null,
+        public readonly bool $followOn = false,
     ) {
     }
 

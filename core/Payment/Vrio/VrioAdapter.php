@@ -258,6 +258,16 @@ final class VrioAdapter implements PaymentAdapter
         return $outcome;
     }
 
+    /**
+     * Not supported: this provider's challenge is a redirect the storefront has
+     * no return route for, so it declares no client action and its pending
+     * outcome stops the checkout instead of reaching here.
+     */
+    public function resume(string $reference): PlacementOutcome
+    {
+        return PlacementOutcome::declined($reference, VrioOutcome::GENERIC_DECLINE, 'resume_unsupported');
+    }
+
     public function quotePromotion(OrderEnvelope $order, string $code): PromotionQuote
     {
         $code = trim($code);

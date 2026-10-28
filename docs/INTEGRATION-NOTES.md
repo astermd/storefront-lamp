@@ -833,6 +833,52 @@ A signature is not uploaded: its answer is the drawing itself, as a
 
 ---
 
+## The third payment provider (Stripe)
+
+**Nothing below has been recorded from the wire yet.** Items 31–34 are what the
+EMR's sales service reads and does with a storefront's PaymentIntent, taken from
+its source and `docs/stripe-integration.md`; the adapter's tests are built from
+Stripe's documented shapes. The first test-mode run should record a placement,
+a decline, a verification and a hold, and replace the built bodies with them.
+
+### 31. The EMR reads the PaymentIntent, not anything the storefront tells it
+
+`/treatments/sync` is given the PaymentIntent id and fetches the PaymentIntent.
+It requires `amount_details` line items, an `astermd_line_items` entry for each
+(same count, same order), `astermd_order_type` (`cycle` needs a plan entry) and
+a customer email; `astermd_session_id`, when present, must equal the session
+the sync names or it answers 422 `session_mismatch`. A product or variant the
+EMR does not know is **skipped silently**, which is why the adapter refuses a
+line with no EMR ids before Stripe is called. The amount is not checked against
+the lines. The shipping address the case uses is `shipping.address`.
+
+### 32. Statuses the sync accepts
+
+`succeeded` and `processing` sync as paid and unpaid; `requires_capture` syncs
+as authorized **only with `astermd_payment_mode: pre_auth`** and is refused
+otherwise; `requires_action`, `requires_payment_method` and `canceled` are
+refused (`payment_not_completed`). The storefront only reports a placed outcome,
+so only the first three are ever sent.
+
+### 33. The EMR captures holds, and replaces expired ones
+
+A `requires_capture` PaymentIntent is captured when the doctor completes the
+case, cancelled when the case is rejected, and — after Stripe's roughly seven
+days — replaced by an off-session charge of the saved card. A treatment with two
+holds is never captured automatically. Hence the adapter's refusal to capture,
+and its refusal to hold for a cart with no prescription or for an upsell.
+
+### 34. A declined attempt the EMR never hears about is retried by its webhook
+
+The EMR's Stripe webhook treats a PaymentIntent that carries
+`astermd_order_type`, has no treatment yet, and has reached `succeeded`,
+`canceled` or `requires_payment_method` as a sync that has not landed yet, and
+fails so Stripe retries — for up to three days. Every declined storefront
+attempt is such a PaymentIntent. That is the EMR's to change; the storefront
+cannot avoid creating one per attempt.
+
+---
+
 ## What to take from all of this
 
 Three patterns run through every item above.

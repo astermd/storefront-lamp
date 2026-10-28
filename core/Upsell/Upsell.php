@@ -57,6 +57,8 @@ final class Upsell
         public readonly ?string $providerOffer,
         public readonly ?string $providerItem,
         public readonly string $kind,
+        public readonly ?string $emrProductId = null,
+        public readonly ?string $emrVariantId = null,
     ) {
     }
 }

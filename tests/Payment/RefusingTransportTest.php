@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace AsterMD\Storefront\Tests\Payment;
 
 use AsterMD\Storefront\Bootstrap\AppFactory;
+use AsterMD\Storefront\Payment\AdapterRegistry;
 use AsterMD\Storefront\Payment\PaymentAdapter;
 use AsterMD\Storefront\Payment\RefusingTransport;
 use AsterMD\Storefront\Support\Config;
@@ -47,6 +48,20 @@ final class RefusingTransportTest extends TestCase
         ],
     ];
 
+    /** The third, whose SDK takes its HTTP client process-wide rather than per client. */
+    private const array STRIPE_CHANNEL = [
+        'channel' => ['id' => 'refusing-transport-test-channel', 'name' => 'Refusing Transport Test'],
+        'payment_processor' => [
+            'provider_category' => 'stripe',
+            'name' => 'Refusing Transport Test Processor',
+            'config' => [
+                'api_endpoint' => 'https://api.stripe.com',
+                'api_key' => 'sk_test_not-a-real-key',
+                'publishable_key' => 'pk_test_not-a-real-key',
+            ],
+        ],
+    ];
+
     private const array VRIO_CHANNEL = [
         'channel' => ['id' => 'refusing-transport-test-channel', 'name' => 'Refusing Transport Test'],
         'payment_processor' => [
@@ -71,7 +86,15 @@ final class RefusingTransportTest extends TestCase
         // Asserted by resolving each registered category and requiring the
         // innermost transport to refuse, rather than by naming the classes: a
         // third provider registered without a fence fails here.
-        foreach (['vrio' => self::VRIO_CHANNEL, 'checkout_champ' => self::CHECKOUT_CHAMP_CHANNEL] as $category => $channel) {
+        $channels = ['vrio' => self::VRIO_CHANNEL, 'checkout_champ' => self::CHECKOUT_CHAMP_CHANNEL, 'stripe' => self::STRIPE_CHANNEL];
+
+        // The list above is written by hand, so it is held to the registry: a
+        // provider registered without a channel here is one this case never
+        // looked at.
+        $registered = AppFactory::create(dirname(__DIR__, 2))->getContainer()?->get(AdapterRegistry::class)->categories();
+        self::assertEqualsCanonicalizing(array_keys($channels), $registered ?? []);
+
+        foreach ($channels as $category => $channel) {
             $adapter = AppFactory::create(dirname(__DIR__, 2), [
                 Config::class => $this->configWith(['channel.generated' => $channel]),
             ])->getContainer()?->get(PaymentAdapter::class);

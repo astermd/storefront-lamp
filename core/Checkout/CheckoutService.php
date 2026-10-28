@@ -143,13 +143,39 @@ final class CheckoutService
     public const string UNAVAILABLE_LINE = 'One of the items in your order is not available for purchase right now. Please remove it and try again.';
 
     /**
-     * The resume round trip for a provider challenge is not built,
-     * so a challenge must never be reported as a placed order. The wording
+     * A challenge from an adapter that cannot finish one on the page (it
+     * declares no client action, `[14.22]`) must never be reported as a placed
+     * order. The wording
      * says plainly what happened and names the reference, because the provider
      * has already created an order against it and support will be asked about
      * it.
      */
     public const string PENDING_ACTION_NOTICE = 'Your payment could not be completed: your bank asked for an extra verification step this checkout cannot yet handle. Please try a different card, or contact support quoting reference %s.';
+
+    /**
+     * Where a payment waiting on the buyer's bank is finished (`[14.22]`).
+     *
+     * Also the address the provider sends the buyer back to after a
+     * redirect-style verification, which is why it is a GET: that return is a
+     * browser navigation, and the page it lands on decides from journey state
+     * alone, never from what the URL carries.
+     */
+    public const string CONFIRM_PATH = '/checkout/confirm/';
+
+    /** Shown over the provider's verification step while it runs. */
+    public const string VERIFY_NOTICE = 'Your bank asked to verify this payment. Please complete the verification to finish your order.';
+
+    /** The verification step ended without the payment: nothing was charged. */
+    public const string VERIFICATION_FAILED_NOTICE = 'Your bank could not verify this payment, so nothing was charged. Please try again or use a different card.';
+
+    /**
+     * A sub-action arrived while a payment is waiting on verification.
+     *
+     * Refused rather than applied: the payment the bank is verifying is for
+     * the order as it stood, and changing the order under it would finish a
+     * payment for a cart that no longer exists.
+     */
+    public const string PAYMENT_PENDING_NOTICE = 'Please finish verifying your payment before changing your order.';
 
     /** `[13.34]` is a declared gap — every event and payload says "card". */
     private const string PAYMENT_METHOD = 'card';
@@ -207,9 +233,15 @@ final class CheckoutService
      * would silently undo the correction the buyer is retrying with.
      *
      * @param array<string, string> $errors checkout field name → the message to show beside it
+     * @param ?string $paymentChallenge what the provider's script needs to run a verification step
+     *                                  the payment is waiting on (`[14.22]`); never stored
      */
-    public function view(?BuyerDetails $submitted = null, array $errors = [], ?string $notice = null): CheckoutViewModel
-    {
+    public function view(
+        ?BuyerDetails $submitted = null,
+        array $errors = [],
+        ?string $notice = null,
+        ?string $paymentChallenge = null,
+    ): CheckoutViewModel {
         $cart = $this->carts->cart();
         $state = $this->journeys->state();
         [$promotion, $repriced] = $this->repricePromotion($cart, $state);
@@ -262,6 +294,7 @@ final class CheckoutService
             itemCount: $cart->itemCount(),
             planChoices: $plans,
             postCheckoutSteps: count($cart->rxLines()) > 1,
+            paymentChallenge: $paymentChallenge,
         );
     }
 
@@ -295,6 +328,19 @@ final class CheckoutService
             $this->log->info('checkout.rate_limited', []);
 
             return $this->refusal($totals, CheckoutResult::REFUSED_RATE_LIMITED, self::RATE_LIMITED_NOTICE);
+        }
+
+        // A payment this journey already sent is waiting on the buyer's bank
+        // (`[14.22]`). Another submit cannot be a new attempt -- the cart and
+        // buyer are the ones being verified, so it would derive the same key
+        // and be answered as a duplicate -- and it must not look like one
+        // either: the buyer is sent back to finish the verification instead.
+        if ($state?->pendingPayment !== null) {
+            return new CheckoutResult(
+                outcome: PlacementOutcome::pendingAction($state->pendingPayment['reference'], '', 'awaiting_verification'),
+                totals: $totals,
+                redirectTo: self::CONFIRM_PATH,
+            );
         }
 
         // The submission that arrives after the order it is for was already
@@ -430,29 +476,7 @@ final class CheckoutService
             );
         }
 
-        $envelope = new OrderEnvelope(
-            lines: $lines,
-            buyer: $buyer->toBuyer(),
-            subtotalCents: $totals->subtotalCents,
-            discountCents: $totals->discountCents,
-            totalCents: $totals->totalCents,
-            currency: $this->currency(),
-            promotionCode: $promotion?->code,
-            attribution: $state?->attribution?->params ?? [],
-            sessionUuid: $this->journeys->sessionUuid(),
-            clientIp: $context?->clientIp,
-            userAgent: $context?->userAgent,
-            idempotencyKey: $key,
-            anchorSlug: self::anchorSlug($cart),
-            // Resolved from the cart that is about to be charged rather than
-            // from the one the page was rendered against: a bump accepted on
-            // the checkout page is a line like any other, and a bump that
-            // holds funds has to make the order it joined hold them too.
-            settlement: $this->settlement->forSlugs(...array_map(
-                static fn (CartLine $line): string => $line->slug,
-                $cart->lines(),
-            )),
-        );
+        $envelope = $this->envelopeFor($cart, $state, $buyer, $totals, $promotion, $key, $context);
 
         // 6b. The provider has to be able to honour the settlement mode this
         //     order resolved to. An adapter that cannot authorize has no
@@ -522,8 +546,30 @@ final class CheckoutService
         $outcome = $this->adapter->place($envelope, $credential);
         $this->settleAttempt($key, $claimedAt, $outcome, $totals);
 
+        if ($outcome->state === PlacementOutcome::PENDING_ACTION
+            && $state !== null
+            && $outcome->reference !== null
+            && $this->adapter->capabilities()->supportsClientAction) {
+            // 9a. `[14.22]`: the provider can finish this on the page. The
+            //     buyer is sent to the confirm step, which asks the provider
+            //     for the challenge and renders it; the key stays claimed
+            //     (settleAttempt kept it) so nothing can place this cart again
+            //     while the bank is deciding. Only identifiers are kept -- the
+            //     client action is a secret and the confirm step asks for it
+            //     again rather than reading it from anywhere.
+            $state->pendingPayment = [
+                'reference' => $outcome->reference,
+                'idempotency_key' => $key,
+                'claimed_at' => $claimedAt,
+            ];
+            $state->wipePaymentCredential();
+            $this->log->info('checkout.payment_challenged', ['reference' => $outcome->reference]);
+
+            return new CheckoutResult(outcome: $outcome, totals: $totals, redirectTo: self::CONFIRM_PATH);
+        }
+
         if ($outcome->state === PlacementOutcome::PENDING_ACTION) {
-            // 9. State-wise a challenge is a decline; the key is
+            // 9b. State-wise a challenge is a decline; the key is
             //    deliberately *not* released, because the provider has already
             //    created an order and has no idempotency of its own — giving
             //    the key back would let the next submit create a second one.
@@ -551,6 +597,110 @@ final class CheckoutService
         return $this->placed($state, $cart, $envelope, $outcome, $credential, $totals, $recorded['records']);
     }
 
+    /** Whether this journey has a payment waiting on the buyer's bank (`[14.22]`). */
+    public function hasPendingPayment(): bool
+    {
+        return $this->journeys->state()?->pendingPayment !== null;
+    }
+
+    /**
+     * Finishes a payment a challenge left pending, once the buyer has answered
+     * it (`[14.22]`).
+     *
+     * The provider decides, not the request: the reference comes from journey
+     * state, and {@see PaymentAdapter::resume()} reads what became of it.
+     * Three answers, as at placement. Still waiting is the challenge again,
+     * for the page to run. A decline took no money, so the key goes back and
+     * the buyer is on checkout with the cart intact, exactly as after a
+     * decline at submit. A placement runs the same post-charge sequence a
+     * submit runs ({@see self::placed()}) -- nothing about a verified payment
+     * is a different kind of order.
+     *
+     * Nothing here re-prices or re-validates. The buyer was validated, their
+     * consents recorded and the discount priced before the payment was sent,
+     * and by the time this runs the money may already have moved; the one
+     * thing worth checking is that the cart is still the one that was sent,
+     * and a cart that changed is recorded as charged anyway and logged for a
+     * human, because the payment stands either way.
+     */
+    public function resume(?RequestContext $context = null): CheckoutResult
+    {
+        $cart = $this->carts->cart();
+        $state = $this->journeys->state();
+        $promotion = Promotion::fromArray($state?->promotion);
+        $totals = Totals::of($cart->subtotalCents(), $promotion);
+        $pending = $state?->pendingPayment;
+
+        if ($state === null || $pending === null) {
+            // Nothing to finish: a reload after the order completed, or a
+            // provider redirect that arrived after the page already finished
+            // it. The buyer goes where their journey says they belong.
+            $placed = $state?->placedOrders ?? [];
+
+            return new CheckoutResult(
+                outcome: PlacementOutcome::declined(null, '', 'nothing_pending'),
+                totals: $totals,
+                redirectTo: $placed !== [] && $cart->isEmpty() ? $this->onwardPath() : $this->flow->pathFor(self::CHECKOUT_STEP),
+            );
+        }
+
+        $outcome = $this->adapter->resume($pending['reference']);
+
+        if ($outcome->state === PlacementOutcome::PENDING_ACTION) {
+            return new CheckoutResult(
+                outcome: $outcome,
+                totals: $totals,
+                notice: self::VERIFY_NOTICE,
+                paymentChallenge: $outcome->clientAction,
+            );
+        }
+
+        $key = $pending['idempotency_key'];
+        $claimedAt = $pending['claimed_at'];
+        $state->pendingPayment = null;
+
+        $buyer = new BuyerDetails(...self::buyerArguments($state->buyer()));
+        $envelope = $this->envelopeFor($cart, $state, $buyer, $totals, $promotion, $key, $context);
+        $credential = PaymentCredential::token($pending['reference']);
+
+        if (!$outcome->isPlaced()) {
+            // The bank refused, or the buyer abandoned the step: the provider
+            // took no money, so the key goes back for a retry with another
+            // card, as a decline at placement does.
+            $this->releaseQuietly($key, $claimedAt);
+
+            return $this->stopped(
+                $state,
+                $totals,
+                $outcome,
+                self::VERIFICATION_FAILED_NOTICE,
+                self::paymentDescriptor($credential, $envelope->settlement, $outcome, $totals, held: false),
+            );
+        }
+
+        $this->postCharge->run(
+            'record_outcome',
+            $outcome->reference,
+            fn (): mixed => $this->attempts->resolvePending($key, $claimedAt, CheckoutAttempt::encodeOutcome($outcome)),
+        );
+
+        if (IdempotencyKey::forSubmit($this->journeys->sessionUuid(), $this->sessionKey(), $cart, $buyer->toArray()) !== $key) {
+            $this->log->error('checkout.resume_cart_changed', $this->reconcilable(
+                $key,
+                $totals,
+                $outcome->reference,
+                CheckoutAttemptRepository::STATE_COMPLETE,
+            ) + ['reason' => 'the cart or buyer changed while the payment was being verified; the order is recorded against the cart as it is now']);
+        }
+
+        $consents = array_values(array_filter(array_map(
+            static fn (array $stored): ?ConsentRecord => ConsentRecord::fromArray($stored),
+            $state->consents,
+        )));
+
+        return $this->placed($state, $cart, $envelope, $outcome, $credential, $totals, $consents);
+    }
+
     /**
      * Accepts or withdraws one order bump (`[27.1]`, `[27.11]`).
      *
@@ -574,6 +724,10 @@ final class CheckoutService
     {
         $cart = $this->carts->cart();
         $state = $this->journeys->state();
+
+        if ($state?->pendingPayment !== null) {
+            return CartOutcome::rejected(self::PAYMENT_PENDING_NOTICE);
+        }
 
         if (in_array($slug, $state?->acceptedBumps ?? [], true) && $cart->has($slug)) {
             $outcome = $this->rules->remove($cart, $slug);
@@ -653,6 +807,10 @@ final class CheckoutService
             return CartOutcome::rejected('Discount codes are not available.');
         }
 
+        if ($this->hasPendingPayment()) {
+            return CartOutcome::rejected(self::PAYMENT_PENDING_NOTICE);
+        }
+
         if (!$this->limiter->allow('checkout.promo', $this->rateLimitIdentity($context))) {
             return CartOutcome::rejected(self::RATE_LIMITED_NOTICE);
         }
@@ -673,12 +831,21 @@ final class CheckoutService
     /** `[13.13]`: removing the code removes the discount, and nothing else. */
     public function removePromotion(): void
     {
+        // The discount is part of the payment the bank is verifying.
+        if ($this->hasPendingPayment()) {
+            return;
+        }
+
         $this->storePromotion($this->journeys->state(), null, null);
     }
 
     /** `[12.4]`, `[12.7]`: choosing a plan is what gives an Rx line a price. */
     public function choosePlan(string $slug, string $variantId): CartOutcome
     {
+        if ($this->hasPendingPayment()) {
+            return CartOutcome::rejected(self::PAYMENT_PENDING_NOTICE);
+        }
+
         $cart = $this->carts->cart();
         $outcome = $this->rules->chooseVariant($cart, $slug, $variantId);
 
@@ -700,6 +867,12 @@ final class CheckoutService
      */
     public function rememberBuyer(BuyerDetails $buyer): void
     {
+        // The stored buyer is the one the pending payment was sent for, and
+        // the order is finished against it (`[14.22]`).
+        if ($this->hasPendingPayment()) {
+            return;
+        }
+
         $this->journeys->state()?->storeBuyer($buyer->toArray());
     }
 
@@ -878,7 +1051,7 @@ final class CheckoutService
             $authorize,
             $outcome->preAuthQa,
             $held && $authorize ? $totals->totalCents : null,
-            CardDescriptor::fromCredential($credential, $outcome->providerCardBrand),
+            CardDescriptor::fromCredential($credential, $outcome->providerCardBrand, $outcome->providerCardExpiry),
         );
     }
 
@@ -904,10 +1077,10 @@ final class CheckoutService
         // infer the rung from the presence of recorded consents rather than
         // read it. Recorded here it is a fact.
         //
-        // A challenge reaches this method too, and is recorded the same way it
-        // is reported: state-wise it is a decline until the resume round trip
-        // exists, and a local record that disagreed with what the EMR was told
-        // would be a second answer to one question.
+        // A challenge reaches this method too when the adapter cannot finish
+        // one on the page, and is recorded the same way it is reported:
+        // state-wise it is a decline, and a local record that disagreed with
+        // what the EMR was told would be a second answer to one question.
         //
         // The mark deduplicates and the report does not, deliberately. The
         // local list is a set of names, so a buyer refused twice adds nothing
@@ -1252,7 +1425,9 @@ final class CheckoutService
         $lines = [];
 
         foreach ($cart->lines() as $line) {
-            $provider = $this->providerIdentifiers($line);
+            $variant = $this->variantFor($line->slug, $line->variantId);
+            $provider = $variant['provider'] ?? null;
+            $provider = is_array($provider) ? $provider : [];
 
             $lines[] = new OrderLine(
                 slug: $line->slug,
@@ -1262,21 +1437,24 @@ final class CheckoutService
                 unitPriceCents: $line->unitPriceCents,
                 quantity: $line->quantity,
                 kind: $line->kind,
+                // The EMR's own ids, from the line and the catalog variant it
+                // was priced from. A variant's id is the product's own for a
+                // product without variants, which is how the EMR names one.
+                emrProductId: $line->emrProductId,
+                emrVariantId: self::text($variant['id'] ?? null) ?? $line->variantId,
+                // The catalog's plan for the variant, when the variant is sold
+                // on one -- the same place the line's price came from.
+                planId: self::text(is_array($variant['plan'] ?? null) ? ($variant['plan']['id'] ?? null) : null),
             );
         }
 
         return $lines;
     }
 
-    /**
-     * @return array{offer_id?: string, product_id?: string}
-     */
-    private function providerIdentifiers(CartLine $line): array
+    /** A non-empty string, or null. */
+    private static function text(mixed $value): ?string
     {
-        $variant = $this->variantFor($line->slug, $line->variantId);
-        $provider = $variant['provider'] ?? null;
-
-        return is_array($provider) ? $provider : [];
+        return is_string($value) && $value !== '' ? $value : null;
     }
 
     /**
@@ -1424,7 +1602,7 @@ final class CheckoutService
             return [null, null];
         }
 
-        return [new Promotion($quote->code, $quote->discountCents), null];
+        return [new Promotion($quote->code, $quote->discountCents, $quote->reference), null];
     }
 
     /**
@@ -1469,10 +1647,63 @@ final class CheckoutService
                 continue;
             }
 
-            $material[] = [$line->providerOffer, $line->providerItem, $line->unitPriceCents, $line->quantity];
+            $entry = [$line->providerOffer, $line->providerItem, $line->unitPriceCents, $line->quantity];
+
+            // A line sold on a plan is quoted by its plan, so a re-sync that
+            // moves the variant to another plan has to invalidate the quote.
+            // Appended only when present, so a deployment that sells no plans
+            // keeps the digests it already stored.
+            if ($line->planId !== null) {
+                $entry[] = $line->planId;
+            }
+
+            $material[] = $entry;
         }
 
         return hash('sha256', (string) json_encode($material, JSON_UNESCAPED_SLASHES));
+    }
+
+    /**
+     * `[13.19]`–`[13.23]`: one envelope for the whole cart.
+     *
+     * Shared by the submit that charges the cart and by the request that
+     * finishes a payment a challenge left pending ({@see self::resume()}), so
+     * the order recorded for a verified payment is assembled exactly as the
+     * one that was sent for verification.
+     */
+    private function envelopeFor(
+        Cart $cart,
+        ?JourneyState $state,
+        BuyerDetails $buyer,
+        Totals $totals,
+        ?Promotion $promotion,
+        string $key,
+        ?RequestContext $context,
+    ): OrderEnvelope {
+        return new OrderEnvelope(
+            lines: $this->orderLines($cart),
+            buyer: $buyer->toBuyer(),
+            subtotalCents: $totals->subtotalCents,
+            discountCents: $totals->discountCents,
+            totalCents: $totals->totalCents,
+            currency: $this->currency(),
+            promotionCode: $promotion?->code,
+            attribution: $state?->attribution?->params ?? [],
+            sessionUuid: $this->journeys->sessionUuid(),
+            clientIp: $context?->clientIp,
+            userAgent: $context?->userAgent,
+            idempotencyKey: $key,
+            anchorSlug: self::anchorSlug($cart),
+            // Resolved from the cart that is about to be charged rather than
+            // from the one the page was rendered against: a bump accepted on
+            // the checkout page is a line like any other, and a bump that
+            // holds funds has to make the order it joined hold them too.
+            settlement: $this->settlement->forSlugs(...array_map(
+                static fn (CartLine $line): string => $line->slug,
+                $cart->lines(),
+            )),
+            promotionReference: $promotion?->reference,
+        );
     }
 
     /**

@@ -68,6 +68,11 @@ final class RedeclaredAdapter implements PaymentAdapter
         return $this->inner->place($order, $credential);
     }
 
+    public function resume(string $reference): PlacementOutcome
+    {
+        return $this->inner->resume($reference);
+    }
+
     public function quotePromotion(OrderEnvelope $order, string $code): PromotionQuote
     {
         return $this->quote ?? $this->inner->quotePromotion($order, $code);

@@ -76,6 +76,26 @@ final class InstrumentedPaymentAdapter implements PaymentAdapter
         );
     }
 
+    /**
+     * Timed like a placement, because it finishes one. The client action is
+     * deliberately absent from what is recorded: it can confirm the payment,
+     * and it never outlives the request ({@see PlacementOutcome}).
+     */
+    public function resume(string $reference): PlacementOutcome
+    {
+        return $this->timer->measure(
+            Boundary::ProviderResume,
+            fn (): PlacementOutcome => $this->inner->resume($reference),
+            static fn (PlacementOutcome $outcome): array => [
+                'outcome' => $outcome->state,
+                'raw_status' => $outcome->rawStatus,
+                'reference' => $outcome->reference,
+                'settlement' => $outcome->settlement->value,
+            ],
+            ['reference' => $reference],
+        );
+    }
+
     public function quotePromotion(OrderEnvelope $order, string $code): PromotionQuote
     {
         return $this->timer->measure(

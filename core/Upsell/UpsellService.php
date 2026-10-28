@@ -820,6 +820,8 @@ final class UpsellService
             unitPriceCents: $upsell->priceCents,
             quantity: 1,
             kind: $upsell->kind,
+            emrProductId: $upsell->emrProductId,
+            emrVariantId: $upsell->emrVariantId,
         );
 
         return new OrderEnvelope(
@@ -844,6 +846,9 @@ final class UpsellService
             // deployment default is one of the modes being compared.
             settlement: $this->settlement->forSlug($upsell->slug),
             anchorSlug: $upsell->slug,
+            // A second order on a journey that already has one -- which a
+            // provider whose order the EMR reads back has to say.
+            followOn: true,
         );
     }
 

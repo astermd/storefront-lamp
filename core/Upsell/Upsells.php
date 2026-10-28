@@ -143,7 +143,8 @@ final class Upsells
         // synthesises for a single-SKU product. A missing mapping is still
         // returned: whether an unchargeable offer is survivable belongs to the
         // charge, and `config:validate` refuses the configuration outright.
-        $provider = self::providerOf($named ?? self::firstVariant($product));
+        $offered = $named ?? self::firstVariant($product);
+        $provider = self::providerOf($offered);
 
         $bullets = [];
         foreach (is_array($row['bullets'] ?? null) ? $row['bullets'] : [] as $bullet) {
@@ -176,6 +177,10 @@ final class Upsells
             providerOffer: self::text($provider['offer_id'] ?? null),
             providerItem: self::text($provider['product_id'] ?? null),
             kind: (string) ($product['kind'] ?? 'otc'),
+            // The EMR's own ids for the same variant, for a provider whose
+            // order the EMR reads back by them.
+            emrProductId: self::text(is_scalar($product['emr_product_id'] ?? null) ? (string) $product['emr_product_id'] : null),
+            emrVariantId: self::text($offered['id'] ?? null),
         );
     }
 

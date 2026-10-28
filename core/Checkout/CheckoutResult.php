@@ -31,6 +31,11 @@ use AsterMD\Storefront\Payment\PlacementOutcome;
  * refused before the provider was reached, for a reason the buyer cannot fix
  * by editing the form. It exists so the HTTP layer can answer 429 to a flood
  * and 200 to a decline without pattern-matching on a message string.
+ *
+ * `$paymentChallenge` is set only when the payment is waiting on the buyer to
+ * verify it with their bank (`[14.22]`): it is what the provider's script on
+ * the page needs to run that step, and it is rendered into that one response
+ * and kept nowhere.
  */
 final class CheckoutResult
 {
@@ -60,6 +65,7 @@ final class CheckoutResult
         public readonly ?string $notice = null,
         public readonly ?string $redirectTo = null,
         public readonly ?string $refusedBecause = null,
+        public readonly ?string $paymentChallenge = null,
     ) {
     }
 

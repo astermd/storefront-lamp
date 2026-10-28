@@ -60,6 +60,11 @@ use AsterMD\Storefront\Payment\CheckoutChamp\CheckoutChampAdapter;
 use AsterMD\Storefront\Payment\CheckoutChamp\CheckoutChampApiFactory;
 use AsterMD\Storefront\Payment\CheckoutChamp\CheckoutChampAuthorizeMode;
 use AsterMD\Storefront\Payment\CheckoutChamp\CheckoutChampCredentials;
+use AsterMD\Storefront\Checkout\CheckoutService;
+use AsterMD\Storefront\Emr\NullCouponGateway;
+use AsterMD\Storefront\Payment\Stripe\StripeAdapter;
+use AsterMD\Storefront\Payment\Stripe\StripeApiFactory;
+use AsterMD\Storefront\Payment\Stripe\StripeCredentials;
 use AsterMD\Storefront\Payment\Vrio\VrioAdapter;
 use AsterMD\Storefront\Payment\Vrio\VrioApiFactory;
 use AsterMD\Storefront\Payment\Vrio\VrioCredentials;
@@ -141,6 +146,16 @@ $resolveAdapter = static function () use ($config, $rootDir): PaymentAdapter {
         rtrim((string) $config->get('app.url', ''), '/') . '/checkout/',
         CheckoutChampAuthorizeMode::parse($config->get('payment.checkout_champ.authorize_mode'))
             ?? CheckoutChampAuthorizeMode::Qa,
+    ));
+    // No command here prices a discount code, so the EMR's coupons are not
+    // asked for: the adapter only reports what it supports.
+    $registry->register('stripe', static fn (): PaymentAdapter => new StripeAdapter(
+        StripeCredentials::fromChannelConfig((array) $config->get('channel.generated.payment_processor.config', [])),
+        new StripeApiFactory(),
+        $log,
+        new NullCouponGateway(),
+        (string) $config->get('channel.generated.channel.id', ''),
+        rtrim((string) $config->get('app.url', ''), '/') . CheckoutService::CONFIRM_PATH,
     ));
 
     return $registry->for((string) ($config->get('payment.adapter')

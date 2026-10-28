@@ -6,6 +6,7 @@ declare(strict_types=1);
 
 namespace AsterMD\Storefront\Console;
 
+use AsterMD\Sdk\AsterMDClient;
 use AsterMD\Sdk\Http\NativeCurlClient;
 use AsterMD\Storefront\Catalog\CatalogBuilder;
 use AsterMD\Storefront\Catalog\MediaLocalizer;
@@ -103,7 +104,7 @@ final class SyncCommand extends Command
         }
 
         $currency = (string) $input->getOption('currency');
-        $catalog = CatalogBuilder::build($data, $currency);
+        $catalog = CatalogBuilder::build($data, $currency, self::sellablePlans($client, $output));
         // Computed on the built (pre-localization) catalog: media localization only
         // rewrites image/gallery fields, never variants, so this count is identical
         // whether taken before or after localize() — computing it here keeps dry-run
@@ -229,6 +230,39 @@ final class SyncCommand extends Command
         }
 
         return Command::SUCCESS;
+    }
+
+    /**
+     * The subscription plans the EMR lets this channel sell, each naming the
+     * product and variant it sells and its first payment.
+     *
+     * Asked of an SDK that may not offer it yet: an older SDK has no plans
+     * resource, and a channel whose provider sells no plans answers an empty
+     * list. Either way every product is sold one-off, which is what this
+     * catalog meant before plans existed -- so a failure here is said out loud
+     * and the sync carries on, rather than refusing to sync a catalog over a
+     * feature the deployment may not use.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private static function sellablePlans(AsterMDClient $client, OutputInterface $output): array
+    {
+        if (!method_exists($client, 'plans')) {
+            return [];
+        }
+
+        try {
+            $rows = $client->plans()->sellable()->data();
+        } catch (\Throwable $e) {
+            $output->writeln(sprintf(
+                '<comment>theme:sync: could not list subscription plans (%s); every product is synced one-off.</comment>',
+                $e::class,
+            ));
+
+            return [];
+        }
+
+        return is_array($rows) ? array_values(array_filter($rows, 'is_array')) : [];
     }
 
     /**

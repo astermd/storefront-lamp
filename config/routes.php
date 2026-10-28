@@ -79,6 +79,11 @@ return function (App $app): void {
     $app->post('/checkout/promo/', CheckoutController::class . ':promoApply')->setName('checkout.promo.apply');
     $app->post('/checkout/promo/remove/', CheckoutController::class . ':promoRemove')->setName('checkout.promo.remove');
     $app->post('/checkout/plan/', CheckoutController::class . ':plan')->setName('checkout.plan');
+    // Finishes a payment the buyer's bank asked to verify (`[14.22]`). A GET,
+    // because the provider sends the buyer back here by redirect after a
+    // verification that left the page; it is not a funnel step, and the
+    // service decides from journey state alone what there is to finish.
+    $app->get('/checkout/confirm/', CheckoutController::class . ':confirm')->setName('checkout.confirm');
     // The address field's suggestions when the deployment has no Google key.
     // GETs that change nothing, so they sit outside the step guard and the
     // CSRF check like the other sub-actions, and are rate-limited instead.

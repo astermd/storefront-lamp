@@ -1,0 +1,38 @@
+# Local development: the working tree is bind-mounted into the container, so
+# template and code edits show up on the next request, and `composer install`
+# and `theme:sync --apply` write into this checkout.
+#
+#   cp .env.example .env        # then fill it in; see deploy/README.md
+#   docker compose up
+#   open http://localhost:8080
+#
+# Run console commands and the test suite inside the same container:
+#
+#   docker compose exec app bin/console emr:ping
+#   docker compose exec app vendor/bin/phpunit
+#
+# This file is for working on the storefront. A production container runs the
+# image's default target instead; see "Docker" in deploy/README.md.
+services:
+  app:
+    build:
+      context: .
+      target: dev
+    # The container runs as www-data (uid 82). Docker Desktop and Rancher
+    # Desktop on a Mac accept writes to the bind mount from any uid; a Linux
+    # host does not, so there set DOCKER_UID and DOCKER_GID (in .env or the
+    # shell) to your own `id -u` and `id -g`.
+    user: "${DOCKER_UID:-82}:${DOCKER_GID:-82}"
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    volumes:
+      - .:/var/www/html
+      # storage/ — the SQLite database, sessions, logs and caches — lives on a
+      # volume rather than the bind mount. A bind mount on a Mac reports every
+      # file as owned by your host uid, and PHP refuses to open a session file
+      # it does not own, so sessions would break on every request. Read the
+      # logs with `docker compose exec app tail -f storage/logs/app.log`.
+      - app-storage:/var/www/html/storage
+
+volumes:
+  app-storage:

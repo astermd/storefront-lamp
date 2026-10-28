@@ -983,6 +983,60 @@ account password. `CheckoutChampWireLog` therefore holds credentials as well as 
 data while it is on, and the adapter's declared PCI posture says so — which is what puts it
 in front of an operator, via `config:validate`, before they go live rather than after.
 
+### The Stripe adapter
+
+`core/Payment/Stripe/` is the third implementation and the first that **tokenizes**. It
+declares `credentialStrategy: tokenization` with `collectionSurface: provider-hosted`, so the
+checkout template takes its second branch: Stripe's Payment Element mounts in the provider
+slot from the adapter's `clientConfig` (the publishable key and Stripe.js's URL, nothing
+secret), `theme/js/payment-stripe.js` turns what the buyer entered into a confirmation token,
+and the form posts `payment_token` instead of a card. `CheckoutController` makes that a
+`PaymentCredential::token()`; every other step of the submit is unchanged.
+
+`place()` confirms a PaymentIntent the storefront creates itself, on the buyer's Stripe
+customer (found by email first, as the EMR's own checkout finds it). **The EMR is the reader
+that matters**: `/treatments/sync` is told the PaymentIntent id and builds the treatment from
+the PaymentIntent, so the adapter writes the EMR's contract — `amount_details` line items
+paired by index with `astermd_line_items` (the EMR's own product and variant ids, or the plan a
+line is sold on), `astermd_order_type`, `astermd_session_id`, the coupon id — and the customer
+and card it saves are what the EMR charges renewals to. The ids come down on `OrderLine`
+(`emrProductId`, `emrVariantId`, `planId`), which is why those fields exist; the other two
+adapters ignore them.
+
+Three things the other providers do here, Stripe hands to the EMR:
+
+- **Capture.** A held payment (`capture_method: manual`) is captured by the EMR when the
+  doctor completes the case it opened, so `capture()` refuses — `payment:capture` must not
+  take money before that decision. A hold is placed only for a cart with a prescription line
+  and never for an upsell, because the EMR would capture neither.
+- **Discount codes.** A PaymentIntent has none, so `quotePromotion()` asks the EMR through
+  `Emr\CouponGateway`, and the coupon's id rides on `PromotionQuote::$reference` →
+  `Promotion::$reference` → `OrderEnvelope::$promotionReference` into the metadata.
+- **Plans.** `theme:sync` asks the EMR which plans the channel may sell and attaches each to
+  its variant, at the plan's first payment (`CatalogBuilder::attachPlans()`). A line on
+  a plan is named by the plan alone and makes the order a `cycle`.
+
+The test fence is `StripeRefusingTransport`. Stripe's SDK takes its HTTP client process-wide
+(`ApiRequestor::setHttpClient()`), so `StripeApiFactory` installs it on every client it
+builds.
+
+### A payment the bank asks the buyer to verify
+
+`PaymentAdapter::resume()` and `AdapterCapabilities::$supportsClientAction` are the round trip
+`[14.22]` asks for. An adapter that declares it returns a pending outcome carrying a
+`clientAction` — for Stripe, the PaymentIntent's client secret — which is **never persisted or
+logged**: `CheckoutAttempt::encodeOutcome()` does not carry it and the instrumentation does not
+record it. `CheckoutService` keeps only identifiers (`JourneyState::$pendingPayment`: the
+reference, the idempotency key and the claim time that own the attempt row) and sends the
+buyer to `GET /checkout/confirm/`. That step asks the adapter what became of the payment and
+either renders the challenge again, finishes the order through the same `placed()` path a
+submit uses (and replaces the pending outcome on the attempt row), or treats it as a decline
+and releases the key. It is a GET because the bank's redirect back is a navigation, and it
+reads nothing from the request: the reference is the journey's. While a payment is pending,
+the sub-actions refuse and the checkout page redirects to the confirm step, so the cart the
+bank is verifying cannot change under it. An adapter that does not declare the capability —
+Vrio, CheckoutChamp — still stops the checkout on a challenge, as before.
+
 ### Where the card goes, and where it does not
 
 **Card data never reaches the EMR.** The storefront charges at the payment aggregator and

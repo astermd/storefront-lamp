@@ -26,6 +26,12 @@ final class OrderLine
      *                     has one to hand; a line whose kind is unknown is recorded as the
      *                     unrestricted case, which is the reading that never over-claims a
      *                     prescription.
+     * @param ?string $emrProductId the EMR's own product id, and `$emrVariantId` its variant id (the
+     *                              product id for a product without variants). A provider whose
+     *                              order is read back by the EMR names the line by these rather
+     *                              than by its own identifiers.
+     * @param ?string $planId       the EMR subscription plan the line is sold on, when it is sold on
+     *                              one; such a line is named by the plan alone
      */
     public function __construct(
         public readonly string $slug,
@@ -35,6 +41,9 @@ final class OrderLine
         public readonly int $unitPriceCents,
         public readonly int $quantity,
         public readonly string $kind = 'otc',
+        public readonly ?string $emrProductId = null,
+        public readonly ?string $emrVariantId = null,
+        public readonly ?string $planId = null,
     ) {
     }
 

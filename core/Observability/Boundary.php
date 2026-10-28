@@ -60,4 +60,7 @@ enum Boundary: string
 
     /** Settling an order that was authorized rather than charged. */
     case ProviderCapture = 'provider.capture';
+
+    /** Re-reading an order a challenge left pending, once the buyer has answered it (`[14.22]`). */
+    case ProviderResume = 'provider.resume';
 }

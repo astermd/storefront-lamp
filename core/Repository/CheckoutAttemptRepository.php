@@ -286,6 +286,42 @@ final class CheckoutAttemptRepository
     }
 
     /**
+     * Replaces the pending outcome a challenge left on a completed attempt with
+     * the one the buyer's answer to it produced (`[14.22]`).
+     *
+     * A challenge is recorded like any other provider answer -- the row is
+     * `complete` and holds the pending outcome, so a duplicate submit is told
+     * the payment is waiting rather than reaching the provider again. Once the
+     * challenge resolves into a placement, that stored answer is out of date,
+     * and a duplicate must now be replayed the placement instead.
+     *
+     * Conditional on the row still being the one this journey claimed
+     * (`created_at`), on the same ownership terms as {@see self::release()},
+     * and with no `rowCount()` check for the reason {@see self::recordOutcome()}
+     * has none: it runs after the money has moved, and matching nothing is the
+     * safe direction.
+     *
+     * A challenge that ends in a decline does not come here: it took no money,
+     * so the key goes back through {@see self::release()} exactly as a decline
+     * at placement does.
+     *
+     * @param array<string, mixed> $outcome
+     * @param string $claimedAt the `created_at` the journey's claim wrote
+     */
+    public function resolvePending(string $key, string $claimedAt, array $outcome): void
+    {
+        $this->pdo()
+            ->prepare('UPDATE checkout_attempts SET outcome = ?, completed_at = ? WHERE idempotency_key = ? AND state = ? AND created_at = ?')
+            ->execute([
+                (string) json_encode($outcome, JSON_UNESCAPED_SLASHES),
+                gmdate('c'),
+                $key,
+                self::STATE_COMPLETE,
+                $claimedAt,
+            ]);
+    }
+
+    /**
      * Gives the key back, so the same submission may be tried again.
      *
      * A delete rather than a state change, because the key is derived from the

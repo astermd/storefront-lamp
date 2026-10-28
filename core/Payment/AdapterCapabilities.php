@@ -46,6 +46,17 @@ namespace AsterMD\Storefront\Payment;
  * said to hold, and that is the failure this whole flag exists to make
  * impossible. It defaults to false so an adapter written before this existed
  * refuses rather than silently captures.
+ *
+ * `$clientConfig` is what a provider-hosted surface needs on the page to mount
+ * its fields (`[15.4c]`) -- a publishable key, never a secret. It is rendered
+ * into the checkout page verbatim, so an adapter puts nothing in it that a
+ * visitor may not read.
+ *
+ * `$supportsClientAction` says whether a pending outcome can be finished on
+ * the page (`[14.22]`): the provider's own script runs the challenge, and
+ * {@see PaymentAdapter::resume()} reads back what happened. An adapter that
+ * declares it false has its challenge stop the checkout instead, which is what
+ * every adapter did before the round trip existed -- so it defaults to false.
  */
 final class AdapterCapabilities
 {
@@ -69,6 +80,7 @@ final class AdapterCapabilities
      * @param list<string> $routingHintKeys         opaque provider-side ids passed through untouched (`[14.6c]`)
      * @param list<string> $requiredDeploymentKeys  keys under `payment.*` in `config/payment.php` that this adapter
      *                                              needs and the EMR cannot supply, so a deployment sets them by hand
+     * @param array<string, string> $clientConfig   public values a provider-hosted surface needs on the page
      */
     public function __construct(
         public readonly string $providerCategory,
@@ -84,6 +96,8 @@ final class AdapterCapabilities
         public readonly bool $supportsOrderSearch = false,
         public readonly bool $supportsAuthorizeCapture = false,
         public readonly array $requiredDeploymentKeys = [],
+        public readonly array $clientConfig = [],
+        public readonly bool $supportsClientAction = false,
     ) {
     }
 

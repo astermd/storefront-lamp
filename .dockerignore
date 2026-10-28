@@ -1,0 +1,35 @@
+# Secrets and one channel's synced data never go into an image.
+# channel.generated.php holds live payment-provider credentials, and an image
+# outlives the deployment it was built for. Supply all of these at run time —
+# see "Docker" in deploy/README.md.
+.env
+/config/channel.generated.php
+/config/products.generated.php
+public/assets/media/
+
+# Runtime state lives on the storage volume.
+storage/
+
+# Installed in the image by Composer; never copied from the host.
+/vendor/
+composer.phar
+
+# Build-time and development-only material.
+.git/
+node_modules/
+tests/
+.phpunit.cache/
+phpunit.xml
+
+# Working notes and editor noise.
+CLAUDE.local.md
+scratchpad/
+scratchpad1/
+.superpowers/
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db

@@ -213,6 +213,53 @@ ln -s /etc/nginx/sites-available/storefront.conf /etc/nginx/sites-enabled/
 nginx -t && systemctl reload nginx
 ```
 
+## Docker
+
+The `Dockerfile` at the repository root builds one image that runs nginx in front of php-fpm, on PHP 8.5 (`--build-arg PHP_VERSION=8.4` for the floor). The server block in `deploy/docker/nginx.conf` follows `nginx.conf` above, with the same deny rules, forwarding-header stripping, body limit and asset caching. What changes is what a container needs: it listens on **8080**, and nginx, php-fpm and anything you `docker exec` all run as `www-data`. The application files are owned by root and read-only to that user; `storage/` is the only writable path, which is the permission model from step 6.
+
+On every start the container runs `bin/console cache:clear` and then `bin/console db:migrate`. Clearing the cache matters because `storage/` is a volume that outlives the image: without it, a new image would keep serving the old image's compiled Twig templates. Set `MIGRATE_ON_START=0` if a release step runs migrations instead.
+
+### Local development
+
+```bash
+cp .env.example .env          # set APP_ENV=dev for template work — see below
+docker compose up
+curl -s localhost:8080/health/
+```
+
+`compose.yaml` builds the `dev` target and bind-mounts the checkout, so code and template edits show up on the next request. On first start it runs `composer install` into `vendor/` if there is none. Run everything else in the same container:
+
+```bash
+docker compose exec app bin/console emr:ping
+docker compose exec app bin/console theme:sync --apply   # writes config/*.generated.php into the checkout
+docker compose exec app vendor/bin/phpunit
+```
+
+- **`.env.example` says `APP_ENV=production`, and in production Twig never notices a changed template.** For template work, set `APP_ENV=dev` in your `.env`.
+- **`storage/` lives on the `app-storage` volume, not in the checkout.** On a Mac, a bind mount reports every file as owned by your host user, and PHP will not open a session file it does not own, so storage on the bind mount would break sessions. Read the log with `docker compose exec app tail -f storage/logs/app.log`.
+- **On a Linux host, set `DOCKER_UID` and `DOCKER_GID`** (in `.env` or the shell) to your own `id -u` and `id -g`. Otherwise the container's uid cannot write `vendor/` or `config/` in your checkout. Docker Desktop and Rancher Desktop on a Mac need neither.
+- `npm run dev` / `npm run build` still run on the host. The image does not contain Node, because built assets are committed.
+
+### Production
+
+```bash
+docker build -t astermd-storefront .
+
+docker run -d --name storefront -p 8080:8080 --restart unless-stopped \
+  --env-file .env \
+  -v storefront-storage:/var/www/html/storage \
+  -v "$PWD/config/products.generated.php:/var/www/html/config/products.generated.php:ro" \
+  -v "$PWD/config/channel.generated.php:/var/www/html/config/channel.generated.php:ro" \
+  -v "$PWD/public/assets/media:/var/www/html/public/assets/media:ro" \
+  astermd-storefront
+```
+
+- **The environment comes from the container.** `--env-file .env` or individual `-e` flags work. php-fpm passes the container environment through (`clear_env = no`), and a variable set on the container beats the same name in a mounted `.env`. Docker's `--env-file` does not strip quotes the way `.env` parsing does, so keep values unquoted, as `.env.example` does. Everything in [The environment file](#the-environment-file) applies unchanged, including deleting or fixing `APP_ENV`.
+- **The synced catalog is mounted, never built in.** `.dockerignore` keeps `.env`, both `config/*.generated.php` files and `public/assets/media/` out of the image, because `channel.generated.php` carries live provider credentials and an image outlives the deployment it was built for. Produce them with `theme:sync --apply` from a checkout (the compose stack above will do), then mount them read-only as shown. **Each mounted file must exist before you start the container.** `docker run -v` creates a missing host path as a directory, and a directory named `channel.generated.php` stops the configuration from loading at all. Without the three mounts the container runs on the example catalog, the same as a fresh clone.
+- **Health:** the image declares a `HEALTHCHECK` against `/health/`, so `docker ps` reports `healthy`/`unhealthy` from the same checks a load balancer would use.
+- **TLS terminates in front of the container.** The forwarding headers are stripped here exactly as in `nginx.conf`, so behind a proxy that sets `X-Forwarded-Proto` you edit `deploy/docker/nginx.conf` as described under [Sessions & Attribution](#sessions--attribution) and rebuild. Make sure nothing can reach port 8080 except through that proxy.
+- **The scheduled jobs still need a scheduler.** Nothing in the container runs them. Invoke them from the host's cron or your orchestrator, for example `docker exec storefront bin/console emr:reconcile --apply`. `docs/OPERATIONS.md` covers cadence, and the warning there about where `abandonment:signals` output may go applies to a container's captured stdout too.
+
 ## Verification
 
 After deployment, verify the application is working correctly:

@@ -16,7 +16,10 @@ use AsterMD\Storefront\Emr\AddressAutofill;
 use AsterMD\Storefront\Emr\CartGateway;
 use AsterMD\Storefront\Emr\CartMirror;
 use AsterMD\Storefront\Emr\ClientFactory as EmrClientFactory;
+use AsterMD\Storefront\Emr\CouponGateway;
 use AsterMD\Storefront\Emr\EmrAddressAutofill;
+use AsterMD\Storefront\Emr\EmrCouponGateway;
+use AsterMD\Storefront\Emr\NullCouponGateway;
 use AsterMD\Storefront\Emr\EmrCartGateway;
 use AsterMD\Storefront\Emr\EmrSessionGateway;
 use AsterMD\Storefront\Emr\NullAddressAutofill;
@@ -98,6 +101,10 @@ use AsterMD\Storefront\Payment\CheckoutChamp\CheckoutChampAuthorizeMode;
 use AsterMD\Storefront\Payment\CheckoutChamp\CheckoutChampCredentials;
 use AsterMD\Storefront\Payment\CheckoutChamp\CheckoutChampRefusingTransport;
 use AsterMD\Storefront\Payment\CheckoutChamp\CheckoutChampWireLog;
+use AsterMD\Storefront\Payment\Stripe\StripeAdapter;
+use AsterMD\Storefront\Payment\Stripe\StripeApiFactory;
+use AsterMD\Storefront\Payment\Stripe\StripeCredentials;
+use AsterMD\Storefront\Payment\Stripe\StripeRefusingTransport;
 use AsterMD\Storefront\Payment\Vrio\VrioAdapter;
 use AsterMD\Storefront\Payment\Vrio\VrioApiFactory;
 use AsterMD\Storefront\Payment\Vrio\VrioCredentials;
@@ -802,7 +809,33 @@ final class AppFactory
                     ?? CheckoutChampAuthorizeMode::Qa,
             ));
 
+            // The third. Stripe's SDK declares its own HTTP client, so its fence
+            // is its own refusing transport, installed under the suite exactly
+            // where the other two install theirs.
+            $registry->register('stripe', static fn (): PaymentAdapter => new StripeAdapter(
+                StripeCredentials::fromChannelConfig(
+                    (array) $config->get('channel.generated.payment_processor.config', []),
+                ),
+                new StripeApiFactory($config->get('app.env') === 'test' ? new StripeRefusingTransport() : null),
+                $c->get(OperatorLog::class),
+                $c->get(CouponGateway::class),
+                (string) $config->get('channel.generated.channel.id', ''),
+                // Where the bank sends the buyer back after a verification
+                // that left the page (`[14.22]`).
+                rtrim((string) $config->get('app.url', ''), '/') . CheckoutService::CONFIRM_PATH,
+            ));
+
             return $registry;
+        });
+        // Discount codes for a provider that has none of its own are the EMR's
+        // to price. Off under the test suite, like every other EMR port, so no
+        // run reaches the EMR.
+        $container->set(CouponGateway::class, static function (Container $c) use ($config): CouponGateway {
+            if ($config->get('app.env') === 'test') {
+                return new NullCouponGateway();
+            }
+
+            return new EmrCouponGateway($c->get(EmrClientFactory::class), $c->get(OperatorLog::class));
         });
         // The provider is chosen from synced channel data, never named by a
         // code path (`[14.3]`); the config key is an operator override for a

@@ -30,12 +30,17 @@ final class PromotionQuote
         public readonly int $discountCents,
         public readonly ?string $reason,
         public readonly ?string $notice = null,
+        public readonly ?string $reference = null,
     ) {
     }
 
-    public static function accepted(string $code, int $discountCents): self
+    /**
+     * @param ?string $reference the pricing system's own id for the code, for a provider whose
+     *                           order has to name the discount by it rather than by the code
+     */
+    public static function accepted(string $code, int $discountCents, ?string $reference = null): self
     {
-        return new self(true, $code, max(0, $discountCents), null);
+        return new self(true, $code, max(0, $discountCents), null, reference: $reference);
     }
 
     public static function rejected(string $code, string $reason, ?string $notice = null): self

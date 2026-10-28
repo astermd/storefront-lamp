@@ -55,6 +55,11 @@ final class RecordingCaptureAdapter implements PaymentAdapter
         return PlacementOutcome::declined(null, 'Test double; placement is not exercised here.', 'unsupported');
     }
 
+    public function resume(string $reference): PlacementOutcome
+    {
+        return PlacementOutcome::declined($reference, 'Test double; resume is not exercised here.', 'unsupported');
+    }
+
     public function quotePromotion(OrderEnvelope $order, string $code): PromotionQuote
     {
         return PromotionQuote::rejected($code, 'unsupported');

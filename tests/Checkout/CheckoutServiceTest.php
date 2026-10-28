@@ -34,6 +34,7 @@ use AsterMD\Storefront\Journey\JourneyState;
 use AsterMD\Storefront\Journey\JourneyStore;
 use AsterMD\Storefront\Payment\AdapterCapabilities;
 use AsterMD\Storefront\Payment\OrderEnvelope;
+use AsterMD\Storefront\Payment\PaymentAdapter;
 use AsterMD\Storefront\Payment\PaymentCredential;
 use AsterMD\Storefront\Payment\PaymentDescriptor;
 use AsterMD\Storefront\Payment\PlacementOutcome;
@@ -837,11 +838,105 @@ final class CheckoutServiceTest extends TestCase
         self::assertTrue($this->journey->hasEmrEvent('checkout_visited'));
     }
 
+    public function testAChallengeTheAdapterCanFinishOnThePageIsKeptPendingAndSentToTheConfirmStep(): void
+    {
+        $adapter = new ChallengingAdapter();
+        $result = $this->service(null, adapter: $adapter)->submit($this->buyer(), $this->card(), ['terms' => 'on']);
+
+        self::assertFalse($result->outcome->isPlaced());
+        self::assertSame(CheckoutService::CONFIRM_PATH, $result->redirectTo);
+        self::assertFalse($this->cartStore->cart()->isEmpty());
+        self::assertSame(ChallengingAdapter::REFERENCE, $this->journeys->state()?->pendingPayment['reference'] ?? null);
+
+        // The attempt holds the pending answer, so nothing places this cart
+        // again -- and never the client action, which can confirm a payment.
+        $row = $this->attempts()->outcomeFor($this->keyForSubmit());
+        self::assertSame(CheckoutAttemptRepository::STATE_COMPLETE, $row['state']);
+        self::assertStringNotContainsString(ChallengingAdapter::CLIENT_ACTION, (string) json_encode($row));
+        self::assertStringNotContainsString(
+            ChallengingAdapter::CLIENT_ACTION,
+            (string) json_encode($this->journeys->state()?->toArray()),
+        );
+    }
+
+    public function testTheConfirmStepRendersTheChallengeWhileTheBankIsStillDeciding(): void
+    {
+        $adapter = new ChallengingAdapter();
+        $service = $this->service(null, adapter: $adapter);
+        $service->submit($this->buyer(), $this->card(), ['terms' => 'on']);
+
+        $result = $service->resume();
+
+        self::assertNull($result->redirectTo);
+        self::assertSame(ChallengingAdapter::CLIENT_ACTION, $result->paymentChallenge);
+        self::assertSame(CheckoutService::VERIFY_NOTICE, $result->notice);
+        self::assertTrue($service->hasPendingPayment());
+    }
+
+    public function testAVerifiedPaymentIsFinishedAsAPlacedOrder(): void
+    {
+        $adapter = new ChallengingAdapter();
+        $service = $this->service(null, adapter: $adapter);
+        $service->submit($this->buyer(), $this->card(), ['terms' => 'on']);
+        $adapter->willResumeAs(PlacementOutcome::placed(ChallengingAdapter::REFERENCE, 'succeeded'));
+
+        $result = $service->resume();
+
+        self::assertTrue($result->outcome->isPlaced());
+        self::assertNotNull($result->redirectTo);
+        self::assertTrue($this->cartStore->cart()->isEmpty());
+        self::assertSame([ChallengingAdapter::REFERENCE], $this->journeys->state()?->placedOrders);
+        self::assertFalse($service->hasPendingPayment());
+        self::assertSame(1, $adapter->placements);
+
+        // A duplicate of the original submit is now replayed the placement.
+        $row = $this->attempts()->outcomeFor($this->keyForSubmit());
+        self::assertSame(PlacementOutcome::PLACED, $row['outcome']['state'] ?? null);
+    }
+
+    public function testAFailedVerificationReleasesTheKeyAndKeepsTheCart(): void
+    {
+        $adapter = new ChallengingAdapter();
+        $service = $this->service(null, adapter: $adapter);
+        $service->submit($this->buyer(), $this->card(), ['terms' => 'on']);
+        $adapter->willResumeAs(PlacementOutcome::declined(ChallengingAdapter::REFERENCE, 'Authentication failed.', 'requires_payment_method'));
+
+        $result = $service->resume();
+
+        self::assertFalse($result->outcome->isPlaced());
+        self::assertSame(CheckoutService::VERIFICATION_FAILED_NOTICE, $result->notice);
+        self::assertFalse($this->cartStore->cart()->isEmpty());
+        self::assertFalse($service->hasPendingPayment());
+        // No money moved, so the key goes back: the buyer may try another card.
+        self::assertNull($this->attempts()->outcomeFor($this->keyForSubmit()));
+    }
+
+    public function testWhileAPaymentIsPendingTheOrderCannotChangeAndASubmitIsSentBack(): void
+    {
+        $adapter = new ChallengingAdapter();
+        $service = $this->service(null, adapter: $adapter);
+        $service->submit($this->buyer(), $this->card(), ['terms' => 'on']);
+
+        self::assertFalse($service->choosePlan('tirzepatide', 't-1m')->accepted);
+        self::assertFalse($service->toggleBump('anything')->accepted);
+
+        $again = $service->submit($this->buyer(), $this->card(), ['terms' => 'on']);
+        self::assertSame(CheckoutService::CONFIRM_PATH, $again->redirectTo);
+        self::assertSame(1, $adapter->placements);
+    }
+
+    public function testTheConfirmStepWithNothingPendingSendsTheBuyerBackToCheckout(): void
+    {
+        $result = $this->service(null, adapter: new ChallengingAdapter())->resume();
+
+        self::assertSame('/checkout/', $result->redirectTo);
+    }
+
     public function testAPendingActionOutcomeIsSurfacedHonestlyRatherThanAsASuccess(): void
     {
-        // The resume round trip is not built, so a challenge must
-        // not be reported as a placed order. The cart stays intact and the
-        // buyer is told plainly.
+        // This adapter cannot finish a challenge on the page, so a challenge
+        // must not be reported as a placed order. The cart stays intact and
+        // the buyer is told plainly.
         $result = $this->serviceThatReturnsPendingAction()->submit($this->buyer(), $this->card(), ['terms' => 'on']);
 
         self::assertFalse($result->outcome->isPlaced());
@@ -1605,6 +1700,7 @@ final class CheckoutServiceTest extends TestCase
         SettlementMode $settlement = SettlementMode::Capture,
         ?bool $supportsAuthorizeCapture = null,
         ?PromotionQuote $quote = null,
+        ?PaymentAdapter $adapter = null,
     ): CheckoutService {
         if ($sessionUuid !== self::SESSION_UUID) {
             $this->boot($sessionUuid);
@@ -1617,7 +1713,7 @@ final class CheckoutServiceTest extends TestCase
         $catalog = self::catalog($teleformId);
         $config = Config::load(dirname(__DIR__, 2) . '/config', $_ENV);
 
-        $adapter = new VrioAdapter(
+        $vrio = new VrioAdapter(
             new VrioCredentials('api.vrio.app', '', 'test-key', 147, 1),
             new VrioApiFactory($this->transport),
             $this->log->log,
@@ -1629,9 +1725,9 @@ final class CheckoutServiceTest extends TestCase
             journeys: $this->journeys,
             rules: new CartRules($catalog),
             catalog: $catalog,
-            adapter: $strategy === null && $promotions && $supportsAuthorizeCapture === null && $quote === null
-                ? $adapter
-                : new RedeclaredAdapter($adapter, $strategy, $promotions, $supportsAuthorizeCapture, $quote),
+            adapter: $adapter ?? ($strategy === null && $promotions && $supportsAuthorizeCapture === null && $quote === null
+                ? $vrio
+                : new RedeclaredAdapter($vrio, $strategy, $promotions, $supportsAuthorizeCapture, $quote)),
             consents: Consents::fromConfig((array) require dirname(__DIR__, 2) . '/config/consent.php'),
             bumps: OrderBumps::fromConfig(['max_on_page' => 3, 'bumps' => []], $catalog, $this->log->log),
             verification: new NullVerificationGateway(),

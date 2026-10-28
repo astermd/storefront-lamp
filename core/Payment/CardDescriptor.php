@@ -22,6 +22,9 @@ namespace AsterMD\Storefront\Payment;
  * the card is consulted for the brand alone: a CRM changes its response shape
  * and sometimes omits a field it documents, so it answers the one question the
  * storefront genuinely cannot and is never asked for a value already in hand.
+ * The one exception is a token collected in the provider's own fields: the
+ * storefront never saw that card, so it has no bin to send and takes the
+ * expiry from the provider.
  *
  * **An underivable brand omits `type` and keeps the rest.** The API documents
  * `type` as required inside `card`, and this sends the object without it rather
@@ -48,14 +51,24 @@ final class CardDescriptor
      *                             answer; it is never consulted for the bin or the
      *                             expiry, which the buyer supplied directly
      */
-    public static function fromCredential(PaymentCredential $credential, ?CardBrand $fallback = null): self
-    {
+    public static function fromCredential(
+        PaymentCredential $credential,
+        ?CardBrand $fallback = null,
+        ?string $fallbackExpiry = null,
+    ): self {
         $digits = preg_replace('/\D/', '', $credential->number) ?? '';
+
+        // A token collected in the provider's own fields carries no expiry, and
+        // rendering it as `00/00` would assert a date nobody supplied. The
+        // provider's reading is the only one there is.
+        $expiry = $credential->expiryMonth === '' && $fallbackExpiry !== null && $fallbackExpiry !== ''
+            ? $fallbackExpiry
+            : self::expiry($credential);
 
         return new self(
             CardBrand::fromNumber($credential->number) ?? $fallback,
             strlen($digits) >= self::BIN_LENGTH ? substr($digits, 0, self::BIN_LENGTH) : null,
-            self::expiry($credential),
+            $expiry,
         );
     }
 

@@ -255,6 +255,15 @@ final class CheckoutChampAdapter implements PaymentAdapter
     }
 
     /**
+     * Not supported: this provider never answers a pending outcome, so it
+     * declares no client action and nothing asks it to resume one.
+     */
+    public function resume(string $reference): PlacementOutcome
+    {
+        return PlacementOutcome::declined($reference, CheckoutChampOutcome::GENERIC_DECLINE, 'resume_unsupported');
+    }
+
+    /**
      * Price a code against the cart: `POST /order/coupon/`.
      *
      * **A zero discount is refused as `invalid`.** The provider answers an

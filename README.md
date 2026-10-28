@@ -34,6 +34,7 @@ persisted is one with no card in it.
 | Composer | any current version |
 | Node | build-time only, for the asset pipeline. No `engines` constraint is declared; the pipeline is developed against Node 24. |
 | Web server | Apache with `mod_rewrite`/`mod_headers`, or nginx. Samples in `deploy/`. |
+| Docker | optional — replaces every row above with one image; see [Docker](deploy/README.md#docker) |
 
 **Production servers do not need Node.** `public/assets/build/` — the compiled CSS, the
 theme JS and the hashed `manifest.json` that Twig's `asset()` reads — is committed. `npm
@@ -55,6 +56,14 @@ means `production`. See [`APP_ENV`](#app_env) below.
 Point the web server's document root at `public/`. The web server user needs **write**
 access to `storage/` and nothing else; `config/` must be **read-only** to it, because the
 only thing that writes `config/` is `theme:sync` run from a shell as a deploy user.
+
+Or run it in Docker, with PHP 8.5, nginx and Composer inside the container and nothing on the
+host but Docker — see [Docker](deploy/README.md#docker) for development and production use:
+
+```bash
+cp .env.example .env
+docker compose up                 # http://localhost:8080
+```
 
 To run it locally without a web server:
 
@@ -536,7 +545,7 @@ source for `[n.n]` citations and fails if any of them resolves to nothing in
 | [`docs/OPERATIONS.md`](docs/OPERATIONS.md) | the operator runbook: schedules for the four jobs, what `ops:status` counts mean, what to do when one is non-zero |
 | [`docs/INTEGRATION-NOTES.md`](docs/INTEGRATION-NOTES.md) | what the EMR and the payment provider really do, as measured — including where each disagrees with its own documentation |
 | [`docs/SPEC-REFERENCE.md`](docs/SPEC-REFERENCE.md) | what the `[n.n]` citations mean |
-| [`deploy/README.md`](deploy/README.md) | web-server configs, permissions, catalog-sync procedure, session and attribution behaviour, key rotation |
+| [`deploy/README.md`](deploy/README.md) | web-server configs, the Docker image, permissions, catalog-sync procedure, session and attribution behaviour, key rotation |
 
 ### About the `[24.4]`-style citations
 
@@ -569,6 +578,7 @@ config/                  behaviour configuration — read the docblocks
 core/                    application code, PSR-4 AsterMD\Storefront\
 database/migrations/     numbered, applied by bin/console db:migrate
 deploy/                  nginx.conf, apache-vhost.conf, deployment guide
+deploy/docker/           nginx, php and php-fpm config and entrypoint for the Dockerfile
 docs/                    architecture, operations, integration notes, spec reference
 public/                  document root — index.php and built assets
 storage/                 gitignored; cache, logs, sessions, SQLite file

@@ -58,7 +58,17 @@ namespace AsterMD\Storefront\Payment;
  * has nothing to say, which is not the same as a negative: an adapter with no
  * QA mechanism has no opinion about one, and a response carrying no stored card
  * names no brand. A decline leaves both null — nothing was held and neither
- * refusal envelope describes a card.
+ * refusal envelope describes a card. `providerCardExpiry` (`MM/YY`) joins them
+ * for a credential that carries no card of its own: a token collected in the
+ * provider's fields leaves the storefront nothing to read an expiry from.
+ *
+ * **`clientAction` is the one field that must never outlive the request.** It
+ * is what a pending outcome hands the provider's own script on the page to run
+ * a challenge (`[14.22]`), and for at least one provider it is a secret that
+ * can confirm the payment. So it is in memory only: {@see
+ * \AsterMD\Storefront\Checkout\CheckoutAttempt::encodeOutcome()} does not
+ * carry it, the instrumentation does not log it, and a later request that
+ * needs it again asks the adapter through {@see PaymentAdapter::resume()}.
  */
 final class PlacementOutcome
 {
@@ -79,6 +89,8 @@ final class PlacementOutcome
         public readonly SettlementMode $settlement = SettlementMode::Capture,
         public readonly ?bool $preAuthQa = null,
         public readonly ?CardBrand $providerCardBrand = null,
+        public readonly ?string $providerCardExpiry = null,
+        public readonly ?string $clientAction = null,
     ) {
     }
 
@@ -90,6 +102,7 @@ final class PlacementOutcome
         SettlementMode $settlement = SettlementMode::Capture,
         ?bool $preAuthQa = null,
         ?CardBrand $providerCardBrand = null,
+        ?string $providerCardExpiry = null,
     ): self {
         return new self(
             self::PLACED,
@@ -102,6 +115,7 @@ final class PlacementOutcome
             $settlement,
             $preAuthQa,
             $providerCardBrand,
+            $providerCardExpiry,
         );
     }
 
@@ -110,9 +124,17 @@ final class PlacementOutcome
         return new self(self::DECLINED, $reference, $reason, $rawStatus, null);
     }
 
-    public static function pendingAction(string $reference, string $actionUrl, ?string $rawStatus = null): self
-    {
-        return new self(self::PENDING_ACTION, $reference, null, $rawStatus, $actionUrl);
+    /**
+     * @param ?string $clientAction what the provider's script on the page needs to run the challenge;
+     *                              never persisted or logged (see the class docblock)
+     */
+    public static function pendingAction(
+        string $reference,
+        string $actionUrl,
+        ?string $rawStatus = null,
+        ?string $clientAction = null,
+    ): self {
+        return new self(self::PENDING_ACTION, $reference, null, $rawStatus, $actionUrl, clientAction: $clientAction);
     }
 
     /**

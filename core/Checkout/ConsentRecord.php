@@ -36,4 +36,30 @@ final class ConsentRecord
             'at' => $this->at,
         ];
     }
+
+    /**
+     * Rebuilds a record journey state kept, or null when what was kept is not
+     * one -- for an order finished in a later request than the one the buyer
+     * consented in (`[14.22]`), whose consents were recorded then and are not
+     * asked for again.
+     *
+     * @param array<string, mixed> $stored
+     */
+    public static function fromArray(array $stored): ?self
+    {
+        $key = $stored['key'] ?? null;
+        $granted = $stored['granted'] ?? null;
+
+        if (!is_string($key) || $key === '' || !is_bool($granted)) {
+            return null;
+        }
+
+        return new self(
+            $key,
+            $granted,
+            (string) ($stored['copy_version'] ?? ''),
+            (string) ($stored['copy_shown'] ?? ''),
+            (string) ($stored['at'] ?? ''),
+        );
+    }
 }

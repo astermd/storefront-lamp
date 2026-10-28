@@ -55,6 +55,11 @@ final class NullPaymentAdapter implements PaymentAdapter
         return PlacementOutcome::declined(null, self::DECLINE_MESSAGE, 'no_provider_configured');
     }
 
+    public function resume(string $reference): PlacementOutcome
+    {
+        return PlacementOutcome::declined($reference, self::DECLINE_MESSAGE, 'no_provider_configured');
+    }
+
     public function quotePromotion(OrderEnvelope $order, string $code): PromotionQuote
     {
         return PromotionQuote::rejected($code, 'unsupported');

@@ -65,7 +65,38 @@ final class CheckoutController
 
     public function show(ServerRequestInterface $request, ResponseInterface $response): ResponseInterface
     {
+        // A payment waiting on the buyer's bank is finished on the confirm
+        // step, so a reload or a back button lands there rather than on a form
+        // that would only be refused (`[14.22]`).
+        if ($this->checkout->hasPendingPayment()) {
+            return self::redirect($response, CheckoutService::CONFIRM_PATH);
+        }
+
         return $this->render($request, $response, $this->checkout->view());
+    }
+
+    /**
+     * `[14.22]`: finishes a payment a verification step left pending.
+     *
+     * A GET because the provider's redirect back from the bank is a browser
+     * navigation, and the page's own script arrives the same way once the
+     * in-page step closes. Nothing it carries is read -- the service decides
+     * from journey state alone -- so a forged visit can at most finish the
+     * visitor's own payment, which the bank has already ruled on.
+     */
+    public function confirm(ServerRequestInterface $request, ResponseInterface $response): ResponseInterface
+    {
+        $result = $this->checkout->resume(RequestContext::fromRequest($request));
+
+        if ($result->redirectTo !== null) {
+            return self::redirect($response, $result->redirectTo);
+        }
+
+        return $this->render(
+            $request,
+            $response,
+            $this->checkout->view(notice: $result->notice, paymentChallenge: $result->paymentChallenge),
+        );
     }
 
     /**
@@ -208,6 +239,15 @@ final class CheckoutController
      */
     private static function credentialFrom(array $body): PaymentCredential
     {
+        // `[15.1]`: a deployment whose provider hosts the card fields posts a
+        // token the provider's own script minted, and no card at all. The
+        // field name is the storefront's, not the provider's, so the template
+        // and this method stay provider-neutral.
+        $token = self::text($body['payment_token'] ?? null);
+        if ($token !== '') {
+            return PaymentCredential::token($token);
+        }
+
         [$month, $year] = self::expiry(self::text($body['card_expiry'] ?? null));
 
         return PaymentCredential::card(
