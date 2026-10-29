@@ -220,7 +220,8 @@ final class StripeAdapterTest extends TestCase
         self::assertSame('ctoken_1Abc', $body['confirmation_token']);
         self::assertSame('off_session', $body['setup_future_usage']);
         self::assertSame('automatic', $body['capture_method']);
-        self::assertSame(['enabled' => true, 'allow_redirects' => 'never'], $body['automatic_payment_methods']);
+        self::assertSame(['card'], $body['allowed_payment_method_types']);
+        self::assertArrayNotHasKey('automatic_payment_methods', $body);
         self::assertArrayNotHasKey('payment_method_types', $body);
         self::assertSame('https://shop.example.com/checkout/confirm/', $body['return_url']);
         self::assertSame('350 5th Avenue', $body['shipping']['address']['line1']);
