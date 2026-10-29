@@ -194,4 +194,10 @@
   // everything back; on a first, ordinary load this is a no-op.
   window.addEventListener('pageshow', release);
   window.addEventListener('popstate', release);
+
+  // A provider-hosted card form (payment-<provider>.js) holds the submit while
+  // its own script tokenizes the card, and hands Pay Now back through this
+  // event when it refuses -- an incomplete card number, say -- rather than
+  // leaving it busy for the full timeout.
+  form.addEventListener('checkout:release', release);
 })();

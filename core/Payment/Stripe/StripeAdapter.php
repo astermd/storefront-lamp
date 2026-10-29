@@ -52,7 +52,8 @@ use Stripe\StripeClient;
  *
  * **Discount codes are the EMR's** ({@see CouponGateway}): a PaymentIntent has
  * no notion of one, so the EMR prices the code and the order names the coupon
- * by its id.
+ * by its id. The code is priced once more just before the payment is created
+ * ({@see self::repriceCoupon()}), because nothing after this point re-checks it.
  *
  * **Capture is the EMR's too.** A held payment is captured when a doctor
  * completes the case the EMR opened for it, cancelled if the case is
@@ -67,6 +68,9 @@ final class StripeAdapter implements PaymentAdapter
 
     /** How many PaymentIntents one page of an order search asks for: Stripe's maximum. */
     private const int SEARCH_PAGE_SIZE = 100;
+
+    /** The discount code changed between being applied and being paid for. */
+    private const string PROMOTION_CHANGED = 'Your discount code no longer applies as it did, so it has been removed. Please review your total and try again.';
 
     /** Stripe.js. Stripe requires it be loaded from its own domain, never bundled or self-hosted. */
     private const string STRIPE_JS = 'https://js.stripe.com/v3/';
@@ -145,6 +149,11 @@ final class StripeAdapter implements PaymentAdapter
         $dropped = StripePayload::droppedAttribution($order->attribution);
         if ($dropped !== []) {
             $this->log->info('payment.attribution_dropped', ['keys' => $dropped]);
+        }
+
+        $repriced = $this->repriceCoupon($order);
+        if ($repriced !== null) {
+            return $repriced;
         }
 
         $idempotencyKey = self::idempotencyKey($order, $credential);
@@ -343,6 +352,50 @@ final class StripeAdapter implements PaymentAdapter
             StripePayload::forCustomer($order->buyer),
             ['idempotency_key' => $idempotencyKey . ':customer'],
         )->id;
+    }
+
+    /**
+     * Asks the EMR about the order's discount code once more, just before the
+     * payment is created, and refuses the payment when the answer changed.
+     *
+     * Stripe takes whatever amount it is given, and the EMR records the coupon
+     * at sync without refusing it, so this is the last place a code that ran
+     * out or was switched off since the buyer applied it can be caught. A code
+     * the EMR now refuses, or prices differently, is a total the buyer has not
+     * seen: nothing is sent to Stripe, and the checkout drops the stored code
+     * (`promotion_repriced`, the raw status its own re-price uses) so the
+     * buyer sees the real total. An EMR that cannot be asked right now is not
+     * a refusal -- the code was priced when it was applied, and a buyer is not
+     * turned away because the coupon service is slow.
+     */
+    private function repriceCoupon(OrderEnvelope $order): ?PlacementOutcome
+    {
+        $code = $order->promotionCode;
+        if ($code === null || $code === '') {
+            return null;
+        }
+
+        $quote = $this->coupons->quote($code, $order->lines);
+
+        if (!$quote->valid && $quote->reason === 'unavailable') {
+            $this->log->warning('payment.promotion_unconfirmed', ['code' => $code, 'anchor' => $order->anchorSlug]);
+
+            return null;
+        }
+
+        if ($quote->valid && $quote->discountCents === $order->discountCents) {
+            return null;
+        }
+
+        $this->log->info('payment.promotion_repriced', [
+            'code' => $code,
+            'valid' => $quote->valid,
+            'reason' => $quote->reason,
+            'was_discount_cents' => $order->discountCents,
+            'now_discount_cents' => $quote->discountCents,
+        ]);
+
+        return PlacementOutcome::declined(null, $quote->notice ?? self::PROMOTION_CHANGED, 'promotion_repriced');
     }
 
     /**

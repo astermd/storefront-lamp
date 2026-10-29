@@ -925,6 +925,20 @@ final class CheckoutServiceTest extends TestCase
         self::assertSame(1, $adapter->placements);
     }
 
+    public function testACodeTheProviderFindsChangedAtPaymentIsDroppedSoTheRealTotalShows(): void
+    {
+        $service = $this->service(null, adapter: new RepricingAdapter());
+        self::assertTrue($service->applyPromotion('SAVE10')->accepted);
+        self::assertNotNull($this->journeys->state()?->promotion);
+
+        $result = $service->submit($this->buyer(), $this->card(), ['terms' => 'on']);
+
+        self::assertFalse($result->outcome->isPlaced());
+        self::assertSame(RepricingAdapter::NOTICE, $result->notice);
+        self::assertNull($this->journeys->state()?->promotion);
+        self::assertFalse($this->cartStore->cart()->isEmpty());
+    }
+
     public function testTheConfirmStepWithNothingPendingSendsTheBuyerBackToCheckout(): void
     {
         $result = $this->service(null, adapter: new ChallengingAdapter())->resume();

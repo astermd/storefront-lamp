@@ -1011,7 +1011,12 @@ Three things the other providers do here, Stripe hands to the EMR:
   and never for an upsell, because the EMR would capture neither.
 - **Discount codes.** A PaymentIntent has none, so `quotePromotion()` asks the EMR through
   `Emr\CouponGateway`, and the coupon's id rides on `PromotionQuote::$reference` →
-  `Promotion::$reference` → `OrderEnvelope::$promotionReference` into the metadata.
+  `Promotion::$reference` → `OrderEnvelope::$promotionReference` into the metadata. Nothing after
+  the payment re-checks the code — Stripe takes any amount and the EMR records the coupon at sync
+  without refusing it — so `place()` prices it once more first. A code the EMR now refuses or
+  prices differently declines with `promotion_repriced` before Stripe is called, and the checkout
+  drops the stored code so the buyer sees the real total; an EMR that cannot answer right then is
+  not a refusal.
 - **Plans.** `theme:sync` asks the EMR which plans the channel may sell and attaches each to
   its variant, at the plan's first payment (`CatalogBuilder::attachPlans()`). A line on
   a plan is named by the plan alone and makes the order a `cycle`.

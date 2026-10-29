@@ -17,7 +17,8 @@ Stripe mints, reusing the buyer's Stripe customer by email, and the EMR builds
 the treatment from that PaymentIntent when the order is synced. A line whose
 variant the EMR sells on a subscription plan is sold on that plan, at the
 plan's first payment, and makes the order renew. Discount codes are the EMR's
-coupons. A held payment (`settlement: authorize`) is captured by the EMR when
+coupons, priced again just before paying: a code that ran out in between is
+refused before Stripe is called and dropped from the order. A held payment (`settlement: authorize`) is captured by the EMR when
 the doctor completes the case, never by `payment:capture`. When the buyer's
 bank asks them to verify a payment, the checkout runs the verification and
 finishes the order on `/checkout/confirm/` — for any provider that declares it
@@ -49,6 +50,7 @@ is sold one-off and the promo box is hidden on Stripe channels. Then
   `core/Catalog/CatalogBuilder.php`, `core/Console/SyncCommand.php`,
   `core/Bootstrap/AppFactory.php`, `bin/console`, `config/routes.php`,
   `theme/templates/pages/checkout.twig`, `theme/js/checkout.js`,
+  `public/assets/build/`,
   `composer.json`, `composer.lock`, `docs/ARCHITECTURE.md`,
   `docs/INTEGRATION-NOTES.md`
 

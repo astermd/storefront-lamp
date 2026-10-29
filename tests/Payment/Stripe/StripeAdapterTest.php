@@ -247,7 +247,7 @@ final class StripeAdapterTest extends TestCase
         $this->queueNoCustomer();
         $this->transport->queue(200, self::paymentIntent('succeeded', 9900));
 
-        $this->adapter()->place(
+        $this->adapter(coupons: new FixedCoupons())->place(
             $this->envelope([self::line(plan: self::PLAN, price: 10900)], code: 'foobar', couponId: self::COUPON, discountCents: 1000),
             PaymentCredential::token('ctoken_1Abc'),
         );
@@ -462,6 +462,43 @@ final class StripeAdapterTest extends TestCase
         self::assertTrue($result->orders[0]->isTest);
     }
 
+    public function testACodeThatNoLongerAppliesIsRefusedBeforeStripeIsCalled(): void
+    {
+        $refused = new FixedCoupons(PromotionQuote::rejected('foobar', 'denied', 'The coupon has expired'));
+        $outcome = $this->adapter(coupons: $refused)->place(
+            $this->envelope(code: 'foobar', couponId: self::COUPON, discountCents: 1000),
+            PaymentCredential::token('ctoken_1Abc'),
+        );
+
+        self::assertSame('promotion_repriced', $outcome->rawStatus);
+        self::assertSame('The coupon has expired', $outcome->reason);
+        self::assertSame([], $this->transport->requests);
+    }
+
+    public function testACodeWhoseDiscountChangedIsRefusedBeforeStripeIsCalled(): void
+    {
+        $outcome = $this->adapter(coupons: new FixedCoupons())->place(
+            $this->envelope(code: 'foobar', couponId: self::COUPON, discountCents: 2000),
+            PaymentCredential::token('ctoken_1Abc'),
+        );
+
+        self::assertSame('promotion_repriced', $outcome->rawStatus);
+        self::assertSame([], $this->transport->requests);
+    }
+
+    public function testACouponServiceThatCannotAnswerDoesNotTurnTheBuyerAway(): void
+    {
+        $this->queueNoCustomer();
+        $this->transport->queue(200, self::paymentIntent('succeeded', 11000));
+
+        $outcome = $this->adapter(coupons: new FixedCoupons(PromotionQuote::rejected('foobar', 'unavailable')))->place(
+            $this->envelope(code: 'foobar', couponId: self::COUPON, discountCents: 1000),
+            PaymentCredential::token('ctoken_1Abc'),
+        );
+
+        self::assertTrue($outcome->isPlaced());
+    }
+
     public function testACouponIsPricedByTheEmr(): void
     {
         $quote = $this->adapter(coupons: new FixedCoupons())->quotePromotion($this->envelope(), 'foobar');
@@ -472,12 +509,16 @@ final class StripeAdapterTest extends TestCase
     }
 }
 
-/** A coupon gateway that prices every code at $10 off. */
+/** A coupon gateway that prices every code at $10 off, or answers what it is given. */
 final class FixedCoupons implements CouponGateway
 {
+    public function __construct(private readonly ?PromotionQuote $answer = null)
+    {
+    }
+
     public function quote(string $code, array $lines): PromotionQuote
     {
-        return PromotionQuote::accepted($code, 1000, '6a01b2c3d4e5f6a7b8c9d0f9');
+        return $this->answer ?? PromotionQuote::accepted($code, 1000, '6a01b2c3d4e5f6a7b8c9d0f9');
     }
 
     public function available(): bool

@@ -585,6 +585,16 @@ final class CheckoutService
         if (!$outcome->isPlaced()) {
             // 10. `[13.30]`: cart intact, buyer on checkout, the provider's own
             //     reason shown verbatim (`[13.28]`).
+            //
+            //     A provider that prices the discount code again at payment
+            //     and finds it changed refuses with step 1b's raw status. The
+            //     stored code is dropped, so the page shows the real total and
+            //     the buyer applies the code again, rather than resubmitting a
+            //     discount that will be refused the same way.
+            if ($outcome->rawStatus === 'promotion_repriced') {
+                $this->storePromotion($state, $cart, null);
+            }
+
             return $this->stopped(
                 $state,
                 $totals,
