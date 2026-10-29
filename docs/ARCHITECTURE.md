@@ -1017,9 +1017,11 @@ Three things the other providers do here, Stripe hands to the EMR:
   prices differently declines with `promotion_repriced` before Stripe is called, and the checkout
   drops the stored code so the buyer sees the real total; an EMR that cannot answer right then is
   not a refusal.
-- **Plans.** `theme:sync` asks the EMR which plans the channel may sell and attaches each to
-  its variant, at the plan's first payment (`CatalogBuilder::attachPlans()`). A line on
-  a plan is named by the plan alone and makes the order a `cycle`.
+- **Plans.** The channel details `theme:sync` already fetches list the plans assigned to the
+  channel (`subscriptions`). `SubscriptionPlans` works out each plan's product, variant and first
+  payment from its steps -- the EMR's own rule, ported -- and `CatalogBuilder::attachPlans()`
+  sells the variant on the plan at that price. Only on a Stripe channel: a CRM's orders name no
+  plan. A line on a plan is named by the plan alone and makes the order a `cycle`.
 
 The test fence is `StripeRefusingTransport`. Stripe's SDK takes its HTTP client process-wide
 (`ApiRequestor::setHttpClient()`), so `StripeApiFactory` installs it on every client it

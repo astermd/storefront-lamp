@@ -238,7 +238,7 @@ docker compose exec app vendor/bin/phpunit
 - **`.env.example` says `APP_ENV=production`, and in production Twig never notices a changed template.** For template work, set `APP_ENV=dev` in your `.env`.
 - **`storage/` lives on the `app-storage` volume, not in the checkout.** On a Mac, a bind mount reports every file as owned by your host user, and PHP will not open a session file it does not own, so storage on the bind mount would break sessions. Read the log with `docker compose exec app tail -f storage/logs/app.log`.
 - **On a Linux host, set `DOCKER_UID` and `DOCKER_GID`** (in `.env` or the shell) to your own `id -u` and `id -g`. Otherwise the container's uid cannot write `vendor/` or `config/` in your checkout. Docker Desktop and Rancher Desktop on a Mac need neither.
-- `npm run dev` / `npm run build` still run on the host. The image does not contain Node, because built assets are committed.
+- **The `dev` target has Node 24 and npm**, so the asset pipeline runs in the container too: `docker compose exec app npm run build`, or `npm run dev` for the watcher. `node_modules/` lives on its own `app-node-modules` volume, because Tailwind's native binary is per platform and the one npm installs on a Mac cannot run in the Linux container. On first start the container runs `npm ci` into it. After `package-lock.json` changes, run `docker compose exec app npm ci`. Running npm on the host still works as before. The production image contains no Node, because built assets are committed.
 
 ### Production
 

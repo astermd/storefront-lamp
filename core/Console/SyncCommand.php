@@ -6,10 +6,10 @@ declare(strict_types=1);
 
 namespace AsterMD\Storefront\Console;
 
-use AsterMD\Sdk\AsterMDClient;
 use AsterMD\Sdk\Http\NativeCurlClient;
 use AsterMD\Storefront\Catalog\CatalogBuilder;
 use AsterMD\Storefront\Catalog\MediaLocalizer;
+use AsterMD\Storefront\Catalog\SubscriptionPlans;
 use AsterMD\Storefront\Emr\ClientFactory;
 use AsterMD\Storefront\Support\PhpArrayExporter;
 use Psr\Http\Client\ClientInterface;
@@ -56,6 +56,9 @@ use Symfony\Component\Console\Output\OutputInterface;
 #[AsCommand(name: 'theme:sync', description: 'Sync the generated catalog and channel config from the configured EMR channel')]
 final class SyncCommand extends Command
 {
+    /** Providers whose payment the storefront creates and names its plan in -- the EMR's storefront gateways. */
+    private const array PLAN_PROVIDERS = ['stripe'];
+
     /** `callable` cannot be a promoted-property type in PHP, so it is normalised to `?\Closure` in the constructor body. */
     private readonly ?\Closure $validator;
 
@@ -104,7 +107,7 @@ final class SyncCommand extends Command
         }
 
         $currency = (string) $input->getOption('currency');
-        $catalog = CatalogBuilder::build($data, $currency, self::sellablePlans($client, $output));
+        $catalog = CatalogBuilder::build($data, $currency, self::sellablePlans($data));
         // Computed on the built (pre-localization) catalog: media localization only
         // rewrites image/gallery fields, never variants, so this count is identical
         // whether taken before or after localize() — computing it here keeps dry-run
@@ -233,36 +236,27 @@ final class SyncCommand extends Command
     }
 
     /**
-     * The subscription plans the EMR lets this channel sell, each naming the
-     * product and variant it sells and its first payment.
+     * The subscription plans this channel sells, each naming the product and
+     * variant it sells and its first payment.
      *
-     * Asked of an SDK that may not offer it yet: an older SDK has no plans
-     * resource, and a channel whose provider sells no plans answers an empty
-     * list. Either way every product is sold one-off, which is what this
-     * catalog meant before plans existed -- so a failure here is said out loud
-     * and the sync carries on, rather than refusing to sync a catalog over a
-     * feature the deployment may not use.
+     * The EMR lists them with the channel itself (`subscriptions`: the plans
+     * assigned to the channel that can be sold), so they come from the same
+     * response as the catalog. Only for a provider whose payment carries its
+     * plan back to the EMR -- a gateway the storefront creates the payment on
+     * (Stripe). A CRM's orders name no plan, so on its channel every product is
+     * sold one-off, which is what this catalog meant before plans existed.
      *
+     * @param array<string, mixed> $data the `data` subtree of a Channel Details response
      * @return list<array<string, mixed>>
      */
-    private static function sellablePlans(AsterMDClient $client, OutputInterface $output): array
+    private static function sellablePlans(array $data): array
     {
-        if (!method_exists($client, 'plans')) {
+        $paymentProcessor = is_array($data['payment_processor'] ?? null) ? $data['payment_processor'] : [];
+        if (!in_array($paymentProcessor['provider_category'] ?? null, self::PLAN_PROVIDERS, true)) {
             return [];
         }
 
-        try {
-            $rows = $client->plans()->sellable()->data();
-        } catch (\Throwable $e) {
-            $output->writeln(sprintf(
-                '<comment>theme:sync: could not list subscription plans (%s); every product is synced one-off.</comment>',
-                $e::class,
-            ));
-
-            return [];
-        }
-
-        return is_array($rows) ? array_values(array_filter($rows, 'is_array')) : [];
+        return SubscriptionPlans::fromChannelDetails($data);
     }
 
     /**

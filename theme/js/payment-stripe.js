@@ -86,13 +86,14 @@
   // order is placed, so the Element is told the amount and how the card will
   // be kept. `setupFutureUsage` must match what the server asks Stripe for,
   // or Stripe refuses the token -- the card is saved for renewals and for an
-  // upsell on this journey.
+  // upsell on this journey. The PaymentIntent no longer names its payment
+  // methods, so `allowedPaymentMethodTypes` here is what keeps the token a card.
   var elements = stripe.elements({
     mode: 'payment',
     amount: amount > 0 ? amount : 50,
     currency: currency,
     setupFutureUsage: 'off_session',
-    paymentMethodTypes: ['card'],
+    allowedPaymentMethodTypes: ['card'],
   });
 
   // The buyer's name, email, phone and address are already on this form, so

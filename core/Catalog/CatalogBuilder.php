@@ -28,9 +28,9 @@ final class CatalogBuilder
 
     /**
      * @param array<string, mixed> $channelData the `data` subtree of a Channel Details response
-     * @param list<array<string, mixed>> $plans the EMR's sellable subscription plans for the
-     *                                          channel, each naming the product and variant it
-     *                                          sells; empty when the EMR lists none
+     * @param list<array<string, mixed>> $plans the channel's sellable subscription plans, each
+     *                                          naming the product and variant it sells
+     *                                          ({@see SubscriptionPlans}); empty for none
      * @return array{
      *     channel: array{id: mixed, name: mixed, currency: string},
      *     products: array<string, array<string, mixed>>,

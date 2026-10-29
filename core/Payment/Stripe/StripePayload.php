@@ -177,7 +177,12 @@ final class StripePayload
             // Cards only: the EMR saves a card for renewals and reads its
             // descriptor, and a method that redirects to a third party is one
             // this checkout has no page to come back to except the confirm step.
-            'payment_method_types' => ['card'],
+            // The pinned API version no longer takes `payment_method_types`, so
+            // the page's Elements (`allowedPaymentMethodTypes`) limit the token
+            // to a card, and this
+            // refuses any method that redirects -- the same settings the EMR's
+            // sales service creates its own PaymentIntents with.
+            'automatic_payment_methods' => ['enabled' => true, 'allow_redirects' => 'never'],
             'capture_method' => $settlement->isAuthorize() ? 'manual' : 'automatic',
             'amount_details' => self::amountDetails($order),
             'metadata' => self::metadata($order, $lineItems, $settlement, $channelId),

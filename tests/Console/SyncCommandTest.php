@@ -416,4 +416,75 @@ final class SyncCommandTest extends TestCase
         self::assertSame(0, $tester->execute(['--apply' => true]));
         self::assertStringContainsString('validation: skipped (validator not wired)', $tester->getDisplay());
     }
+
+    /**
+     * The channel's assigned subscriptions come with its details, and on a
+     * Stripe channel the variant a plan sells is sold on that plan at its first
+     * payment. On a CRM's channel the same data sells everything one-off.
+     */
+    public function testAStripeChannelSellsItsAssignedPlansAndACrmChannelDoesNot(): void
+    {
+        $variantId = '6a1c28245f315cee0e41c344';
+
+        self::assertSame(['6adf4668a103373c607b85a1', 9900, 4900], $this->syncedPlanOn('stripe', $variantId));
+        self::assertNull($this->syncedPlanOn('vrio', $variantId));
+    }
+
+    /** @return array{0: string, 1: int, 2: mixed}|null the plan id, the variant's price and its list price */
+    private function syncedPlanOn(string $providerCategory, string $variantId): ?array
+    {
+        $envelope = $this->fixtureEnvelope();
+        $envelope['data']['payment_processor']['provider_category'] = $providerCategory;
+        $envelope['data']['subscriptions'] = [[
+            'plan_id' => '6adf4668a103373c607b85a1',
+            'plan' => [
+                '_id' => '6adf4668a103373c607b85a1',
+                'name' => 'tadalafil-monthly',
+                'display_name' => 'Tadalafil — monthly',
+                'product_id' => '6a1c28245f315cee0e41c346',
+                'steps' => [
+                    [
+                        'step_id' => 's1',
+                        'type' => 'shipment',
+                        'schedule' => ['start_day' => 0, 'recurrence' => 'ongoing', 'interval_days' => 30, 'occurrence_count' => 1],
+                        'items_by_cycle' => [['items' => [[
+                            'product_id' => '6a1c28245f315cee0e41c346',
+                            'variant_id' => $variantId,
+                            'price_cents' => 9900,
+                            'quantity' => 1,
+                        ]]]],
+                    ],
+                    [
+                        'step_id' => 'c1',
+                        'type' => 'charge',
+                        'schedule' => ['start_day' => 0, 'recurrence' => 'ongoing', 'interval_days' => 30, 'occurrence_count' => 1],
+                        'amount_source' => 'from_products',
+                        'pays_for_step_ids' => ['s1'],
+                    ],
+                ],
+            ],
+        ]];
+
+        $fake = new FakeEmrHttpClient([
+            '/v1/auth/api-credentials/token' => $this->tokenRoute(),
+            '/v1/sales/channels/detail/' => [200, $envelope],
+            'products/' => [200, 'FAKE-IMAGE-BYTES'],
+        ]);
+        $command = new SyncCommand(new ClientFactory($this->config(), $this->rootDir), $this->syncConfigDir, $this->mediaDir, $fake);
+        self::assertSame(0, (new CommandTester($command))->execute(['--apply' => true]));
+
+        /** @var array<string, mixed> $catalog */
+        $catalog = require $this->syncConfigDir . '/products.generated.php';
+        foreach ($catalog['products'] as $product) {
+            foreach ($product['variants'] as $variant) {
+                if ((string) $variant['id'] === $variantId) {
+                    return isset($variant['plan'])
+                        ? [$variant['plan']['id'], $variant['price_cents'], $variant['list_price_cents']]
+                        : null;
+                }
+            }
+        }
+
+        self::fail('The synced catalog has no variant ' . $variantId);
+    }
 }

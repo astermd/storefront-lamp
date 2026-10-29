@@ -4,8 +4,9 @@
 #   docker build -t astermd-storefront .            # production image
 #   docker compose up                               # local development (target: dev)
 #
-# Built assets in public/assets/build/ are committed, so no Node stage is
-# needed: an image is built from what the repository already holds.
+# Built assets in public/assets/build/ are committed, so the production image
+# carries no Node: it is built from what the repository already holds. Only the
+# dev target adds Node and npm, for `npm run build` and `npm run dev`.
 
 ARG PHP_VERSION=8.5
 
@@ -56,19 +57,24 @@ CMD ["serve"]
 
 # ---------------------------------------------------------------------------
 # dev — the source is bind-mounted over /var/www/html by compose.yaml, so this
-# target carries only Composer (for `composer install` and the test suite).
+# target carries only tooling: Composer (for `composer install` and the test
+# suite) and Node 24 with npm (for the asset pipeline). Alpine 3.24 ships
+# Node 24, the version the pipeline is developed against.
 # ---------------------------------------------------------------------------
 FROM base AS dev
 
 COPY --from=composer /usr/bin/composer /usr/bin/composer
-ENV PHP_OPCACHE_VALIDATE_TIMESTAMPS=1
+ENV PHP_OPCACHE_VALIDATE_TIMESTAMPS=1 \
+    npm_config_cache=/tmp/npm-cache
 
-# compose.yaml mounts a named volume here, which starts out with this
-# directory's mode. Sticky and world-writable lets it work under whatever uid
-# compose runs the container as, while PHP's session handler still sees each
-# session file owned by the uid that created it.
 USER root
-RUN chmod 1777 storage
+RUN apk add --no-cache nodejs npm
+
+# compose.yaml mounts a named volume on each of these, which starts out with
+# this directory's mode. Sticky and world-writable lets it work under whatever
+# uid compose runs the container as, while PHP's session handler still sees
+# each session file owned by the uid that created it.
+RUN mkdir -p node_modules && chmod 1777 storage node_modules
 USER www-data
 
 # ---------------------------------------------------------------------------

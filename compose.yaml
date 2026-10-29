@@ -10,6 +10,7 @@
 #
 #   docker compose exec app bin/console emr:ping
 #   docker compose exec app vendor/bin/phpunit
+#   docker compose exec app npm run build
 #
 # This file is for working on the storefront. A production container runs the
 # image's default target instead; see "Docker" in deploy/README.md.
@@ -33,6 +34,12 @@ services:
       # it does not own, so sessions would break on every request. Read the
       # logs with `docker compose exec app tail -f storage/logs/app.log`.
       - app-storage:/var/www/html/storage
+      # node_modules/ is the container's own, too. Tailwind ships a native
+      # binary per platform, and the one npm installed on a Mac host cannot
+      # run in this Linux container. Run `npm run build` and `npm run dev`
+      # with `docker compose exec app`.
+      - app-node-modules:/var/www/html/node_modules
 
 volumes:
   app-storage:
+  app-node-modules:

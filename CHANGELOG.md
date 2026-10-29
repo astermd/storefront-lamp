@@ -25,12 +25,15 @@ finishes the order on `/checkout/confirm/` — for any provider that declares it
 can; Vrio and CheckoutChamp still stop the checkout as before.
 
 Run `composer install` for `stripe/stripe-php`, then
-`bin/console theme:sync --apply`. Plans and discount codes appear once the
-installed `astermd/sdk` offers `plans()` and `coupons()`; until then every line
-is sold one-off and the promo box is hidden on Stripe channels. Then
+`bin/console theme:sync --apply`. Plans come with the channel details: the
+plans assigned to the channel in the EMR, each priced at its first payment
+from its own steps (`core/Catalog/SubscriptionPlans.php`), on Stripe channels
+only. Discount codes appear once the installed `astermd/sdk` offers
+`coupons()`; until then the promo box is hidden on Stripe channels. Then
 `npm run build`.
 
-- `core/Payment/Stripe/` (new), `core/Emr/CouponGateway.php`,
+- `core/Payment/Stripe/` (new), `core/Catalog/SubscriptionPlans.php` (new),
+  `core/Emr/CouponGateway.php`,
   `core/Emr/EmrCouponGateway.php`, `core/Emr/NullCouponGateway.php` (new),
   `theme/js/payment-stripe.js` (new)
 - `core/Payment/PaymentAdapter.php`, `core/Payment/AdapterCapabilities.php`,
@@ -62,8 +65,10 @@ The container clears the cache and applies migrations on start, runs entirely
 as `www-data`, and keeps the application read-only to that user with
 `storage/` as the only writable path. `.env`, the two synced
 `config/*.generated.php` files and `public/assets/media/` are kept out of the
-image and mounted at run time. "Docker" in `deploy/README.md` covers both uses.
-Nothing outside Docker changes.
+image and mounted at run time. The `dev` target also carries Node 24 and npm,
+so `npm run build` and `npm run dev` run in the container against a
+`node_modules/` volume of its own; the production image has no Node.
+"Docker" in `deploy/README.md` covers both uses. Nothing outside Docker changes.
 
 - `Dockerfile`, `.dockerignore`, `compose.yaml`, `deploy/docker/nginx.conf`,
   `deploy/docker/php.ini`, `deploy/docker/php-fpm.conf`,

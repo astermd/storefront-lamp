@@ -20,6 +20,12 @@ if [[ ! -f vendor/autoload.php ]]; then
     fi
 fi
 
+# Under compose node_modules/ is a volume of its own and starts empty. Only the
+# dev target has npm; the production image needs no node_modules at all.
+if command -v npm >/dev/null && [[ ! -f node_modules/.package-lock.json ]]; then
+    npm ci --no-audit --no-fund
+fi
+
 if [[ "${1:-}" != "serve" ]]; then
     exec "$@"
 fi

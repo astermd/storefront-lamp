@@ -72,8 +72,13 @@ final class StripeAdapter implements PaymentAdapter
     /** The discount code changed between being applied and being paid for. */
     private const string PROMOTION_CHANGED = 'Your discount code no longer applies as it did, so it has been removed. Please review your total and try again.';
 
-    /** Stripe.js. Stripe requires it be loaded from its own domain, never bundled or self-hosted. */
-    private const string STRIPE_JS = 'https://js.stripe.com/v3/';
+    /**
+     * Stripe.js. Stripe requires it be loaded from its own domain, never bundled
+     * or self-hosted. The release in the path is the one in
+     * {@see StripeApiFactory::API_VERSION}, so the page's Elements speak the same
+     * API version as the PaymentIntent the server confirms their token with.
+     */
+    private const string STRIPE_JS = 'https://js.stripe.com/endive/stripe.js';
 
     public function __construct(
         private readonly StripeCredentials $credentials,
