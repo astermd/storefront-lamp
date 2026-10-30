@@ -58,8 +58,9 @@ CMD ["serve"]
 # ---------------------------------------------------------------------------
 # dev — the source is bind-mounted over /var/www/html by compose.yaml, so this
 # target carries only tooling: Composer (for `composer install` and the test
-# suite) and Node 24 with npm (for the asset pipeline). Alpine 3.24 ships
-# Node 24, the version the pipeline is developed against.
+# suite), Node 24 with npm (for the asset pipeline) and nano (for editing a
+# file from `docker compose exec`). Alpine 3.24 ships Node 24, the version the
+# pipeline is developed against.
 # ---------------------------------------------------------------------------
 FROM base AS dev
 
@@ -68,7 +69,7 @@ ENV PHP_OPCACHE_VALIDATE_TIMESTAMPS=1 \
     npm_config_cache=/tmp/npm-cache
 
 USER root
-RUN apk add --no-cache nodejs npm
+RUN apk add --no-cache nodejs npm nano
 
 # compose.yaml mounts a named volume on each of these, which starts out with
 # this directory's mode. Sticky and world-writable lets it work under whatever
