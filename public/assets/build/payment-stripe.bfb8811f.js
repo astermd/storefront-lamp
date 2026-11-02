@@ -88,10 +88,13 @@
   // or Stripe refuses the token -- the card is saved for renewals and for an
   // upsell on this journey. The PaymentIntent no longer names its payment
   // methods, so `allowedPaymentMethodTypes` here is what keeps the token a card.
+  // `captureMethod` must match too: a held order's PaymentIntent is manual
+  // capture, and Stripe refuses a token minted for automatic.
   var elements = stripe.elements({
     mode: 'payment',
     amount: amount > 0 ? amount : 50,
     currency: currency,
+    captureMethod: surface.getAttribute('data-settlement') === 'authorize' ? 'manual' : 'automatic',
     setupFutureUsage: 'off_session',
     allowedPaymentMethodTypes: ['card'],
   });

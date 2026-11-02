@@ -14,6 +14,7 @@ use AsterMD\Storefront\Payment\PaymentAdapter;
 use AsterMD\Storefront\Payment\PaymentCredential;
 use AsterMD\Storefront\Payment\PlacementOutcome;
 use AsterMD\Storefront\Payment\PromotionQuote;
+use AsterMD\Storefront\Payment\SettlementMode;
 
 /**
  * An adapter that prices every code at $10 off when it is applied, and then
@@ -41,6 +42,11 @@ final class RepricingAdapter implements PaymentAdapter
     public function place(OrderEnvelope $order, PaymentCredential $credential): PlacementOutcome
     {
         return PlacementOutcome::declined(null, self::NOTICE, 'promotion_repriced');
+    }
+
+    public function settlementFor(OrderEnvelope $order): SettlementMode
+    {
+        return $order->settlement;
     }
 
     public function resume(string $reference): PlacementOutcome

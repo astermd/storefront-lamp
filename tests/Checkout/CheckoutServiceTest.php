@@ -7,6 +7,7 @@ namespace AsterMD\Storefront\Tests\Checkout;
 use AsterMD\Storefront\Checkout\CheckoutEventReporter;
 use AsterMD\Storefront\Checkout\CheckoutResult;
 use AsterMD\Storefront\Checkout\CheckoutService;
+use AsterMD\Storefront\Checkout\CheckoutViewModel;
 use AsterMD\Storefront\Checkout\ConsentRecord;
 use AsterMD\Storefront\Checkout\Consents;
 use AsterMD\Storefront\Checkout\IdempotencyKey;
@@ -183,6 +184,128 @@ final class CheckoutServiceTest extends TestCase
         self::assertSame('settlement_unsupported', $result->outcome->rawStatus);
         self::assertSame([], $this->transport->requests, 'the provider was never called');
         self::assertFalse($this->cartStore->cart()->isEmpty(), 'the buyer keeps their cart');
+    }
+
+    public function testASubscriptionWhosePlanHoldsItsFirstPaymentAuthorizesOnACaptureDeployment(): void
+    {
+        $service = $this->serviceThatPlaces();
+        $this->subscriptionCart('plan-hold');
+
+        $result = $service->submit($this->buyer(), $this->card(), ['terms' => 'on']);
+
+        self::assertTrue($result->outcome->isAuthorizedOnly());
+        self::assertSame('authorize', $this->transport->body(0)['action']);
+    }
+
+    public function testASubscriptionWhosePlanTakesItsFirstPaymentChargesOnAnAuthorizeDeployment(): void
+    {
+        $service = $this->serviceThatPlaces(settlement: SettlementMode::Authorize);
+        $this->subscriptionCart('plan-take');
+
+        $result = $service->submit($this->buyer(), $this->card(), ['terms' => 'on']);
+
+        self::assertTrue($result->outcome->isPlaced());
+        self::assertFalse($result->outcome->isAuthorizedOnly());
+        self::assertSame('process', $this->transport->body(0)['action']);
+    }
+
+    public function testTheOrderNamesThePlanTheBuyerChoseNotTheDefault(): void
+    {
+        $adapter = new ChallengingAdapter();
+        $service = $this->service(null, adapter: $adapter);
+        $this->subscriptionCart('plan-take');
+
+        $service->submit($this->buyer(), $this->card(), ['terms' => 'on']);
+
+        self::assertSame('plan-take', $adapter->placed?->lines[0]->planId);
+        self::assertSame(SettlementMode::Capture, $adapter->placed?->settlement);
+    }
+
+    public function testALineStoredBeforeSubscriptionsCouldBeChosenIsOrderedOnTheDefaultPlan(): void
+    {
+        // The default holds, so the adapter has to be one that can.
+        $adapter = new ChallengingAdapter();
+        $service = $this->service(null, adapter: new RedeclaredAdapter($adapter, null, false, supportsAuthorizeCapture: true));
+        $this->subscriptionCart(null);
+
+        $service->submit($this->buyer(), $this->card(), ['terms' => 'on']);
+
+        self::assertSame('plan-hold', $adapter->placed?->lines[0]->planId);
+        self::assertSame(SettlementMode::Authorize, $adapter->placed?->settlement);
+    }
+
+    public function testChoosingASubscriptionRepricesTheLineAndIsRefusedForAnotherDosesPlan(): void
+    {
+        $service = $this->serviceThatPlaces();
+        $this->subscriptionCart('plan-hold');
+
+        self::assertFalse($service->chooseSubscription('glp-care', 'not-this-doses-plan')->accepted);
+        self::assertTrue($service->chooseSubscription('glp-care', 'plan-take')->accepted);
+        self::assertSame('plan-take', $this->cartStore->cart()->line('glp-care')?->planId);
+    }
+
+    public function testTheViewOffersTheChosenDosesSubscriptionsBesideTheDosePicker(): void
+    {
+        $service = $this->serviceThatPlaces();
+        $this->subscriptionCart('plan-take');
+
+        $view = $service->view();
+
+        self::assertSame(['g-1mg', 'g-2mg'], array_column($view->plans['options'] ?? [], 'id'), 'the dose picker is still there');
+        self::assertSame([true, false], array_column($view->plans['options'] ?? [], 'subscription'));
+        self::assertCount(1, $view->subscriptionChoices);
+        self::assertSame('glp-care', $view->subscriptionChoices[0]['slug']);
+        self::assertSame('1mg', $view->subscriptionChoices[0]['variant_name']);
+        self::assertSame('plan-take', $view->subscriptionChoices[0]['chosen']);
+        self::assertSame(['plan-hold', 'plan-take'], array_column($view->subscriptionChoices[0]['options'], 'id'));
+        self::assertSame('Held until approved', $view->subscriptionChoices[0]['options'][0]['description']);
+    }
+
+    public function testThePaymentNoticeFollowsTheSubscriptionsPlan(): void
+    {
+        $service = $this->serviceThatPlaces();
+
+        $this->subscriptionCart('plan-take');
+        self::assertSame(CheckoutViewModel::NOTICE_CHARGE, $service->view()->paymentNotice);
+
+        $this->subscriptionCart('plan-hold');
+        self::assertSame(CheckoutViewModel::NOTICE_HOLD, $service->view()->paymentNotice);
+    }
+
+    public function testTheViewCarriesTheSettlementTheCardFormMustBeSetUpFor(): void
+    {
+        $service = $this->serviceThatPlaces();
+
+        $this->subscriptionCart('plan-hold');
+        self::assertSame('authorize', $service->view()->settlement);
+
+        $this->subscriptionCart('plan-take');
+        self::assertSame('capture', $service->view()->settlement);
+    }
+
+    public function testAHoldTheProviderWouldChargeInsteadIsShownAsACharge(): void
+    {
+        // A plan that holds, on a provider that will not: the page has to be
+        // set up for -- and tell the buyer about -- what the provider will do.
+        $adapter = new ChallengingAdapter();
+        $adapter->settlesAs = SettlementMode::Capture;
+        $service = $this->service(null, adapter: new RedeclaredAdapter($adapter, null, false, supportsAuthorizeCapture: true));
+        $this->subscriptionCart('plan-hold');
+
+        $view = $service->view();
+
+        self::assertSame('capture', $view->settlement);
+        self::assertSame(CheckoutViewModel::NOTICE_CHARGE, $view->paymentNotice);
+    }
+
+    public function testACartWithNoSubscriptionKeepsTheHoldNoticeEvenWhenItCharges(): void
+    {
+        // Unchanged on purpose: only a cart holding a subscription is told
+        // anything new about its payment.
+        $view = $this->serviceThatPlaces()->view();
+
+        self::assertSame([], $view->subscriptionChoices);
+        self::assertSame(CheckoutViewModel::NOTICE_HOLD, $view->paymentNotice);
     }
 
     public function testASuccessfulPlacementDropsThePromotionSoItCannotReachTheUpsellFlow(): void
@@ -918,6 +1041,11 @@ final class CheckoutServiceTest extends TestCase
         $service->submit($this->buyer(), $this->card(), ['terms' => 'on']);
 
         self::assertFalse($service->choosePlan('tirzepatide', 't-1m')->accepted);
+        self::assertFalse($service->chooseSubscription('tirzepatide', 'any-plan')->accepted);
+        self::assertSame(
+            CheckoutService::PAYMENT_PENDING_NOTICE,
+            $service->chooseSubscription('tirzepatide', 'any-plan')->notice,
+        );
         self::assertFalse($service->toggleBump('anything')->accepted);
 
         $again = $service->submit($this->buyer(), $this->card(), ['terms' => 'on']);
@@ -1887,6 +2015,34 @@ final class CheckoutServiceTest extends TestCase
                 'price_cents' => 4900,
                 'variants' => [['id' => 'u-1', 'name' => 'One', 'price_cents' => 4900, 'provider' => null]],
             ],
+            // A prescription whose 1mg dose is sold on two subscription plans,
+            // one holding its first payment and one taking it, both priced to
+            // the approved fixture's 120.00; its 2mg dose is sold one-off.
+            'glp-care' => [
+                'slug' => 'glp-care',
+                'name' => 'GLP Care',
+                'kind' => 'rx',
+                'variants' => [
+                    [
+                        'id' => 'g-1mg', 'name' => '1mg', 'price_cents' => 12000, 'provider' => ['offer_id' => '337', 'product_id' => '3416'],
+                        'plan' => self::PLAN_HOLD,
+                        'plans' => [self::PLAN_HOLD, self::PLAN_TAKE],
+                    ],
+                    ['id' => 'g-2mg', 'name' => '2mg', 'price_cents' => 15000, 'provider' => ['offer_id' => '337', 'product_id' => '3417']],
+                ],
+            ],
         ]);
+    }
+
+    private const array PLAN_HOLD = ['id' => 'plan-hold', 'name' => 'Monthly', 'description' => 'Held until approved', 'first_payment_cents' => 12000, 'settlement' => 'authorize'];
+
+    private const array PLAN_TAKE = ['id' => 'plan-take', 'name' => 'Monthly, paid now', 'description' => '', 'first_payment_cents' => 12000, 'settlement' => 'capture'];
+
+    /** Replaces the booted cart with one subscription line on the 1mg dose and the given plan. */
+    private function subscriptionCart(?string $planId): void
+    {
+        $cart = new Cart();
+        $cart->put(new CartLine('glp-care', 'GLP Care', 'rx', null, null, 1, 12000, 'g-1mg', $planId));
+        $this->cartStore->save($cart);
     }
 }

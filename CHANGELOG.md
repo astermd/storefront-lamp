@@ -57,6 +57,64 @@ only. Discount codes appear once the installed `astermd/sdk` offers
   `composer.json`, `composer.lock`, `docs/ARCHITECTURE.md`,
   `docs/INTEGRATION-NOTES.md`
 
+### A subscription's plan decides hold or charge, and the buyer picks the plan
+
+On a Stripe channel, a variant the EMR sells on several subscription plans now
+gets all of them, not just the lowest plan id. Checkout lists the plans for the
+chosen dose in a second picker under the dose picker. Choosing one re-prices the
+line at that plan's first payment, and the order names that plan.
+
+Whether the first payment is held or taken comes from the plan's first charge:
+`pre_auth` holds and `charge_now` takes. Neither `payment.settlement` nor a
+product's `settlement` key applies to such a line, or to the free items it
+brings into the cart. Every other line settles as before, and a cart that holds
+anything still holds as a whole. A hold still needs a prescription line in the
+cart, because the doctor's approval is what captures it. The notice beside the
+total says "charged today" for a subscription whose plan takes its first
+payment. Every other cart keeps the hold notice.
+
+`config:validate` now reports a plan settlement it cannot read. It also counts a
+holding plan when it checks that the provider can authorize. It warns about a
+product key that cannot reach the product's subscription variants, and about a
+holding plan on a product that is not a prescription.
+
+Run `bin/console theme:sync --apply` to pick up every plan and how each one
+settles. Until then a variant stays on its one plan and settles as it did.
+
+- `core/Domain/VariantPlans.php` (new)
+- `core/Catalog/SubscriptionPlans.php`, `core/Catalog/CatalogBuilder.php`,
+  `core/Domain/CartLine.php`, `core/Domain/CartRules.php`,
+  `core/Checkout/SettlementPolicy.php`, `core/Checkout/CheckoutService.php`,
+  `core/Checkout/CheckoutViewModel.php`,
+  `core/Http/Controller/CheckoutController.php`,
+  `core/Console/ValidateCommand.php`, `config/routes.php`,
+  `config/payment.php`, `config/products.overrides.php`,
+  `theme/templates/pages/checkout.twig`,
+  `docs/ARCHITECTURE.md`, `docs/OPERATIONS.md`, `docs/INTEGRATION-NOTES.md`
+
+### Fixed: a held Stripe payment could never be paid
+
+Every Stripe order that held its payment was refused, and the buyer saw "We
+could not complete your payment". The card fields were always set up to charge
+at once, and Stripe refuses a card collected that way for a PaymentIntent that
+only holds. The page now sets up the card fields for what the order will do.
+A new `PaymentAdapter::settlementFor()` reports whether an order will be held
+or charged, after any narrowing by the provider. Stripe still charges a cart
+with no prescription line at once. The checkout page sets Stripe's fields from
+that answer through `data-settlement`. The notice beside the total uses the
+same answer, so a hold that Stripe will charge instead says "charged today".
+
+Run `npm run build`.
+
+- `core/Payment/PaymentAdapter.php`, `core/Payment/NullPaymentAdapter.php`,
+  `core/Payment/Stripe/StripeAdapter.php`, `core/Payment/Stripe/StripePayload.php`,
+  `core/Payment/Vrio/VrioAdapter.php`,
+  `core/Payment/CheckoutChamp/CheckoutChampAdapter.php`,
+  `core/Observability/InstrumentedPaymentAdapter.php`,
+  `core/Checkout/CheckoutService.php`, `core/Checkout/CheckoutViewModel.php`,
+  `theme/templates/pages/checkout.twig`, `theme/js/payment-stripe.js`,
+  `public/assets/build/`, `docs/ARCHITECTURE.md`
+
 ### Runs in Docker
 
 A `Dockerfile` builds one image with nginx in front of php-fpm on PHP 8.5, and

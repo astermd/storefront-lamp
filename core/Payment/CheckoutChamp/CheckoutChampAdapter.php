@@ -16,6 +16,7 @@ use AsterMD\Storefront\Payment\PaymentAdapter;
 use AsterMD\Storefront\Payment\PaymentCredential;
 use AsterMD\Storefront\Payment\PlacementOutcome;
 use AsterMD\Storefront\Payment\PromotionQuote;
+use AsterMD\Storefront\Payment\SettlementMode;
 use AsterMD\Storefront\Support\CardScrubber;
 use AsterMD\Storefront\Support\OperatorLog;
 
@@ -252,6 +253,12 @@ final class CheckoutChampAdapter implements PaymentAdapter
         }
 
         return $reference;
+    }
+
+    /** As asked: this provider holds funds on any cart it is told to. */
+    public function settlementFor(OrderEnvelope $order): SettlementMode
+    {
+        return $order->settlement;
     }
 
     /**

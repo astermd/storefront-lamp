@@ -79,6 +79,7 @@ return function (App $app): void {
     $app->post('/checkout/promo/', CheckoutController::class . ':promoApply')->setName('checkout.promo.apply');
     $app->post('/checkout/promo/remove/', CheckoutController::class . ':promoRemove')->setName('checkout.promo.remove');
     $app->post('/checkout/plan/', CheckoutController::class . ':plan')->setName('checkout.plan');
+    $app->post('/checkout/subscription/', CheckoutController::class . ':subscription')->setName('checkout.subscription');
     // Finishes a payment the buyer's bank asked to verify (`[14.22]`). A GET,
     // because the provider sends the buyer back here by redirect after a
     // verification that left the page; it is not a funnel step, and the

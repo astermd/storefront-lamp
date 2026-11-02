@@ -50,6 +50,20 @@ interface PaymentAdapter
     public function place(OrderEnvelope $order, PaymentCredential $credential): PlacementOutcome;
 
     /**
+     * What {@see self::place()} will do with this order's money: the settlement
+     * it actually applies, which may be narrower than `$order->settlement`.
+     *
+     * A provider may decline to hold funds it was asked to hold when nothing
+     * would ever capture them, and charge instead. The page has to know before
+     * the buyer pays: a provider-hosted surface can be set up for one or the
+     * other and refuses a payment made the other way, and the buyer is told
+     * whether their card is charged or held. An adapter that honours the
+     * request as given, or refuses it before the call, answers
+     * `$order->settlement`.
+     */
+    public function settlementFor(OrderEnvelope $order): SettlementMode;
+
+    /**
      * Re-read an order {@see self::place()} left pending, and say what has
      * happened to it since (`[14.22]`).
      *

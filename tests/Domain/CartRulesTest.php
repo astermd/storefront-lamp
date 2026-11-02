@@ -678,6 +678,123 @@ final class CartRulesTest extends TestCase
         self::assertSame(0, $cart->line('sema')?->unitPriceCents);
     }
 
+    /** @return array<string, array<string, mixed>> the catalog with a prescription whose 1mg dose is sold on two plans */
+    private function subscriptionCatalogData(): array
+    {
+        $monthly = ['id' => 'plan-monthly', 'name' => 'Monthly', 'first_payment_cents' => 10000, 'settlement' => 'authorize'];
+        $quarterly = ['id' => 'plan-quarterly', 'name' => 'Every 3 months', 'first_payment_cents' => 27000, 'settlement' => 'capture'];
+        $twoMg = ['id' => 'plan-2mg', 'name' => 'Monthly', 'first_payment_cents' => 12000, 'settlement' => 'capture'];
+
+        return $this->catalogData() + [
+            'glp' => [
+                'slug' => 'glp', 'name' => 'GLP Care', 'kind' => 'rx', 'emr_product_id' => 'emr-glp',
+                'variants' => [
+                    ['id' => 'glp-1mg', 'name' => '1mg', 'price_cents' => 10000, 'plan' => $monthly, 'plans' => [$monthly, $quarterly]],
+                    ['id' => 'glp-2mg', 'name' => '2mg', 'price_cents' => 12000, 'plan' => $twoMg, 'plans' => [$twoMg]],
+                    ['id' => 'glp-3mg', 'name' => '3mg', 'price_cents' => 14000],
+                ],
+            ],
+            'shake' => [
+                'slug' => 'shake', 'name' => 'Protein Shake', 'kind' => 'otc', 'emr_product_id' => 'emr-shake',
+                'variants' => [['id' => 'shake-1', 'name' => 'Vanilla', 'price_cents' => 3000, 'plan' => $twoMg, 'plans' => [$twoMg, $quarterly]]],
+            ],
+        ];
+    }
+
+    public function testAddingASubscriptionVariantPutsTheLineOnItsDefaultPlan(): void
+    {
+        $cart = new Cart();
+
+        (new CartRules(new FakeCatalog($this->subscriptionCatalogData())))->add($cart, 'glp', 'glp-1mg');
+
+        self::assertSame('plan-monthly', $cart->line('glp')?->planId);
+        self::assertSame(10000, $cart->line('glp')?->unitPriceCents);
+    }
+
+    public function testChoosingASubscriptionRepricesTheLineAtThatPlansFirstPayment(): void
+    {
+        $cart = new Cart();
+        $rules = new CartRules(new FakeCatalog($this->subscriptionCatalogData()));
+        $rules->add($cart, 'glp', 'glp-1mg');
+
+        $outcome = $rules->chooseSubscription($cart, 'glp', 'plan-quarterly');
+
+        self::assertTrue($outcome->accepted);
+        self::assertSame('plan-quarterly', $cart->line('glp')?->planId);
+        self::assertSame(27000, $cart->line('glp')?->unitPriceCents);
+        self::assertSame('glp-1mg', $cart->line('glp')?->variantId);
+    }
+
+    public function testASubscriptionTheLinesVariantIsNotSoldOnIsRefused(): void
+    {
+        $cart = new Cart();
+        $rules = new CartRules(new FakeCatalog($this->subscriptionCatalogData()));
+        $rules->add($cart, 'glp', 'glp-1mg');
+
+        // plan-2mg sells this product, but another dose of it.
+        $outcome = $rules->chooseSubscription($cart, 'glp', 'plan-2mg');
+
+        self::assertFalse($outcome->accepted);
+        self::assertSame(CartRules::UNKNOWN_SUBSCRIPTION, $outcome->notice);
+        self::assertSame('plan-monthly', $cart->line('glp')?->planId);
+        self::assertSame(10000, $cart->line('glp')?->unitPriceCents);
+    }
+
+    public function testAPrescriptionHasNoSubscriptionUntilItsVariantIsChosen(): void
+    {
+        $cart = new Cart();
+        $rules = new CartRules(new FakeCatalog($this->subscriptionCatalogData()));
+        $rules->add($cart, 'glp');
+
+        $outcome = $rules->chooseSubscription($cart, 'glp', 'plan-monthly');
+
+        self::assertNull($cart->line('glp')?->planId);
+        self::assertFalse($outcome->accepted);
+        self::assertSame(CartRules::UNKNOWN_SUBSCRIPTION, $outcome->notice);
+        self::assertSame(0, $cart->line('glp')?->unitPriceCents);
+    }
+
+    public function testSwitchingDoseMovesTheLineOntoTheNewDosesDefaultPlan(): void
+    {
+        $cart = new Cart();
+        $rules = new CartRules(new FakeCatalog($this->subscriptionCatalogData()));
+        $rules->add($cart, 'glp', 'glp-1mg');
+        $rules->chooseSubscription($cart, 'glp', 'plan-quarterly');
+
+        $rules->chooseVariant($cart, 'glp', 'glp-2mg');
+        self::assertSame('plan-2mg', $cart->line('glp')?->planId);
+        self::assertSame(12000, $cart->line('glp')?->unitPriceCents);
+
+        $rules->chooseVariant($cart, 'glp', 'glp-3mg');
+        self::assertNull($cart->line('glp')?->planId);
+        self::assertSame(14000, $cart->line('glp')?->unitPriceCents);
+    }
+
+    public function testAddingTheSameVariantAgainKeepsTheChosenSubscription(): void
+    {
+        $cart = new Cart();
+        $rules = new CartRules(new FakeCatalog($this->subscriptionCatalogData()));
+        $rules->add($cart, 'shake');
+        $rules->chooseSubscription($cart, 'shake', 'plan-quarterly');
+
+        $rules->add($cart, 'shake');
+
+        self::assertSame('plan-quarterly', $cart->line('shake')?->planId);
+        self::assertSame(27000, $cart->line('shake')?->unitPriceCents);
+    }
+
+    public function testTheDefaultPlanKeepsTheVariantsOwnPriceSoAnOverrideOfItStillWins(): void
+    {
+        $data = $this->subscriptionCatalogData();
+        $data['glp']['variants'][0]['price_cents'] = 9500;
+        $cart = new Cart();
+
+        (new CartRules(new FakeCatalog($data)))->add($cart, 'glp', 'glp-1mg');
+
+        self::assertSame(10000, $data['glp']['variants'][0]['plan']['first_payment_cents'], 'precondition: the override differs from the plan');
+        self::assertSame(9500, $cart->line('glp')?->unitPriceCents);
+    }
+
     public function testApplyingATerritoryRecordsItAndAcceptsAnUnblockedCart(): void
     {
         $cart = new Cart();

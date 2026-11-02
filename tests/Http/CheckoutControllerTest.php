@@ -43,6 +43,7 @@ use AsterMD\Storefront\Repository\SessionRepository;
 use AsterMD\Storefront\Support\Config;
 use AsterMD\Storefront\Support\DatabaseRateLimiter;
 use AsterMD\Storefront\Support\OperatorLog;
+use AsterMD\Storefront\Tests\Checkout\ChallengingAdapter;
 use AsterMD\Storefront\Tests\Domain\FakeCatalog;
 use AsterMD\Storefront\Tests\Payment\RedeclaredAdapter;
 use AsterMD\Storefront\Tests\Support\CapturedLog;
@@ -430,6 +431,112 @@ final class CheckoutControllerTest extends TestCase
         self::assertSame('t-3m', $variants['tirzepatide']);
     }
 
+    public function testASubscriptionGetsAPlanPickerBesideItsDosePicker(): void
+    {
+        $this->seedSubscription('plan-monthly');
+
+        $body = (string) $this->app()->handle($this->get('/checkout/'))->getBody();
+
+        self::assertStringContainsString('name="plan[semaglutide]"', $body, 'the dose is still chosen first');
+        self::assertStringContainsString('Select Subscription', $body);
+        self::assertMatchesRegularExpression(
+            '/formaction="\/checkout\/subscription\/" name="subscription\[semaglutide\]" value="plan-monthly" data-select-option aria-pressed="true"/',
+            $body,
+        );
+        self::assertMatchesRegularExpression(
+            '/formaction="\/checkout\/subscription\/" name="subscription\[semaglutide\]" value="plan-quarterly" data-select-option aria-pressed="false"/',
+            $body,
+        );
+        self::assertStringNotContainsString('value="plan-2mg"', $body, 'only the chosen dose\'s plans are offered');
+        self::assertSame(1, substr_count($body, '<form'), 'and the page is still one form');
+    }
+
+    public function testACartWithNoSubscriptionHasNoSubscriptionPicker(): void
+    {
+        $this->seedCart();
+
+        $body = (string) $this->app()->handle($this->get('/checkout/'))->getBody();
+
+        self::assertStringContainsString('name="plan[tirzepatide]"', $body, 'precondition: the page rendered its pickers');
+        self::assertStringNotContainsString('Select Subscription', $body);
+        self::assertStringNotContainsString('/checkout/subscription/', $body);
+    }
+
+    public function testSwitchingTheSubscriptionRepricesTheLineAndReturnsToCheckout(): void
+    {
+        $this->seedSubscription('plan-monthly');
+        $app = $this->app();
+
+        $response = $this->post($app, '/checkout/subscription/', [
+            '_csrf' => $this->csrfToken($app),
+            'subscription' => ['semaglutide' => 'plan-quarterly'],
+        ] + $this->carriedFields());
+
+        self::assertSame(303, $response->getStatusCode());
+        self::assertSame('/checkout/', $response->getHeaderLine('Location'));
+
+        $line = array_column($_SESSION['cart']['lines'], null, 'slug')['semaglutide'];
+        self::assertSame('plan-quarterly', $line['plan_id']);
+        self::assertSame(27000, $line['unit_price_cents']);
+
+        $body = (string) $app->handle($this->get('/checkout/'))->getBody();
+        self::assertStringContainsString('$270.00', $body);
+    }
+
+    public function testASubscriptionAnotherDoseIsSoldOnIsRefusedWithANotice(): void
+    {
+        $this->seedSubscription('plan-monthly');
+        $app = $this->app();
+
+        $response = $this->post($app, '/checkout/subscription/', [
+            '_csrf' => $this->csrfToken($app),
+            'subscription' => ['semaglutide' => 'plan-2mg'],
+        ] + $this->carriedFields());
+
+        self::assertSame(303, $response->getStatusCode());
+        self::assertSame('plan-monthly', array_column($_SESSION['cart']['lines'], 'plan_id', 'slug')['semaglutide']);
+
+        $body = (string) $app->handle($this->get('/checkout/'))->getBody();
+        self::assertStringContainsString(CartRules::UNKNOWN_SUBSCRIPTION, $body);
+    }
+
+    public function testThePaymentNoticeFollowsTheSubscriptionsPlan(): void
+    {
+        $held = 'Payment authorization will be held';
+        $charged = 'Your card will be charged today';
+
+        $this->seedSubscription('plan-quarterly');
+        $body = (string) $this->app()->handle($this->get('/checkout/'))->getBody();
+        self::assertStringContainsString($charged, $body, 'a plan that takes its first payment says so');
+        self::assertStringNotContainsString($held, $body);
+
+        $this->seedSubscription('plan-monthly');
+        $body = (string) $this->app()->handle($this->get('/checkout/'))->getBody();
+        self::assertStringContainsString($held, $body, 'a plan that holds its first payment keeps the hold notice');
+        self::assertStringNotContainsString($charged, $body);
+
+        // A cart with no subscription is told what it always was, on a
+        // deployment that charges as much as on one that holds.
+        $this->seedCart();
+        $body = (string) $this->app()->handle($this->get('/checkout/'))->getBody();
+        self::assertStringContainsString($held, $body);
+        self::assertStringNotContainsString($charged, $body);
+    }
+
+    public function testTheCardFormIsSetUpForTheSettlementThePlanAsksFor(): void
+    {
+        // A provider that hosts its own card fields, which is what renders them.
+        $hosted = new ChallengingAdapter();
+
+        $this->seedSubscription('plan-monthly');
+        $body = (string) $this->app(adapter: $hosted)->handle($this->get('/checkout/'))->getBody();
+        self::assertStringContainsString('data-settlement="authorize"', $body);
+
+        $this->seedSubscription('plan-quarterly');
+        $body = (string) $this->app(adapter: $hosted)->handle($this->get('/checkout/'))->getBody();
+        self::assertStringContainsString('data-settlement="capture"', $body);
+    }
+
     /**
      * `[8.0i]`: with two prescriptions the assessments happen after the order,
      * and the page says so — softly, since it is not a condition of paying.
@@ -591,6 +698,7 @@ final class CheckoutControllerTest extends TestCase
         bool $promotions = true,
         array $bumps = ['max_on_page' => 3, 'bumps' => []],
         bool $recordEvents = false,
+        ?PaymentAdapter $adapter = null,
     ): App {
         $this->transport->queueFixture($fixture);
         $catalog = self::catalog();
@@ -622,7 +730,11 @@ final class CheckoutControllerTest extends TestCase
                     false,
                 )
                 : new NullCheckoutEventReporter(),
-            PaymentAdapter::class => static function () use ($transport, $log, $promotions): PaymentAdapter {
+            PaymentAdapter::class => static function () use ($transport, $log, $promotions, $adapter): PaymentAdapter {
+                if ($adapter !== null) {
+                    return $adapter;
+                }
+
                 $adapter = new VrioAdapter(
                     new VrioCredentials('api.vrio.app', '', 'test-key', 147, 1),
                     new VrioApiFactory($transport),
@@ -703,6 +815,19 @@ final class CheckoutControllerTest extends TestCase
                 'slug' => 'blocked-thing', 'name' => 'Blocked Thing', 'kind' => 'free-addon',
                 'emr_product_id' => null, 'parent_slug' => 'tirzepatide',
                 'quantity' => 1, 'unit_price_cents' => 0, 'variant_id' => null,
+            ],
+        ]];
+    }
+
+    /** One prescription with its 1mg dose chosen, on the given subscription plan. */
+    private function seedSubscription(string $planId): void
+    {
+        $_SESSION['cart'] = ['session' => null, 'territory' => null, 'lines' => [
+            [
+                'slug' => 'semaglutide', 'name' => 'Semaglutide', 'kind' => 'rx',
+                'emr_product_id' => null, 'parent_slug' => null,
+                'quantity' => 1, 'unit_price_cents' => $planId === 'plan-quarterly' ? 27000 : 10000,
+                'variant_id' => 's-1mg', 'plan_id' => $planId,
             ],
         ]];
     }
@@ -821,8 +946,33 @@ final class CheckoutControllerTest extends TestCase
                 'price_cents' => 499,
                 'variants' => [['id' => 'po-1', 'name' => 'One', 'price_cents' => 499, 'provider' => ['offer_id' => '338', 'product_id' => '3500']]],
             ],
+            // Its 1mg dose is sold on two subscription plans, one holding its
+            // first payment and one taking it; its 2mg dose on a plan of its own.
+            'semaglutide' => [
+                'slug' => 'semaglutide',
+                'name' => 'Semaglutide',
+                'kind' => 'rx',
+                'variants' => [
+                    [
+                        'id' => 's-1mg', 'name' => '1mg', 'price_cents' => 10000, 'provider' => ['offer_id' => '337', 'product_id' => '3418'],
+                        'plan' => self::PLAN_MONTHLY,
+                        'plans' => [self::PLAN_MONTHLY, self::PLAN_QUARTERLY],
+                    ],
+                    [
+                        'id' => 's-2mg', 'name' => '2mg', 'price_cents' => 12000, 'provider' => ['offer_id' => '337', 'product_id' => '3419'],
+                        'plan' => self::PLAN_2MG,
+                        'plans' => [self::PLAN_2MG],
+                    ],
+                ],
+            ],
         ]);
     }
+
+    private const array PLAN_MONTHLY = ['id' => 'plan-monthly', 'name' => 'Monthly', 'description' => 'Renews every 30 days', 'first_payment_cents' => 10000, 'settlement' => 'authorize'];
+
+    private const array PLAN_QUARTERLY = ['id' => 'plan-quarterly', 'name' => 'Every 3 months', 'description' => '', 'first_payment_cents' => 27000, 'settlement' => 'capture'];
+
+    private const array PLAN_2MG = ['id' => 'plan-2mg', 'name' => 'Monthly', 'description' => '', 'first_payment_cents' => 12000, 'settlement' => 'capture'];
 
     /** Seeds the CSRF token with a GET, exactly as {@see CsrfTest} does. */
     private function csrfToken(App $app): string

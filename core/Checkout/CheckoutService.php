@@ -12,6 +12,7 @@ use AsterMD\Storefront\Domain\CartLine;
 use AsterMD\Storefront\Domain\CartOutcome;
 use AsterMD\Storefront\Domain\CartRules;
 use AsterMD\Storefront\Domain\ProductCatalog;
+use AsterMD\Storefront\Domain\VariantPlans;
 use AsterMD\Storefront\Emr\VerificationGateway;
 use AsterMD\Storefront\Forms\AnswerSet;
 use AsterMD\Storefront\Forms\TeleformSource;
@@ -278,6 +279,22 @@ final class CheckoutService
         }
 
         $plans = $this->planViewModels($cart);
+        $subscriptions = $this->subscriptionViewModels($cart);
+
+        // What the adapter will do with the money for this cart, after any
+        // narrowing the provider applies. The provider's card surface is set up
+        // from it -- a payment collected for the other mode is refused -- and
+        // every cart change is a sub-action that re-renders this page, so it is
+        // always the cart about to be paid for.
+        $settlement = $this->adapter->settlementFor($this->quoteEnvelope($cart, $state));
+
+        // The page promises a hold on every order. An order whose subscription
+        // plan takes its first payment at once would be told it is held, so
+        // only a cart holding a subscription is told otherwise -- and only when
+        // the order it makes will not hold the money.
+        $paymentNotice = $subscriptions !== [] && !$settlement->isAuthorize()
+            ? CheckoutViewModel::NOTICE_CHARGE
+            : CheckoutViewModel::NOTICE_HOLD;
 
         return new CheckoutViewModel(
             prefill: $prefill,
@@ -295,6 +312,9 @@ final class CheckoutService
             planChoices: $plans,
             postCheckoutSteps: count($cart->rxLines()) > 1,
             paymentChallenge: $paymentChallenge,
+            subscriptionChoices: $subscriptions,
+            paymentNotice: $paymentNotice,
+            settlement: $settlement->value,
         );
     }
 
@@ -858,6 +878,23 @@ final class CheckoutService
 
         $cart = $this->carts->cart();
         $outcome = $this->rules->chooseVariant($cart, $slug, $variantId);
+
+        if ($outcome->accepted) {
+            $this->carts->save($cart);
+        }
+
+        return $outcome;
+    }
+
+    /** `[12.4]`: choosing which subscription plan a line is sold on re-prices it. */
+    public function chooseSubscription(string $slug, string $planId): CartOutcome
+    {
+        if ($this->hasPendingPayment()) {
+            return CartOutcome::rejected(self::PAYMENT_PENDING_NOTICE);
+        }
+
+        $cart = $this->carts->cart();
+        $outcome = $this->rules->chooseSubscription($cart, $slug, $planId);
 
         if ($outcome->accepted) {
             $this->carts->save($cart);
@@ -1452,9 +1489,10 @@ final class CheckoutService
                 // product without variants, which is how the EMR names one.
                 emrProductId: $line->emrProductId,
                 emrVariantId: self::text($variant['id'] ?? null) ?? $line->variantId,
-                // The catalog's plan for the variant, when the variant is sold
-                // on one -- the same place the line's price came from.
-                planId: self::text(is_array($variant['plan'] ?? null) ? ($variant['plan']['id'] ?? null) : null),
+                // The plan the buyer chose for the variant, or its default,
+                // when the variant is sold on one -- the same plan the line's
+                // price came from.
+                planId: self::text(VariantPlans::chosen($variant, $line->planId)['id'] ?? null),
             );
         }
 
@@ -1474,24 +1512,7 @@ final class CheckoutService
      */
     private function variantFor(string $slug, ?string $variantId): ?array
     {
-        $product = $this->catalog->product($slug);
-        $variants = is_array($product['variants'] ?? null) ? array_values(array_filter($product['variants'], 'is_array')) : [];
-
-        if ($variants === []) {
-            return null;
-        }
-
-        if ($variantId === null || $variantId === '') {
-            return $variants[0];
-        }
-
-        foreach ($variants as $variant) {
-            if ((string) ($variant['id'] ?? '') === $variantId) {
-                return $variant;
-            }
-        }
-
-        return $variants[0];
+        return VariantPlans::variant($this->catalog->product($slug), $variantId);
     }
 
     /**
@@ -1707,17 +1728,16 @@ final class CheckoutService
             // Resolved from the cart that is about to be charged rather than
             // from the one the page was rendered against: a bump accepted on
             // the checkout page is a line like any other, and a bump that
-            // holds funds has to make the order it joined hold them too.
-            settlement: $this->settlement->forSlugs(...array_map(
-                static fn (CartLine $line): string => $line->slug,
-                $cart->lines(),
-            )),
+            // holds funds has to make the order it joined hold them too. A
+            // line on a subscription plan settles as its plan says.
+            settlement: $this->settlement->forLines(...$cart->lines()),
             promotionReference: $promotion?->reference,
         );
     }
 
     /**
-     * A cheap envelope for pricing a discount code.
+     * A cheap envelope for pricing a discount code, and for asking the adapter
+     * how it will settle the cart before the page is rendered.
      *
      * The adapter needs the lines and nothing else to quote, but the contract
      * takes a whole envelope, so the buyer is filled from whatever the journey
@@ -1743,6 +1763,9 @@ final class CheckoutService
             userAgent: null,
             idempotencyKey: '',
             anchorSlug: self::anchorSlug($cart),
+            // As envelopeFor() resolves it, so the page is set up for the
+            // settlement the submit will ask for.
+            settlement: $this->settlement->forLines(...$cart->lines()),
         );
     }
 
@@ -1962,8 +1985,54 @@ final class CheckoutService
                 'id' => (string) ($variant['id'] ?? ''),
                 'name' => (string) ($variant['name'] ?? ''),
                 'price_cents' => (int) ($variant['price_cents'] ?? 0),
+                // A variant sold on a plan renews, so it must not be labelled
+                // as billed once; which plan is chosen beneath.
+                'subscription' => VariantPlans::of($variant) !== [],
             ], $variants),
         ];
+    }
+
+    /**
+     * One subscription selector per line sold on a plan, in cart order: the
+     * plans its variant is sold on, the one it is on marked chosen.
+     *
+     * Beside the variant selector rather than instead of it, so the dose is
+     * still chosen first and the plans offered are always the chosen dose's.
+     * A prescription with no variant chosen yet gets none until it has one
+     * (`[12.9]`); a non-prescription line is on its first variant until told
+     * otherwise, which is the variant it is priced on, so it gets that one's.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function subscriptionViewModels(Cart $cart): array
+    {
+        $selectors = [];
+        foreach ($cart->lines() as $line) {
+            if ($line->isChild() || ($line->kind === 'rx' && $line->variantId === null)) {
+                continue;
+            }
+
+            $variant = $this->variantFor($line->slug, $line->variantId);
+            $plans = VariantPlans::of($variant);
+            if ($plans === []) {
+                continue;
+            }
+
+            $selectors[] = [
+                'slug' => $line->slug,
+                'name' => $line->name,
+                'variant_name' => (string) ($variant['name'] ?? ''),
+                'chosen' => VariantPlans::chosen($variant, $line->planId)['id'] ?? null,
+                'options' => array_map(static fn (array $plan): array => [
+                    'id' => (string) $plan['id'],
+                    'name' => (string) ($plan['name'] ?? ''),
+                    'description' => is_string($plan['description'] ?? null) ? $plan['description'] : '',
+                    'price_cents' => (int) ($plan['first_payment_cents'] ?? 0),
+                ], $plans),
+            ];
+        }
+
+        return $selectors;
     }
 
     /** The territory the geo gate has already been applied with, or the one the buyer last told us. */

@@ -181,6 +181,9 @@ final class StripePayload
             // Elements collected it under, so this must stay in step with
             // `allowedPaymentMethodTypes` in theme/js/payment-stripe.js.
             'allowed_payment_method_types' => ['card'],
+            // The page's Elements are given the same `captureMethod`, from
+            // StripeAdapter::settlementFor() -- a token minted for the other
+            // one is refused.
             'capture_method' => $settlement->isAuthorize() ? 'manual' : 'automatic',
             'amount_details' => self::amountDetails($order),
             'metadata' => self::metadata($order, $lineItems, $settlement, $channelId),

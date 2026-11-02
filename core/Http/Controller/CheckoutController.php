@@ -28,8 +28,8 @@ use Slim\Views\Twig;
  * service enforces everywhere else.
  *
  * **Every sub-action is a native form post that carries the whole form**
- * (`[27.10]`): a bump toggle, a promo apply, a promo remove and a plan switch
- * each repost the buyer's typed contact details, store them in journey state
+ * (`[27.10]`): a bump toggle, a promo apply, a promo remove, a plan switch and
+ * a subscription switch each repost the buyer's typed contact details, store them in journey state
  * on the way through, and answer with a **303 See Other** back to
  * `/checkout/`. That is what lets the summary update without leaving the page
  * and without losing anything typed, and it needs no JavaScript to be correct
@@ -198,6 +198,33 @@ final class CheckoutController
         }
 
         $outcome = $this->checkout->choosePlan($slug, $variantId);
+
+        if ($outcome->notice !== null) {
+            $this->carts->flash($outcome->notice);
+        }
+
+        return self::redirect($response, self::CHECKOUT_PATH);
+    }
+
+    /**
+     * `[12.4]`: switching the subscription plan re-prices the line it names.
+     *
+     * Each button posts `subscription[<slug>]=<plan>` for the same reason the
+     * plan picker names its line: an order may carry several.
+     */
+    public function subscription(ServerRequestInterface $request, ResponseInterface $response): ResponseInterface
+    {
+        $body = (array) ($request->getParsedBody() ?? []);
+        $this->checkout->rememberBuyer(BuyerDetails::fromSubmitted($body));
+
+        $slug = '';
+        $planId = '';
+        if (is_array($body['subscription'] ?? null) && count($body['subscription']) === 1) {
+            $slug = self::text(array_key_first($body['subscription']));
+            $planId = self::text(reset($body['subscription']));
+        }
+
+        $outcome = $this->checkout->chooseSubscription($slug, $planId);
 
         if ($outcome->notice !== null) {
             $this->carts->flash($outcome->notice);

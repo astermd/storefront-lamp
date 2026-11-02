@@ -744,7 +744,10 @@ What the buyer sees: the product page hides "Start Assessment" when adding that 
 make two prescriptions, and checkout and the receipt carry a short note
 (`theme/templates/partials/post-checkout-steps.twig`) that a few steps may follow the order.
 Checkout shows one plan picker per prescription; each picker's buttons post
-`plan[<slug>]=<variant>`, and the older `slug` + `variant_id` pair is still accepted.
+`plan[<slug>]=<variant>`, and the older `slug` + `variant_id` pair is still accepted. A line
+whose chosen variant the EMR sells on subscription plans gets a second picker beneath, listing
+those plans; its buttons post `subscription[<slug>]=<plan>` to `/checkout/subscription/`, which
+re-prices the line at the chosen plan's first payment (see "Plans" under Stripe below).
 
 **Shared intake forms are a possible extension, not part of this release.** Several products
 could one day declare a single intake form between them, and a cart whose prescriptions all
@@ -851,11 +854,17 @@ provider spells `action: "process"` versus `action: "authorize"` and another spe
 `/order/import/` versus `/order/preauth/`; `OrderEnvelope` carries the resolved mode, and
 translating it into a provider's verb is the adapter's job.
 
-The decision is made **once**, in `Checkout\SettlementPolicy`, over two layers.
+The decision is made **once**, in `Checkout\SettlementPolicy`, over three layers.
 `payment.settlement` is the deployment default — a commercial arrangement with one provider.
 A per-product `settlement` key in `config/products.overrides.php` is a clinical or fulfilment
-fact about one product; like `geo_blocks` it is override-layer only, because the EMR channel
-payload has no such concept and `theme:sync` therefore neither writes it nor can overwrite it.
+fact about one product; like `geo_blocks` it is override-layer only, because the EMR's
+products have no such concept and `theme:sync` therefore neither writes it nor can overwrite it.
+And a line sold on a subscription plan settles as **the plan's first charge** says: the
+subscription engine's `payment_mode` on that charge step, `pre_auth` (hold) or `charge_now`
+(take, its default), which `theme:sync` writes onto each catalog plan as `settlement`. Neither
+the default nor the product key applies to such a line — the plan is the EMR's own statement of
+how its first payment is taken — nor does the default reach the free attachments it brings into
+the cart. Every other line settles exactly as before.
 
 A cart is one order, so a cart resolves to one action and **authorize wins**: capturing a
 product a deployment marked hold-until-event is a charge nobody asked for, while authorizing
@@ -991,7 +1000,12 @@ checkout template takes its second branch: Stripe's Payment Element mounts in th
 slot from the adapter's `clientConfig` (the publishable key and Stripe.js's URL, nothing
 secret), `theme/js/payment-stripe.js` turns what the buyer entered into a confirmation token,
 and the form posts `payment_token` instead of a card. `CheckoutController` makes that a
-`PaymentCredential::token()`; every other step of the submit is unchanged.
+`PaymentCredential::token()`; every other step of the submit is unchanged. Stripe refuses a
+token minted under parameters other than the PaymentIntent's, so the Element is given the
+same `setupFutureUsage`, payment method types and `captureMethod`. The capture method comes
+from `PaymentAdapter::settlementFor()`, which the checkout view asks for every cart it renders.
+The page receives it as `data-settlement`, so a held order's card is collected for manual
+capture.
 
 `place()` confirms a PaymentIntent the storefront creates itself, on the buyer's Stripe
 customer (found by email first, as the EMR's own checkout finds it). **The EMR is the reader
@@ -1019,9 +1033,15 @@ Three things the other providers do here, Stripe hands to the EMR:
   not a refusal.
 - **Plans.** The channel details `theme:sync` already fetches list the plans assigned to the
   channel (`subscriptions`). `SubscriptionPlans` works out each plan's product, variant and first
-  payment from its steps -- the EMR's own rule, ported -- and `CatalogBuilder::attachPlans()`
-  sells the variant on the plan at that price. Only on a Stripe channel: a CRM's orders name no
-  plan. A line on a plan is named by the plan alone and makes the order a `cycle`.
+  payment from its steps -- the EMR's own rule, ported -- and whether that first payment is held
+  or taken, and `CatalogBuilder::attachPlans()` puts the variant on every plan that sells it:
+  `plans` lists them by id, and `plan` is the first, the default the variant is priced on. The
+  buyer picks among them at checkout; the cart line keeps the choice (`CartLine::$planId`), and
+  `Domain\VariantPlans` is the one reader the price, the order line and the settlement all
+  resolve it through. Only on a Stripe channel: a CRM's orders name no plan. A line on a plan
+  is named by the plan alone and makes the order a `cycle`. A plan that holds its first payment
+  makes the order hold under the same rule as any other hold: only for a cart with a
+  prescription line, since a doctor's approval is what captures it.
 
 The test fence is `StripeRefusingTransport`. Stripe's SDK takes its HTTP client process-wide
 (`ApiRequestor::setHttpClient()`), so `StripeApiFactory` installs it on every client it

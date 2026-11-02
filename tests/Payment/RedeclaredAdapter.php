@@ -14,6 +14,7 @@ use AsterMD\Storefront\Payment\PaymentAdapter;
 use AsterMD\Storefront\Payment\PaymentCredential;
 use AsterMD\Storefront\Payment\PlacementOutcome;
 use AsterMD\Storefront\Payment\PromotionQuote;
+use AsterMD\Storefront\Payment\SettlementMode;
 
 /**
  * The shipped adapter with two of its declarations overridden.
@@ -66,6 +67,11 @@ final class RedeclaredAdapter implements PaymentAdapter
     public function place(OrderEnvelope $order, PaymentCredential $credential): PlacementOutcome
     {
         return $this->inner->place($order, $credential);
+    }
+
+    public function settlementFor(OrderEnvelope $order): SettlementMode
+    {
+        return $this->inner->settlementFor($order);
     }
 
     public function resume(string $reference): PlacementOutcome

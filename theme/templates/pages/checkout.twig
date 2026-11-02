@@ -292,6 +292,10 @@
            from the public configuration the adapter declares, and posts back
            a token in `payment_token` instead of a card ([15.1], [15.4c]).
 
+           `data-settlement` is whether this order's money is taken or held,
+           as the adapter will settle it; the provider refuses a token
+           collected for the other one.
+
            `data-challenge` is present only while the buyer's bank is waiting
            for them to verify the payment ([14.22]); it is what the provider's
            script needs to run that step, so it is rendered into this page and
@@ -301,6 +305,7 @@
           data-client-config="{{ checkout.capabilities.clientConfig|json_encode }}"
           data-amount="{{ checkout.totals.totalCents }}"
           data-currency="{{ checkout.currency|lower }}"
+          data-settlement="{{ checkout.settlement }}"
           data-confirm-url="{{ url('/checkout/confirm') }}"
           {% if checkout.paymentChallenge %}data-challenge="{{ checkout.paymentChallenge }}"{% endif %}></div>
         <input type="hidden" name="payment_token" value="" data-payment-token />
@@ -380,7 +385,37 @@
             </span>
             <span>
               <span class="block text-sm font-semibold text-heading">{{ option.name }}</span>
-              <span class="block text-sm text-muted mt-1">Billed once</span>
+              <span class="block text-sm text-muted mt-1">{{ option.subscription ? 'Subscription' : 'Billed once' }}</span>
+            </span>
+          </span>
+          <span class="shrink-0 text-sm font-semibold text-heading">{{ option.price_cents|money }}</span>
+        </button>
+        {% endfor %}
+      </div>
+      {% endfor %}
+      {% endif %}
+
+      <!-- ==================== SUBSCRIPTION SELECTOR ==================== -->
+      {# The plans the chosen variant is sold on, under the variant picker so the
+         dose is chosen first. Each button names its own line as
+         `subscription[slug]`, as the variant picker's do. The price is the
+         plan's first payment: what this order charges, not what it renews at. #}
+      {% if checkout.subscriptionChoices %}
+      <h2 class="{{ checkout.planChoices ? 'mt-8' : '' }} font-heading text-base font-bold sm:text-lg text-heading">Select Subscription</h2>
+
+      {% for subscription in checkout.subscriptionChoices %}
+      <p class="{{ loop.first ? 'mt-0.5' : 'mt-6' }} text-xs text-muted">{{ subscription.name }}{% if subscription.variant_name %} · {{ subscription.variant_name }}{% endif %}</p>
+
+      <div class="mt-3.5 flex flex-col gap-2 rounded-md border border-border bg-background overflow-hidden" data-select-group>
+        {% for option in subscription.options %}
+        <button type="submit" formaction="{{ url('/checkout/subscription') }}" name="subscription[{{ subscription.slug }}]" value="{{ option.id }}" data-select-option aria-pressed="{{ option.id == subscription.chosen ? 'true' : 'false' }}" class="group flex w-full items-center justify-between gap-3 rounded-md border border-transparent p-3 text-left transition-colors hover:border-primary/40 aria-pressed:border-primary aria-pressed:bg-primary-light">
+          <span class="flex gap-3">
+            <span class="flex mt-1 w-[18px] h-[18px] shrink-0 items-center justify-center rounded-full border-2 border-border-darker group-aria-pressed:border-primary">
+              <span class="size-2 rounded-full group-aria-pressed:bg-primary"></span>
+            </span>
+            <span>
+              <span class="block text-sm font-semibold text-heading">{{ option.name }}</span>
+              <span class="block text-sm text-muted mt-1">{{ option.description ?: 'Subscription' }}</span>
             </span>
           </span>
           <span class="shrink-0 text-sm font-semibold text-heading">{{ option.price_cents|money }}</span>
@@ -468,9 +503,15 @@
       </div>
 
       <!-- ==================== PAYMENT AUTHORIZATION NOTICE ==================== -->
+      {# Only a subscription whose plan takes its first payment at once is told
+         it is charged today; every other order keeps the hold notice. #}
       <div class="mt-6 flex items-start gap-3 rounded-sm border border-primary bg-primary-light px-4 py-4">
         <i data-lucide="info" class="mt-0.5 size-5 shrink-0 text-primary"></i>
+        {% if checkout.paymentNotice == 'charge' %}
+        <p class="text-sm leading-relaxed text-heading">Your card will be charged today for the first payment of your subscription.</p>
+        {% else %}
         <p class="text-sm leading-relaxed text-heading">Payment authorization will be held; you will only be charged if approved and prescribed by a doctor.</p>
+        {% endif %}
       </div>
 
       <!-- ==================== ORDER BUMPS ==================== -->

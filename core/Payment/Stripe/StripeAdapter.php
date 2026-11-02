@@ -18,6 +18,7 @@ use AsterMD\Storefront\Payment\PaymentCredential;
 use AsterMD\Storefront\Payment\PlacementOutcome;
 use AsterMD\Storefront\Payment\PromotionQuote;
 use AsterMD\Storefront\Payment\ProviderOrder;
+use AsterMD\Storefront\Payment\SettlementMode;
 use AsterMD\Storefront\Support\CardScrubber;
 use AsterMD\Storefront\Support\OperatorLog;
 use Stripe\Exception\ApiConnectionException;
@@ -143,7 +144,7 @@ final class StripeAdapter implements PaymentAdapter
             return PlacementOutcome::declined(null, StripeOutcome::GENERIC_DECLINE, 'too_many_lines');
         }
 
-        $settlement = StripePayload::settlementFor($order);
+        $settlement = $this->settlementFor($order);
         if ($settlement !== $order->settlement) {
             $this->log->info('payment.settlement_charged_instead', [
                 'anchor' => $order->anchorSlug,
@@ -215,6 +216,16 @@ final class StripeAdapter implements PaymentAdapter
         }
 
         return $outcome;
+    }
+
+    /**
+     * Narrower than asked when nothing would capture the hold
+     * ({@see StripePayload::settlementFor()}). The page's Elements are set up
+     * from this, and Stripe refuses a token minted for the other capture method.
+     */
+    public function settlementFor(OrderEnvelope $order): SettlementMode
+    {
+        return StripePayload::settlementFor($order);
     }
 
     /**

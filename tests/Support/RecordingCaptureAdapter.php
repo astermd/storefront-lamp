@@ -14,6 +14,7 @@ use AsterMD\Storefront\Payment\PaymentAdapter;
 use AsterMD\Storefront\Payment\PaymentCredential;
 use AsterMD\Storefront\Payment\PlacementOutcome;
 use AsterMD\Storefront\Payment\PromotionQuote;
+use AsterMD\Storefront\Payment\SettlementMode;
 
 /**
  * An adapter that records the {@see CaptureRequest} it was handed and reports
@@ -53,6 +54,11 @@ final class RecordingCaptureAdapter implements PaymentAdapter
     public function place(OrderEnvelope $order, PaymentCredential $credential): PlacementOutcome
     {
         return PlacementOutcome::declined(null, 'Test double; placement is not exercised here.', 'unsupported');
+    }
+
+    public function settlementFor(OrderEnvelope $order): SettlementMode
+    {
+        return $order->settlement;
     }
 
     public function resume(string $reference): PlacementOutcome

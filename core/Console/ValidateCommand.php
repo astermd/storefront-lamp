@@ -9,6 +9,7 @@ namespace AsterMD\Storefront\Console;
 use AsterMD\Storefront\Catalog\CatalogProvider;
 use AsterMD\Storefront\Catalog\CatalogValidator;
 use AsterMD\Storefront\Checkout\SettlementPolicy;
+use AsterMD\Storefront\Domain\VariantPlans;
 use AsterMD\Storefront\Payment\CheckoutChamp\CheckoutChampAuthorizeMode;
 use AsterMD\Sdk\Enum\IdentityCheck;
 use AsterMD\Storefront\Emr\ClientFactory;
@@ -790,7 +791,7 @@ final class ValidateCommand extends Command
             }
         }
 
-        $this->validateSettlement($catalog, $capabilities, $errors);
+        $this->validateSettlement($catalog, $capabilities, $errors, $warnings);
         $this->validateBumps($catalog, $errors);
         $this->validateUpsells($catalog, $errors);
 
@@ -807,7 +808,7 @@ final class ValidateCommand extends Command
      * The settlement mode a deployment configured, and whether its provider can
      * honour it.
      *
-     * Three findings, all errors rather than warnings, because each one has the
+     * The findings below are errors rather than warnings, because each one has the
      * same consequence in production: an order either charges a card the
      * deployment meant to hold, or fails at checkout in front of a buyer.
      * Neither is something to discover from a support ticket.
@@ -829,12 +830,24 @@ final class ValidateCommand extends Command
      *    one product marked `authorize` is enough to make a cart authorize, so
      *    a deployment defaulting to `capture` with one such product is exactly
      *    as broken as one defaulting to `authorize`, and only this pass can see
-     *    that before a buyer does.
+     *    that before a buyer does. A subscription plan that holds its first
+     *    payment asks too.
+     *  - **A plan whose settlement is not a mode.** `theme:sync` only writes
+     *    the two, so this is an override's typo, and its line would quietly
+     *    settle as if it were sold one-off.
+     *
+     * Two more are warnings, because the order still goes through — just not
+     * as somebody may have meant: a product key that cannot reach the product's
+     * subscription variants, whose plan decides instead; and a plan that holds
+     * the first payment of something that is not a prescription, which nothing
+     * captures until a doctor approves one, so a cart with no prescription in it
+     * is charged at once.
      *
      * @param array<string, mixed> $catalog
      * @param list<string>         $errors
+     * @param list<string>         $warnings
      */
-    private function validateSettlement(array $catalog, AdapterCapabilities $capabilities, array &$errors): void
+    private function validateSettlement(array $catalog, AdapterCapabilities $capabilities, array &$errors, array &$warnings): void
     {
         // A sentinel rather than null, because an absent key and a null one
         // have to be told apart here and `Config::get()` answers null for both.
@@ -857,8 +870,58 @@ final class ValidateCommand extends Command
         $wantsAuthorize = ($default ?? SettlementMode::Capture)->isAuthorize();
 
         foreach ((array) ($catalog['products'] ?? []) as $slug => $product) {
-            if (!is_array($product) || !array_key_exists(SettlementPolicy::PRODUCT_KEY, $product)) {
+            if (!is_array($product)) {
                 continue;
+            }
+
+            $planned = false;
+            foreach ((array) ($product['variants'] ?? []) as $variant) {
+                foreach (VariantPlans::of(is_array($variant) ? $variant : null) as $plan) {
+                    $planned = true;
+
+                    // A plan synced before plans said how they settle has no
+                    // answer to check, and settles as it always did.
+                    if (!array_key_exists(SettlementPolicy::PLAN_KEY, $plan)) {
+                        continue;
+                    }
+
+                    $planMode = SettlementMode::parse($plan[SettlementPolicy::PLAN_KEY]);
+                    if ($planMode === null) {
+                        $errors[] = sprintf(
+                            'payment: product %s is sold on plan %s, whose settlement is %s, which is neither "capture" nor "authorize"',
+                            (string) $slug,
+                            (string) $plan['id'],
+                            self::quoted($plan[SettlementPolicy::PLAN_KEY]),
+                        );
+
+                        continue;
+                    }
+
+                    if (!$planMode->isAuthorize()) {
+                        continue;
+                    }
+
+                    $wantsAuthorize = true;
+
+                    if (($product['kind'] ?? null) !== 'rx') {
+                        $warnings[] = sprintf(
+                            'payment: plan %s holds the first payment of product %s, which is not a prescription — a hold is captured when a doctor approves a prescription, so a cart with none is charged at once instead',
+                            (string) $plan['id'],
+                            (string) $slug,
+                        );
+                    }
+                }
+            }
+
+            if (!array_key_exists(SettlementPolicy::PRODUCT_KEY, $product)) {
+                continue;
+            }
+
+            if ($planned) {
+                $warnings[] = sprintf(
+                    'payment: product %s sets settlement, which does not apply to its variants sold on a subscription plan — those settle as their plan says',
+                    (string) $slug,
+                );
             }
 
             $mode = SettlementMode::parse($product[SettlementPolicy::PRODUCT_KEY]);

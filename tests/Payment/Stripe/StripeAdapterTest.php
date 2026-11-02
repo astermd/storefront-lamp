@@ -305,6 +305,17 @@ final class StripeAdapterTest extends TestCase
         self::assertSame('1', $body['metadata']['astermd_upsell']);
     }
 
+    public function testTheSettlementThePageIsSetUpForIsTheOneThePaymentIntentGets(): void
+    {
+        $adapter = $this->adapter();
+
+        self::assertSame(SettlementMode::Authorize, $adapter->settlementFor($this->envelope(settlement: SettlementMode::Authorize)));
+        self::assertSame(SettlementMode::Capture, $adapter->settlementFor($this->envelope()));
+        self::assertSame(SettlementMode::Capture, $adapter->settlementFor($this->envelope([self::line(kind: 'otc')], SettlementMode::Authorize)));
+        self::assertSame(SettlementMode::Capture, $adapter->settlementFor($this->envelope(settlement: SettlementMode::Authorize, followOn: true)));
+        self::assertSame([], $this->transport->requests, 'asking calls nothing');
+    }
+
     public function testAnUpsellChargesTheSavedCardWithTheBuyerAway(): void
     {
         $this->transport->queue(200, self::paymentIntent('succeeded'));
