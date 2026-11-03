@@ -22,6 +22,10 @@ use Psr\Http\Client\ClientInterface;
  * EMR prices the cart from its own catalogue, which is why the discount it
  * answers is the one it will honour when the order is read back.
  *
+ * **The buyer is named by email when the journey holds one**, so a coupon
+ * restricted to particular patients can match them; without one the field is
+ * left out rather than sent empty, and only a coupon open to anyone applies.
+ *
  * **Nothing is counted.** The EMR checks the code and answers what it would
  * take off; the redemption is recorded when the paid order reaches it.
  *
@@ -50,9 +54,10 @@ final class EmrCouponGateway implements CouponGateway
     ) {
     }
 
-    public function quote(string $code, array $lines): PromotionQuote
+    public function quote(string $code, array $lines, ?string $email = null): PromotionQuote
     {
         $code = trim($code);
+        $email = $email === null || trim($email) === '' ? null : trim($email);
         $items = self::items($lines);
 
         if ($code === '' || $items === null || !$this->available()) {
@@ -60,7 +65,7 @@ final class EmrCouponGateway implements CouponGateway
         }
 
         try {
-            $data = $this->client()->coupons()->validate($code, $items)->data();
+            $data = $this->client()->coupons()->validate($code, $items, email: $email)->data();
         } catch (NotFoundException) {
             return PromotionQuote::rejected($code, 'unknown_code', self::UNKNOWN_CODE);
         } catch (ApiException $e) {

@@ -17,11 +17,18 @@ final class PaymentDescriptorTest extends TestCase
         return PaymentCredential::card('4111111111111111', '09', '2030', '123');
     }
 
-    public function testTheCardIsTheBrandTheBinNamesTheFirstSixDigitsAndAnMmYyExpiry(): void
+    public function testTheCardIsTheBrandTheLastFourDigitsAndAnMmYyExpiryAndNeverTheBin(): void
     {
         $card = CardDescriptor::fromCredential(self::visa());
 
-        self::assertSame(['type' => 'visa', 'bin' => '411111', 'exp' => '09/30'], $card->toArray());
+        self::assertSame(['type' => 'visa', 'last_4' => '1111', 'exp' => '09/30'], $card->toArray());
+    }
+
+    public function testTheLastFourIgnoresTheSpacingTheBuyerTyped(): void
+    {
+        $card = CardDescriptor::fromCredential(PaymentCredential::card('4111 1111 1111 4321', '09', '2030', '123'));
+
+        self::assertSame('4321', $card->toArray()['last_4']);
     }
 
     public function testATwoDigitYearIsAcceptedWhereAFourDigitOneWasStored(): void
@@ -31,18 +38,17 @@ final class PaymentDescriptorTest extends TestCase
         self::assertSame('09/30', $card->toArray()['exp']);
     }
 
-    public function testAnUnplaceableNumberStillReportsTheBinAndExpiryTheBuyerTyped(): void
+    public function testAnUnplaceableNumberStillReportsTheDigitsAndExpiryTheBuyerTyped(): void
     {
-        // The brand is the one field that may be underivable. The bin and the
-        // expiry come off the form the buyer filled in, so they are known
+        // The brand is the one field that may be underivable. The digits and
+        // the expiry come off the form the buyer filled in, so they are known
         // whatever the prefix turns out to be, and dropping the card object
-        // over the one missing field would throw away the two that are not.
+        // over the one missing field would throw away the rest.
         $card = CardDescriptor::fromCredential(
             PaymentCredential::card('1444444444444440', '09', '2030', '123'),
         );
 
-        self::assertSame(['bin' => '144444', 'exp' => '09/30'], $card->toArray());
-        self::assertArrayNotHasKey('type', $card->toArray());
+        self::assertSame(['last_4' => '4440', 'exp' => '09/30'], $card->toArray());
     }
 
     public function testTheProvidersOwnBrandAnswersOnlyWhenThePrefixCouldNot(): void
@@ -53,11 +59,27 @@ final class PaymentDescriptorTest extends TestCase
         self::assertSame('jcb', $fallen->toArray()['type']);
 
         // The prefix wins where it has an answer: the provider's reading is the
-        // answer to "we could not tell", not a second opinion. Nothing else in
-        // the card object is ever taken from the provider.
-        $placeable = CardDescriptor::fromCredential(self::visa(), CardBrand::Jcb);
+        // answer to "we could not tell", not a second opinion.
+        $placeable = CardDescriptor::fromCredential(self::visa(), CardBrand::Jcb, '01/40', '9999');
         self::assertSame('visa', $placeable->toArray()['type']);
-        self::assertSame('411111', $placeable->toArray()['bin']);
+        self::assertSame('1111', $placeable->toArray()['last_4'], 'a typed number outranks the provider');
+        self::assertSame('09/30', $placeable->toArray()['exp'], 'a typed expiry outranks the provider');
+    }
+
+    public function testATokenTheStorefrontNeverSawTakesTheProvidersLastFour(): void
+    {
+        $card = CardDescriptor::fromCredential(PaymentCredential::token('pm_abc'), CardBrand::Visa, '04/31', '4242');
+
+        self::assertSame(['type' => 'visa', 'last_4' => '4242', 'exp' => '04/31'], $card->toArray());
+    }
+
+    public function testAProviderAnswerThatIsNotFourDigitsIsNoLastFour(): void
+    {
+        foreach (['', '424', '42424', '42a2'] as $answer) {
+            $card = CardDescriptor::fromCredential(PaymentCredential::token('pm_abc'), CardBrand::Visa, '04/31', $answer);
+
+            self::assertArrayNotHasKey('last_4', $card->toArray(), var_export($answer, true));
+        }
     }
 
     public function testACapturedOrderSaysItHeldNothing(): void
@@ -73,7 +95,7 @@ final class PaymentDescriptorTest extends TestCase
         self::assertSame([
             'type' => 'credit_card',
             'pre_auth' => false,
-            'card' => ['type' => 'visa', 'bin' => '411111', 'exp' => '09/30'],
+            'card' => ['type' => 'visa', 'last_4' => '1111', 'exp' => '09/30'],
         ], $payment->toArray());
     }
 
