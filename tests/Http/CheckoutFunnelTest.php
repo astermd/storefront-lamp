@@ -612,7 +612,7 @@ final class CheckoutFunnelTest extends TestCase
 
         $expected = ['type' => 'credit_card', 'pre_auth' => false, 'card' => [
             'type' => 'visa',
-            'bin' => '411111',
+            'last_4' => '4444',
             'exp' => '12/30',
         ]];
 

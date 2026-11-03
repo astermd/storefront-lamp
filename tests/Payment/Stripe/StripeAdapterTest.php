@@ -169,6 +169,7 @@ final class StripeAdapterTest extends TestCase
         self::assertSame(SettlementMode::Capture, $outcome->settlement);
         self::assertSame(CardBrand::Visa, $outcome->providerCardBrand);
         self::assertSame('04/31', $outcome->providerCardExpiry);
+        self::assertSame('4242', $outcome->providerCardLastFour);
         self::assertTrue((bool) $outcome->reusableCredential?->isReusable());
         self::assertSame(
             ['customer' => 'cus_VWTGV3w2nz1PqB', 'payment_method' => 'pm_1Card'],
@@ -514,23 +515,29 @@ final class StripeAdapterTest extends TestCase
 
     public function testACouponIsPricedByTheEmr(): void
     {
-        $quote = $this->adapter(coupons: new FixedCoupons())->quotePromotion($this->envelope(), 'foobar');
+        $coupons = new FixedCoupons();
+        $quote = $this->adapter(coupons: $coupons)->quotePromotion($this->envelope(), 'foobar');
 
         self::assertTrue($quote->valid);
         self::assertSame(1000, $quote->discountCents);
         self::assertSame(self::COUPON, $quote->reference);
+        self::assertSame('ada@example.com', $coupons->lastEmail, 'the buyer is named so a patient-only coupon can match');
     }
 }
 
 /** A coupon gateway that prices every code at $10 off, or answers what it is given. */
 final class FixedCoupons implements CouponGateway
 {
+    public ?string $lastEmail = null;
+
     public function __construct(private readonly ?PromotionQuote $answer = null)
     {
     }
 
-    public function quote(string $code, array $lines): PromotionQuote
+    public function quote(string $code, array $lines, ?string $email = null): PromotionQuote
     {
+        $this->lastEmail = $email;
+
         return $this->answer ?? PromotionQuote::accepted($code, 1000, '6a01b2c3d4e5f6a7b8c9d0f9');
     }
 

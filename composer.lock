@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "0ca8f892e477fb29aff2c1b5eb34dcc3",
+    "content-hash": "963c6630e128bec86eeaa862c6596274",
     "packages": [
         {
             "name": "astermd/checkoutchamp-client",

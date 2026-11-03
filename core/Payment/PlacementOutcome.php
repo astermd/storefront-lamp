@@ -58,9 +58,10 @@ namespace AsterMD\Storefront\Payment;
  * has nothing to say, which is not the same as a negative: an adapter with no
  * QA mechanism has no opinion about one, and a response carrying no stored card
  * names no brand. A decline leaves both null — nothing was held and neither
- * refusal envelope describes a card. `providerCardExpiry` (`MM/YY`) joins them
- * for a credential that carries no card of its own: a token collected in the
- * provider's fields leaves the storefront nothing to read an expiry from.
+ * refusal envelope describes a card. `providerCardExpiry` (`MM/YY`) and
+ * `providerCardLastFour` join them for a credential that carries no card of
+ * its own: a token collected in the provider's fields leaves the storefront
+ * nothing to read an expiry or a last four from.
  *
  * **`clientAction` is the one field that must never outlive the request.** It
  * is what a pending outcome hands the provider's own script on the page to run
@@ -91,6 +92,7 @@ final class PlacementOutcome
         public readonly ?CardBrand $providerCardBrand = null,
         public readonly ?string $providerCardExpiry = null,
         public readonly ?string $clientAction = null,
+        public readonly ?string $providerCardLastFour = null,
     ) {
     }
 
@@ -103,6 +105,7 @@ final class PlacementOutcome
         ?bool $preAuthQa = null,
         ?CardBrand $providerCardBrand = null,
         ?string $providerCardExpiry = null,
+        ?string $providerCardLastFour = null,
     ): self {
         return new self(
             self::PLACED,
@@ -116,6 +119,7 @@ final class PlacementOutcome
             $preAuthQa,
             $providerCardBrand,
             $providerCardExpiry,
+            providerCardLastFour: $providerCardLastFour,
         );
     }
 

@@ -8,6 +8,28 @@ names exactly which ones changed.
 
 ## [Unreleased]
 
+### The card's last four replaces its bin
+
+Takes `astermd/sdk` 0.0.4, whose `treatments()->sync()` payment `card`
+replaces `bin` with `last_4`. Both `/treatments/sync` and
+`/checkout-events/update` now carry the card's last four digits and no bin:
+the payment block is one value and both endpoints get the same one. A card
+entered in Stripe's own fields takes its last four from Stripe's answer, the
+same way it already took its expiry.
+
+Discount codes on a Stripe channel now name the buyer by email when the
+checkout already holds one, so a coupon restricted to particular patients can
+match them; without an email the field is left out and only a coupon open to
+anyone applies.
+
+Run `composer install`.
+
+- `core/Payment/CardDescriptor.php`, `core/Payment/PlacementOutcome.php`,
+  `core/Payment/Stripe/StripeOutcome.php`, `core/Payment/Stripe/StripeAdapter.php`,
+  `core/Checkout/CheckoutService.php`, `core/Emr/CouponGateway.php`,
+  `core/Emr/EmrCouponGateway.php`, `core/Emr/NullCouponGateway.php`,
+  `composer.json`, `composer.lock`
+
 ### Stripe
 
 A channel whose payment processor is Stripe now takes payments. The card is
@@ -28,9 +50,9 @@ Run `composer install` for `stripe/stripe-php`, then
 `bin/console theme:sync --apply`. Plans come with the channel details: the
 plans assigned to the channel in the EMR, each priced at its first payment
 from its own steps (`core/Catalog/SubscriptionPlans.php`), on Stripe channels
-only. Discount codes appear once the installed `astermd/sdk` offers
-`coupons()`; until then the promo box is hidden on Stripe channels. Then
-`npm run build`.
+only. Discount codes are checked through the SDK's `coupons()`, which
+`astermd/sdk` 0.0.4 provides; on an older SDK the promo box is hidden on
+Stripe channels. Then `npm run build`.
 
 - `core/Payment/Stripe/` (new), `core/Catalog/SubscriptionPlans.php` (new),
   `core/Emr/CouponGateway.php`,

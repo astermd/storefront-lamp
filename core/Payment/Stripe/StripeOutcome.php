@@ -132,6 +132,7 @@ final class StripeOutcome
             null,
             $card === null ? null : (self::BRANDS[(string) ($card['brand'] ?? '')] ?? null),
             $card === null ? null : self::expiry($card),
+            $card === null ? null : self::lastFour($card),
         );
     }
 
@@ -172,6 +173,14 @@ final class StripeOutcome
         }
 
         return sprintf('%02d/%02d', $month, $year % 100);
+    }
+
+    /** @param array<string, mixed> $card */
+    private static function lastFour(array $card): ?string
+    {
+        $last4 = $card['last4'] ?? null;
+
+        return is_string($last4) && preg_match('/^\d{4}$/', $last4) === 1 ? $last4 : null;
     }
 
     /** @param array<string, mixed> $paymentIntent */

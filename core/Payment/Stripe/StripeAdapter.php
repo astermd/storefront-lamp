@@ -258,7 +258,7 @@ final class StripeAdapter implements PaymentAdapter
 
     public function quotePromotion(OrderEnvelope $order, string $code): PromotionQuote
     {
-        return $this->coupons->quote($code, $order->lines);
+        return $this->coupons->quote($code, $order->lines, $order->buyer->email);
     }
 
     /**
@@ -391,7 +391,7 @@ final class StripeAdapter implements PaymentAdapter
             return null;
         }
 
-        $quote = $this->coupons->quote($code, $order->lines);
+        $quote = $this->coupons->quote($code, $order->lines, $order->buyer->email);
 
         if (!$quote->valid && $quote->reason === 'unavailable') {
             $this->log->warning('payment.promotion_unconfirmed', ['code' => $code, 'anchor' => $order->anchorSlug]);

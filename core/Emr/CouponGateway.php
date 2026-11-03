@@ -31,9 +31,15 @@ interface CouponGateway
      * An accepted quote carries the coupon's id as its reference, which is
      * what the order names the discount by.
      *
+     * `$email` names the buyer so a coupon restricted to particular patients
+     * can match them. Without it the buyer is anonymous, and only a coupon
+     * open to anyone applies — so a code is never refused for want of an
+     * email the buyer has not typed yet; it is priced as anyone's.
+     *
      * @param list<OrderLine> $lines
+     * @param ?string         $email the buyer's email, or null when the journey holds none
      */
-    public function quote(string $code, array $lines): PromotionQuote;
+    public function quote(string $code, array $lines, ?string $email = null): PromotionQuote;
 
     /** Whether codes can be priced at all, so the storefront hides the control rather than refusing every code. */
     public function available(): bool;

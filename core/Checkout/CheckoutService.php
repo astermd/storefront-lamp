@@ -1081,8 +1081,9 @@ final class CheckoutService
      * amount to report.
      *
      * The card's brand comes from the number's own prefix, falling back to the
-     * provider's reading only where the prefix named no scheme. Its bin and
-     * expiry are always the buyer's own -- see {@see CardDescriptor}.
+     * provider's reading only where the prefix named no scheme. Its last four
+     * and expiry are the buyer's own wherever the storefront saw the number --
+     * see {@see CardDescriptor}.
      */
     private static function paymentDescriptor(
         PaymentCredential $credential,
@@ -1098,7 +1099,12 @@ final class CheckoutService
             $authorize,
             $outcome->preAuthQa,
             $held && $authorize ? $totals->totalCents : null,
-            CardDescriptor::fromCredential($credential, $outcome->providerCardBrand, $outcome->providerCardExpiry),
+            CardDescriptor::fromCredential(
+                $credential,
+                $outcome->providerCardBrand,
+                $outcome->providerCardExpiry,
+                $outcome->providerCardLastFour,
+            ),
         );
     }
 

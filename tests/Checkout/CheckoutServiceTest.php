@@ -1600,11 +1600,11 @@ final class CheckoutServiceTest extends TestCase
         self::assertTrue($payment->preAuth);
         self::assertSame(12000, $payment->preAuthAmountCents);
 
-        // The bin and the expiry are the buyer's own, off the form; only the
-        // brand would ever have come from the provider, and here the prefix
-        // already answered.
+        // The digits and the expiry are the buyer's own, off the form; only
+        // the brand would ever have come from the provider, and here the
+        // prefix already answered.
         self::assertSame('visa', $payment->card?->brand?->value);
-        self::assertSame('411111', $payment->card?->bin);
+        self::assertSame('4444', $payment->card?->lastFour);
         self::assertSame('12/30', $payment->card?->expiry);
     }
 
