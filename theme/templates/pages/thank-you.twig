@@ -32,7 +32,10 @@
         <span class="flex size-10 shrink-0 items-center justify-center rounded-full border-2 border-primary">
           <i data-lucide="check" class="size-5 text-primary" stroke-width="3"></i>
         </span>
-        <div>
+        {# `min-w-0` and `wrap-anywhere` together: a name or an address line is
+           whatever the buyer typed, and one long unbroken string would otherwise
+           push past its column instead of wrapping inside it. #}
+        <div class="min-w-0">
           {# The first placed reference is the order the buyer will quote to support.
              Omitted rather than shown as "Order #" when there is none to name. #}
           {% if receipt.orderNumber %}
@@ -40,7 +43,7 @@
           {% endif %}
           {# Greeted by nothing rather than by a placeholder when the stored name is
              empty: "Thank you, !" is worse than "Thank you!". #}
-          <h1 class="font-heading text-[24px] font-bold text-heading sm:text-[28px]">{% if receipt.buyerFirstName %}Thank you, <span id="thankyou-name">{{ receipt.buyerFirstName }}</span>!{% else %}Thank you!{% endif %}</h1>
+          <h1 class="font-heading text-[24px] font-bold text-heading wrap-anywhere sm:text-[28px]">{% if receipt.buyerFirstName %}Thank you, <span id="thankyou-name">{{ receipt.buyerFirstName }}</span>!{% else %}Thank you!{% endif %}</h1>
         </div>
       </div>
 
@@ -132,7 +135,7 @@
            once here and used by both address blocks below. #}
         {% set region = (receipt.shipping.territory ~ ' ' ~ receipt.shipping.postal_code)|trim %}
 
-        <div class="mt-5 grid grid-cols-1 gap-6 sm:grid-cols-2">
+        <div class="mt-5 grid grid-cols-1 gap-6 wrap-anywhere sm:grid-cols-2">
           {# Each block below is omitted rather than drawn as a bare heading when
              the receipt has nothing to put under it. #}
           {% if receipt.buyerEmail or receipt.buyerPhone %}
