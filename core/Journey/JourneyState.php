@@ -1060,7 +1060,11 @@ final class JourneyState
      * discount would show the buyer a badge for money they are not saving, and
      * a discount with no code could never be explained on the receipt.
      *
-     * @return array{code: string, discount_cents: int, reference?: string}|null
+     * The per-line breakdown is carried as stored and judged by
+     * {@see \AsterMD\Storefront\Checkout\Promotion::fromArray()}, which
+     * drops it -- and keeps the code -- when it is not a breakdown of the total.
+     *
+     * @return array{code: string, discount_cents: int, reference?: string, line_discounts?: array<mixed>}|null
      */
     private static function promotion(mixed $raw): ?array
     {
@@ -1080,6 +1084,11 @@ final class JourneyState
         $reference = $raw['reference'] ?? null;
         if (is_string($reference) && $reference !== '') {
             $promotion['reference'] = $reference;
+        }
+
+        $lines = $raw['line_discounts'] ?? null;
+        if (is_array($lines) && $lines !== []) {
+            $promotion['line_discounts'] = $lines;
         }
 
         return $promotion;

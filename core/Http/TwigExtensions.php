@@ -6,6 +6,7 @@ declare(strict_types=1);
 
 namespace AsterMD\Storefront\Http;
 
+use AsterMD\Storefront\Checkout\Totals;
 use AsterMD\Storefront\Support\AssetManifest;
 use AsterMD\Storefront\Support\Url;
 use Twig\Extension\AbstractExtension;
@@ -34,7 +35,7 @@ final class TwigExtensions extends AbstractExtension
     public function getFilters(): array
     {
         return [
-            new TwigFilter('money', fn (int $cents): string => '$' . number_format($cents / 100, 2)),
+            new TwigFilter('money', Totals::money(...)),
         ];
     }
 }

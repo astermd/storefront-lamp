@@ -1025,12 +1025,29 @@ Three things the other providers do here, Stripe hands to the EMR:
   and never for an upsell, because the EMR would capture neither.
 - **Discount codes.** A PaymentIntent has none, so `quotePromotion()` asks the EMR through
   `Emr\CouponGateway`, and the coupon's id rides on `PromotionQuote::$reference` →
-  `Promotion::$reference` → `OrderEnvelope::$promotionReference` into the metadata. Nothing after
+  `Promotion::$reference` → `OrderEnvelope::$promotionReference` into the metadata. The check
+  names the shopper -- the buyer's email, else `OrderEnvelope::$opportunityId` from the journey --
+  because a coupon for some patients, or with a per-patient limit, is checked against the patient
+  the EMR finds for them; each is sent only when well-formed, since a malformed one is a 400 for
+  the whole check. Nothing after
   the payment re-checks the code — Stripe takes any amount and the EMR records the coupon at sync
-  without refusing it — so `place()` prices it once more first. A code the EMR now refuses or
-  prices differently declines with `promotion_repriced` before Stripe is called, and the checkout
-  drops the stored code so the buyer sees the real total; an EMR that cannot answer right then is
-  not a refusal.
+  without refusing it — so the adapter declares `requotesPromotionAtPayment` and
+  `CheckoutService::submit()` quotes the code once more after storing the submitted buyer (step 4b),
+  before the envelope is built. A discount that moved since the code was applied is charged at its
+  new figure, and the PaymentIntent, receipt and recorded order all carry it; a code the EMR now
+  refuses is dropped and the submit stops with `promotion_repriced` and the EMR's reason before
+  Stripe is called; an EMR that cannot answer right then is not a refusal, and the figure the buyer
+  was shown stands. Vrio and CheckoutChamp apply the code themselves when the order is placed, so
+  they do not declare it. On the page, `theme/js/checkout.js` sends Apply and Remove with `fetch`,
+  asking for `application/json`. `CheckoutController` then answers with the summary instead of the
+  303: every line with its share of the discount and its price after it, and the totals, each
+  formatted by `Totals::money()` as the `money` filter does. The script only puts that text in place,
+  and `payment-stripe.js` hands the new total to the Element with `elements.update()`. The EMR's
+  answer names the lines it discounted (`items[]`, by plan or by product and variant).
+  `EmrCouponGateway` maps them back to cart lines as `PromotionQuote::$lineDiscounts` →
+  `Promotion::$lineDiscounts`, stored in the journey as `line_discounts`. A breakdown that names a
+  line the cart lacks, or does not add up to the discount, is dropped and the total shown alone. The
+  breakdown is display only: the amount charged is still the one step 4b prices.
 - **Plans.** The channel details `theme:sync` already fetches list the plans assigned to the
   channel (`subscriptions`). `SubscriptionPlans` works out each plan's product, variant and first
   payment from its steps -- the EMR's own rule, ported -- and whether that first payment is held

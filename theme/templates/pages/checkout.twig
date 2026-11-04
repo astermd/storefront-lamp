@@ -430,7 +430,9 @@
       {% endif %}
 
       <!-- ==================== LINE ITEMS ==================== -->
-      <div class="mt-8 flex flex-col gap-4">
+      {# `data-promo-busy`: dimmed while a discount code is being applied by
+         script, the figures in it about to change (checkout.js). #}
+      <div data-promo-busy class="mt-8 flex flex-col gap-4 transition-opacity aria-busy:opacity-50">
         {% for line in checkout.lines %}
         <div class="flex items-center gap-3">
           <div class="relative shrink-0">
@@ -454,8 +456,16 @@
           </div>
           {# A free attachment shows at 0¢ rather than being hidden: a supply the
              buyer is receiving belongs on the summary whether or not it is
-             charged for ([7.14a]). #}
-          <p class="shrink-0 text-base font-medium text-heading">{{ line.line_total_cents|money }}</p>
+             charged for ([7.14a]).
+
+             A line the applied code discounts shows its price struck through
+             beside what it comes to after the discount. `data-line` and the
+             two hooks inside are what checkout.js updates when a code is
+             applied or removed without a reload. #}
+          <p class="shrink-0 text-right text-base font-medium text-heading" data-line="{{ line.slug }}">
+            <span data-line-original class="mr-1 text-sm font-normal text-muted line-through"{% if line.discount_cents == 0 %} hidden{% endif %}>{{ line.line_total_cents|money }}</span>
+            <span data-line-total>{{ line.total_cents|money }}</span>
+          </p>
         </div>
         {% endfor %}
       </div>
@@ -463,43 +473,60 @@
       <!-- ==================== DISCOUNT CODE ==================== -->
       {# [13.18], [14.4]: hidden outright when the active adapter declares no
          promotion support, rather than shown and failing at runtime. #}
+      {# Both states are rendered and one is hidden, so checkout.js can switch
+         between them when /checkout/promo/ answers it with JSON; with script
+         off the page is the same one state it always was. #}
       {% if checkout.capabilities.supportsPromotions %}
-      {% if checkout.promotion %}
-      <div class="mt-6 flex items-center justify-between gap-3 rounded-sm border border-border bg-background px-4 py-3">
-        <span class="text-sm text-heading">Discount <span class="font-semibold">{{ checkout.promotion.code }}</span> applied</span>
-        <button type="submit" formaction="{{ url('/checkout/promo/remove') }}" class="shrink-0 text-sm font-medium text-primary underline hover:text-primary-hover">Remove</button>
+      {# Apply and Remove go busy the way Pay Now does: `aria-busy` set by
+         checkout.js, styled by `aria-busy:`, the label swapped for
+         `data-busy-label`, and a spinner shown beside it. #}
+      <div data-promo-applied class="mt-6 flex items-center justify-between gap-3 rounded-sm border border-border bg-background px-4 py-3"{% if not checkout.promotion %} hidden{% endif %}>
+        <span class="text-sm text-heading">Discount <span class="font-semibold" data-promo-code>{{ checkout.promotion ? checkout.promotion.code }}</span> applied</span>
+        <button type="submit" formaction="{{ url('/checkout/promo/remove') }}" data-busy-label="Removing…" class="group flex shrink-0 items-center gap-1.5 text-sm font-medium text-primary underline hover:text-primary-hover aria-busy:cursor-progress aria-busy:no-underline">
+          <i data-lucide="loader-circle" class="hidden size-4 animate-spin group-aria-busy:block" aria-hidden="true"></i>
+          <span data-busy-text>Remove</span>
+        </button>
       </div>
-      {% else %}
-      <div class="mt-6 flex gap-3">
+      <div data-promo-entry class="mt-6 flex gap-3"{% if checkout.promotion %} hidden{% endif %}>
         <label for="checkout-discount" class="sr-only">Discount code or gift card</label>
         <input type="text" id="checkout-discount" name="discount_code" placeholder="Discount code or gift card" class="focus-ring-primary h-12 min-w-0 flex-1 rounded-sm border border-border bg-background px-4 py-0 text-sm text-heading placeholder:text-sm placeholder:text-body" />
-        <button type="submit" formaction="{{ url('/checkout/promo') }}" class="flex h-12 items-center justify-center shrink-0 rounded-sm border border-border bg-background px-6 text-base font-medium text-heading transition-colors hover:border-primary hover:text-primary">Apply</button>
+        <button type="submit" formaction="{{ url('/checkout/promo') }}" data-busy-label="Applying…" class="group flex h-12 items-center justify-center gap-2 shrink-0 rounded-sm border border-border bg-background px-6 text-base font-medium text-heading transition-colors hover:border-primary hover:text-primary aria-busy:cursor-progress aria-busy:opacity-75">
+          <i data-lucide="loader-circle" class="hidden size-4 animate-spin group-aria-busy:block" aria-hidden="true"></i>
+          <span data-busy-text>Apply</span>
+        </button>
       </div>
-      {% endif %}
+      {# What the code came back with when it was applied by script; a plain
+         post says it in the page's notice banner instead. The failure is the
+         checkout's own inline field error (partials/checkout/field-error.twig),
+         tied to the box the same way; the success is the theme's circle-check
+         line. checkout.js fills one and shows it. #}
+      <p data-promo-message="success" role="status" class="mt-2 flex items-center gap-1.5 text-sm font-medium text-heading" hidden>
+        <i data-lucide="circle-check" class="size-4 shrink-0 text-primary" aria-hidden="true"></i>
+        <span data-promo-message-text></span>
+      </p>
+      <p data-promo-message="error" id="checkout-error-discount_code" role="alert" class="mt-2 text-sm font-medium text-danger" hidden></p>
       {% endif %}
 
       <!-- ==================== TOTALS ==================== -->
       {# No shipping and no tax rows: [13.35] is a declared gap, so the total is
          exactly subtotal minus discount, in integer cents. #}
-      <div class="mt-6 flex flex-col gap-2 border-t border-border pt-6 text-[14px] text-heading">
+      <div data-promo-busy class="mt-6 flex flex-col gap-2 border-t border-border pt-6 text-[14px] text-heading transition-opacity aria-busy:opacity-50">
         <div class="flex items-center justify-between">
           <span>Subtotal • {{ checkout.itemCount }} item{{ checkout.itemCount == 1 ? '' : 's' }}</span>
-          <span>{{ checkout.totals.subtotalCents|money }}</span>
+          <span data-total-subtotal>{{ checkout.totals.subtotalCents|money }}</span>
         </div>
         <div class="flex items-center justify-between">
           <span>Consultation Fee</span>
           <span>Included</span>
         </div>
-        {% if checkout.totals.discountCents > 0 %}
-        <div class="flex items-center justify-between">
-          <span>Discount{% if checkout.promotion %} • {{ checkout.promotion.code }}{% endif %}</span>
-          <span>−{{ checkout.totals.discountCents|money }}</span>
+        <div data-total-discount-row class="flex items-center justify-between"{% if checkout.totals.discountCents == 0 %} hidden{% endif %}>
+          <span>Discount<span data-total-discount-code>{% if checkout.promotion %} • {{ checkout.promotion.code }}{% endif %}</span></span>
+          <span data-total-discount>−{{ checkout.totals.discountCents|money }}</span>
         </div>
-        {% endif %}
       </div>
-      <div class="mt-4 flex items-center justify-between border-t border-border pt-4">
+      <div data-promo-busy class="mt-4 flex items-center justify-between border-t border-border pt-4 transition-opacity aria-busy:opacity-50">
         <span class="text-base font-medium sm:text-lg text-heading">Total</span>
-        <span class="text-base font-medium sm:text-lg text-heading"><span class="mr-1 text-sm font-normal text-muted align-middle">{{ checkout.currency }}</span>{{ checkout.totals.totalCents|money }}</span>
+        <span class="text-base font-medium sm:text-lg text-heading"><span class="mr-1 text-sm font-normal text-muted align-middle">{{ checkout.currency }}</span><span data-total>{{ checkout.totals.totalCents|money }}</span></span>
       </div>
 
       <!-- ==================== PAYMENT AUTHORIZATION NOTICE ==================== -->

@@ -18,6 +18,10 @@ namespace AsterMD\Storefront\Checkout;
  * ({@see \AsterMD\Storefront\Payment\PromotionQuote::$reference}), kept with
  * the code so the order can name the discount the way that system will look
  * it up again.
+ *
+ * `$lineDiscounts` is how the discount falls across the cart's lines, by line
+ * slug, when the provider said so ({@see \AsterMD\Storefront\Payment\PromotionQuote::$lineDiscounts}).
+ * It is only ever shown: the amount charged is `$discountCents`.
  */
 final class Promotion
 {
@@ -25,16 +29,28 @@ final class Promotion
         public readonly string $code,
         public readonly int $discountCents,
         public readonly ?string $reference = null,
+        /** @var array<string, int> */
+        public readonly array $lineDiscounts = [],
     ) {
     }
 
-    /** @return array{code: string, discount_cents: int, reference?: string} */
+    /** That line's share of the discount, or 0 when the provider gave only the total. */
+    public function discountOn(string $slug): int
+    {
+        return $this->lineDiscounts[$slug] ?? 0;
+    }
+
+    /** @return array{code: string, discount_cents: int, reference?: string, line_discounts?: array<string, int>} */
     public function toArray(): array
     {
         $stored = ['code' => $this->code, 'discount_cents' => $this->discountCents];
 
         if ($this->reference !== null) {
             $stored['reference'] = $this->reference;
+        }
+
+        if ($this->lineDiscounts !== []) {
+            $stored['line_discounts'] = $this->lineDiscounts;
         }
 
         return $stored;
@@ -64,6 +80,35 @@ final class Promotion
 
         $reference = $stored['reference'] ?? null;
 
-        return new self($code, $cents, is_string($reference) && $reference !== '' ? $reference : null);
+        return new self(
+            $code,
+            $cents,
+            is_string($reference) && $reference !== '' ? $reference : null,
+            self::lineDiscounts($stored['line_discounts'] ?? null, $cents),
+        );
+    }
+
+    /**
+     * The stored breakdown, or none when any part of it is not a breakdown of
+     * `$total`: it is display only, so a summary with the total alone is the
+     * safe reading of a row it cannot trust.
+     *
+     * @return array<string, int>
+     */
+    private static function lineDiscounts(mixed $stored, int $total): array
+    {
+        if (!is_array($stored)) {
+            return [];
+        }
+
+        $lines = [];
+        foreach ($stored as $slug => $cents) {
+            if (!is_string($slug) || $slug === '' || !is_int($cents) || $cents < 0) {
+                return [];
+            }
+            $lines[$slug] = $cents;
+        }
+
+        return array_sum($lines) === $total ? $lines : [];
     }
 }

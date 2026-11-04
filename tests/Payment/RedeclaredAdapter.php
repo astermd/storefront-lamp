@@ -61,6 +61,7 @@ final class RedeclaredAdapter implements PaymentAdapter
             supportsRecurring: $inner->supportsRecurring,
             supportsOrderSearch: $inner->supportsOrderSearch,
             supportsAuthorizeCapture: $this->supportsAuthorizeCapture ?? $inner->supportsAuthorizeCapture,
+            requotesPromotionAtPayment: $inner->requotesPromotionAtPayment,
         );
     }
 

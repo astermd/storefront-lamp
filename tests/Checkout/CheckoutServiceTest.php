@@ -1067,6 +1067,140 @@ final class CheckoutServiceTest extends TestCase
         self::assertFalse($this->cartStore->cart()->isEmpty());
     }
 
+    public function testTheCodeIsPricedForTheJourneysShopperWhenAppliedAndAgainAtPayment(): void
+    {
+        // A coupon limited to a patient is checked against whoever the EMR can
+        // tell is buying. Before an email is typed, the opportunity the
+        // journey opened is the only name it has, and the check at payment
+        // has to see the same shopper the apply did.
+        $this->journey->opportunityId = '6a0f1e2d3c4b5a6978877665';
+        $this->journey->storeBuyer(['email' => 'ada@example.com']);
+        $adapter = new RequotingAdapter(PromotionQuote::accepted('SAVE10', 1000));
+        $service = $this->service(null, adapter: $adapter);
+
+        $service->applyPromotion('SAVE10');
+        $service->submit($this->buyer(), $this->card(), ['terms' => 'on']);
+
+        self::assertCount(2, $adapter->quoted, 'once when applied, once as the buyer paid');
+        self::assertCount(1, $adapter->placed);
+        foreach ([...$adapter->quoted, ...$adapter->placed] as $envelope) {
+            self::assertSame('6a0f1e2d3c4b5a6978877665', $envelope->opportunityId);
+            self::assertSame('ada@example.com', $envelope->buyer->email);
+        }
+    }
+
+    public function testTheCodeIsQuotedAgainAsTheBuyerPaysAndAnUnchangedDiscountIsCharged(): void
+    {
+        $adapter = new RequotingAdapter(PromotionQuote::accepted('SAVE10', 1000));
+        $service = $this->service(null, adapter: $adapter);
+        $service->applyPromotion('SAVE10');
+
+        $result = $service->submit($this->buyer(), $this->card(), ['terms' => 'on']);
+
+        self::assertTrue($result->outcome->isPlaced());
+        self::assertCount(2, $adapter->quoted, 'once when applied, once as the buyer paid');
+        self::assertSame(1000, $adapter->placed[0]->discountCents);
+        self::assertSame(11000, $adapter->placed[0]->totalCents);
+    }
+
+    public function testADiscountThatMovedSinceItWasAppliedIsChargedAtTheNewFigure(): void
+    {
+        // The buyer was shown $10 off and the coupon is now worth $6. The new
+        // figure is the one the EMR honours when it reads the order back, so
+        // it is what the payment takes and what the order records, rather
+        // than the payment being stopped to show it first.
+        $adapter = new RequotingAdapter(
+            PromotionQuote::accepted('SAVE10', 1000, '6a01b2c3d4e5f6a7b8c9d0f9'),
+            PromotionQuote::accepted('SAVE10', 600, '6a01b2c3d4e5f6a7b8c9d0f9'),
+        );
+        $service = $this->service(null, adapter: $adapter);
+        $service->applyPromotion('SAVE10');
+        self::assertSame(11000, $service->view()->totals->totalCents, 'the buyer was shown $10 off');
+
+        $result = $service->submit($this->buyer(), $this->card(), ['terms' => 'on']);
+
+        self::assertTrue($result->outcome->isPlaced());
+        self::assertCount(1, $adapter->placed);
+        self::assertSame(600, $adapter->placed[0]->discountCents);
+        self::assertSame(11400, $adapter->placed[0]->totalCents);
+        self::assertSame('6a01b2c3d4e5f6a7b8c9d0f9', $adapter->placed[0]->promotionReference);
+        self::assertSame(11400, $result->totals->totalCents, 'what the receipt shows is what was charged');
+
+        $requoted = array_values(array_filter(
+            $this->log->lines(),
+            static fn (array $line): bool => $line['event'] === 'checkout.promotion_requoted',
+        ));
+        self::assertCount(1, $requoted);
+        self::assertSame(1000, $requoted[0]['context']['was_discount_cents']);
+        self::assertSame(600, $requoted[0]['context']['now_discount_cents']);
+    }
+
+    public function testACodeThatNoLongerAppliesAsTheBuyerPaysIsDroppedAndNothingIsCharged(): void
+    {
+        // Charging the full price instead would take a total the buyer has
+        // never seen from someone who applied a code.
+        $adapter = new RequotingAdapter(
+            PromotionQuote::accepted('SAVE10', 1000),
+            PromotionQuote::rejected('SAVE10', 'denied', 'The coupon has expired'),
+        );
+        $service = $this->service(null, adapter: $adapter);
+        $service->applyPromotion('SAVE10');
+
+        $result = $service->submit($this->buyer(), $this->card(), ['terms' => 'on']);
+
+        self::assertFalse($result->outcome->isPlaced());
+        self::assertSame([], $adapter->placed);
+        self::assertSame('The coupon has expired', $result->notice);
+        self::assertSame(12000, $result->totals->totalCents);
+        self::assertNull($this->journeys->state()?->promotion);
+        self::assertFalse($this->cartStore->cart()->isEmpty());
+    }
+
+    public function testACouponServiceThatCannotAnswerAsTheBuyerPaysChargesTheFigureTheyWereShown(): void
+    {
+        $adapter = new RequotingAdapter(
+            PromotionQuote::accepted('SAVE10', 1000),
+            PromotionQuote::rejected('SAVE10', 'unavailable'),
+        );
+        $service = $this->service(null, adapter: $adapter);
+        $service->applyPromotion('SAVE10');
+
+        $result = $service->submit($this->buyer(), $this->card(), ['terms' => 'on']);
+
+        self::assertTrue($result->outcome->isPlaced());
+        self::assertSame(1000, $adapter->placed[0]->discountCents);
+        self::assertSame(11000, $adapter->placed[0]->totalCents);
+    }
+
+    public function testTheCodeIsQuotedAtPaymentForTheEmailThatIsPaying(): void
+    {
+        // A coupon limited to a patient is checked against whoever is paying,
+        // not whatever had been typed when the code was applied.
+        $this->journey->storeBuyer(['email' => 'old@example.com']);
+        $adapter = new RequotingAdapter(PromotionQuote::accepted('SAVE10', 1000));
+        $service = $this->service(null, adapter: $adapter);
+        $service->applyPromotion('SAVE10');
+
+        $service->submit($this->buyer(email: 'ada@example.com'), $this->card(), ['terms' => 'on']);
+
+        self::assertSame(
+            ['old@example.com', 'ada@example.com'],
+            array_map(static fn (OrderEnvelope $envelope): string => $envelope->buyer->email, $adapter->quoted),
+        );
+    }
+
+    public function testAProviderThatPricesTheCodeItselfIsNotAskedAgainAsTheBuyerPays(): void
+    {
+        $adapter = new RepricingAdapter();
+        $service = $this->service(null, adapter: $adapter);
+        $service->applyPromotion('SAVE10');
+
+        $service->submit($this->buyer(), $this->card(), ['terms' => 'on']);
+
+        self::assertCount(1, $adapter->placed, 'the submit reached the provider');
+        self::assertCount(1, $adapter->quoted, 'only the apply asked about the code');
+    }
+
     public function testTheConfirmStepWithNothingPendingSendsTheBuyerBackToCheckout(): void
     {
         $result = $this->service(null, adapter: new ChallengingAdapter())->resume();

@@ -18,7 +18,10 @@
  *   trusted: success and failure both go to the server to find out.
  *
  * The sub-action buttons (discount, plan, bump) are left alone, so they post
- * exactly as they do without this file.
+ * exactly as they do without this file. A discount code checkout.js applies
+ * without a reload changes the total, and the Element is told the new amount
+ * (`checkout:totals`); the PaymentIntent itself takes the total the server
+ * prices as the order is placed.
  */
 (function () {
   'use strict';
@@ -106,6 +109,11 @@
   });
   paymentElement.mount(surface);
   paymentElement.on('change', clearError);
+
+  form.addEventListener('checkout:totals', function (event) {
+    var next = event.detail && event.detail.amountCents;
+    if (next > 0) elements.update({ amount: next });
+  });
 
   function field(name) {
     var input = form.elements.namedItem(name);

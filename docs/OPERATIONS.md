@@ -800,6 +800,8 @@ While it is on, those files hold, in clear text:
 
 - primary account numbers, security codes and expiry dates;
 - live bearer tokens and the OAuth client secret;
+- the Stripe secret key, in every call's `Authorization` header
+  (`storage/logs/stripe-wire.log`);
 - identity-check payloads carrying Social Security Numbers and dates of birth;
 - the buyer's name, address and telephone number, alongside all of it.
 
