@@ -228,7 +228,9 @@ final class StripeAdapterTest extends TestCase
         $body = $this->transport->params(2);
         self::assertSame(12000, $body['amount']);
         self::assertSame('usd', $body['currency']);
-        self::assertTrue($body['confirm']);
+        // Booleans reach the transport already spelled the way Stripe's wire
+        // spells them: the SDK turns `true` into 'true' before any client runs.
+        self::assertSame('true', $body['confirm']);
         self::assertSame('ctoken_1Abc', $body['confirmation_token']);
         self::assertSame('off_session', $body['setup_future_usage']);
         self::assertSame('automatic', $body['capture_method']);
@@ -342,7 +344,7 @@ final class StripeAdapterTest extends TestCase
         $body = $this->transport->params(0);
         self::assertSame('cus_VWTGV3w2nz1PqB', $body['customer']);
         self::assertSame('pm_1Card', $body['payment_method']);
-        self::assertTrue($body['off_session']);
+        self::assertSame('true', $body['off_session']);
         self::assertArrayNotHasKey('setup_future_usage', $body);
         self::assertArrayNotHasKey('return_url', $body);
     }

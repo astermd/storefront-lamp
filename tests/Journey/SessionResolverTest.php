@@ -91,6 +91,7 @@ final class SessionResolverTest extends TestCase
         'consents' => self::CONSENTS,
         'placed_orders' => ['34788'],
         'payment_handle' => ['kind' => 'stored_instrument', 'handle' => ['customer_id' => '99001', 'customer_card_id' => '44120']],
+        'pending_payment' => ['reference' => 'pi_3QxSemaA1b2C3d4E', 'idempotency_key' => 'a1b2c3d4e5f6', 'claimed_at' => '2026-08-25T10:00:00+00:00'],
         'upsell_queue' => ['sleep-support', 'vitamin-b12'],
         'upsell_cursor' => 1,
         'upsell_outcomes' => ['sleep-support' => 'declined'],
@@ -457,6 +458,11 @@ final class SessionResolverTest extends TestCase
                 // where carrying it without the queue position would re-offer
                 // something already charged.
                 'payment_handle' => null,
+                // Not carried: it names a payment the *old* session's checkout
+                // left waiting on the bank, and the attempt row that holds its
+                // key belongs to that session. Carried, the new journey would
+                // be sent to a confirm step to finish a payment it never made.
+                'pending_payment' => null,
                 'upsell_queue' => [],
                 'upsell_cursor' => 0,
                 // Carried: a declined offer leaves no row anywhere else

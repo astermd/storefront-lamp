@@ -42,7 +42,7 @@ class JourneyStateTest extends TestCase
                 'furthest_step', 'emr_events', 'reconciled', 'read_model_shape', 'cart', 'cart_mirrored',
                 'form_answers', 'form_status', 'disqualified_rule', 'disqualified_teleform',
                 'buyer', 'promotion', 'promotion_quoted_against', 'accepted_bumps', 'consents', 'placed_orders',
-                'payment_handle', 'upsell_queue', 'upsell_cursor', 'upsell_outcomes', 'upsell_quotes',
+                'payment_handle', 'pending_payment', 'upsell_queue', 'upsell_cursor', 'upsell_outcomes', 'upsell_quotes',
                 'verification', 'receipt', 'completed_at', 'session_retired',
             ],
             array_keys($state->toArray()),

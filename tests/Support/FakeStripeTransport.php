@@ -12,8 +12,9 @@ use Stripe\HttpClient\ClientInterface;
  * Installed through {@see \AsterMD\Storefront\Payment\Stripe\StripeApiFactory},
  * exactly where the refusing transport sits under the suite, so the adapter
  * under test is the real one end to end except for the wire. The parameters
- * are recorded as the SDK hands them over -- nested arrays, before encoding --
- * so a test asserts what was sent rather than how it was spelled.
+ * are recorded as the SDK hands them over -- nested arrays, before the form
+ * encoding -- so a test asserts what was sent rather than how it was spelled.
+ * The SDK has already spelled booleans as 'true' and 'false' by then.
  */
 final class FakeStripeTransport implements ClientInterface
 {
