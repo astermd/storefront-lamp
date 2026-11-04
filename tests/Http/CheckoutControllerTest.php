@@ -34,6 +34,7 @@ use AsterMD\Storefront\Journey\CartStore;
 use AsterMD\Storefront\Journey\JourneyStore;
 use AsterMD\Storefront\Payment\AdapterCapabilities;
 use AsterMD\Storefront\Payment\PaymentAdapter;
+use AsterMD\Storefront\Payment\PromotionQuote;
 use AsterMD\Storefront\Payment\Vrio\VrioAdapter;
 use AsterMD\Storefront\Payment\Vrio\VrioApiFactory;
 use AsterMD\Storefront\Payment\Vrio\VrioCredentials;
@@ -382,6 +383,159 @@ final class CheckoutControllerTest extends TestCase
         self::assertStringContainsString('name="discount_code"', $body);
     }
 
+    public function testAScriptApplyingACodeIsAnsweredWithEveryLinesPriceAndTheTotals(): void
+    {
+        // `[13.11]`: theme/js/checkout.js applies a code without a reload and
+        // puts these figures on the page as they come. So every one is the
+        // server's, already formatted the way the page formats it -- the
+        // script does no arithmetic of its own.
+        $this->seedCart();
+        $app = $this->app(quote: PromotionQuote::accepted('SPRING', 3000, null, ['tirzepatide' => 3000]));
+
+        $response = $this->post($app, '/checkout/promo/', [
+            '_csrf' => $this->csrfToken($app),
+            'discount_code' => 'SPRING',
+        ] + $this->carriedFields(), ['Accept' => 'application/json']);
+
+        self::assertSame(200, $response->getStatusCode());
+        self::assertStringStartsWith('application/json', $response->getHeaderLine('Content-Type'));
+
+        $pricing = json_decode((string) $response->getBody(), true, flags: JSON_THROW_ON_ERROR);
+
+        self::assertTrue($pricing['accepted'], 'shown as a confirmation');
+        self::assertTrue($pricing['applied']);
+        self::assertSame('Discount code SPRING applied.', $pricing['notice']);
+        self::assertSame(['code' => 'SPRING'], $pricing['promotion']);
+        self::assertSame([
+            'slug' => 'tirzepatide', 'name' => 'Tirzepatide', 'quantity' => 1,
+            'line_total_cents' => 12000, 'line_total' => '$120.00',
+            'discount_cents' => 3000, 'discount' => '$30.00',
+            'total_cents' => 9000, 'total' => '$90.00',
+        ], $pricing['lines'][0], 'the line the code discounts, before and after');
+        self::assertSame(0, $pricing['lines'][1]['discount_cents'], 'and the free attachment it does not');
+        self::assertSame([
+            'currency' => 'USD',
+            'subtotal_cents' => 12000, 'subtotal' => '$120.00',
+            'discount_cents' => 3000, 'discount' => '$30.00',
+            'total_cents' => 9000, 'total' => '$90.00',
+        ], $pricing['totals']);
+
+        // Said in the answer rather than flashed: no page load follows to show
+        // a flash, and the next one would show it out of context.
+        $body = (string) $app->handle($this->get('/checkout/'))->getBody();
+        self::assertStringNotContainsString('Discount code SPRING applied.', $body);
+        self::assertStringContainsString('$90.00', $body, 'and a reload shows what the script was told');
+    }
+
+    public function testARefusedCodeAnswersAScriptWithTheReasonAndThePricesUnchanged(): void
+    {
+        $this->seedCart();
+        $app = $this->app(quote: PromotionQuote::rejected('OLD', 'denied', 'This coupon has expired.'));
+
+        $response = $this->post($app, '/checkout/promo/', [
+            '_csrf' => $this->csrfToken($app),
+            'discount_code' => 'OLD',
+        ] + $this->carriedFields(), ['Accept' => 'application/json']);
+
+        $pricing = json_decode((string) $response->getBody(), true, flags: JSON_THROW_ON_ERROR);
+
+        self::assertSame(200, $response->getStatusCode());
+        self::assertFalse($pricing['accepted'], 'shown as the box\'s error');
+        self::assertFalse($pricing['applied']);
+        self::assertSame('This coupon has expired.', $pricing['notice']);
+        self::assertNull($pricing['promotion']);
+        self::assertSame(12000, $pricing['totals']['total_cents']);
+        self::assertSame(12000, $pricing['lines'][0]['total_cents']);
+    }
+
+    public function testAScriptRemovingTheCodeIsAnsweredWithThePricesWithoutIt(): void
+    {
+        $this->seedCart();
+        $app = $this->app(quote: PromotionQuote::accepted('SPRING', 3000, null, ['tirzepatide' => 3000]));
+        $token = $this->csrfToken($app);
+        $this->post($app, '/checkout/promo/', ['_csrf' => $token, 'discount_code' => 'SPRING'] + $this->carriedFields());
+
+        $response = $this->post($app, '/checkout/promo/remove/', ['_csrf' => $token] + $this->carriedFields(), [
+            'Accept' => 'application/json',
+        ]);
+
+        $pricing = json_decode((string) $response->getBody(), true, flags: JSON_THROW_ON_ERROR);
+
+        self::assertSame(200, $response->getStatusCode());
+        self::assertFalse($pricing['applied']);
+        self::assertNull($pricing['notice']);
+        self::assertSame(0, $pricing['lines'][0]['discount_cents']);
+        self::assertSame('$120.00', $pricing['totals']['total']);
+    }
+
+    public function testWithoutAScriptApplyingACodeIsStillAPostAndARedirect(): void
+    {
+        // `[27.10]`, `[8.7]`: the JSON answer is only for a request that asks
+        // for it, so the page keeps working with script off.
+        $this->seedCart();
+        $app = $this->app(quote: PromotionQuote::accepted('SPRING', 3000, null, ['tirzepatide' => 3000]));
+
+        $response = $this->post($app, '/checkout/promo/', [
+            '_csrf' => $this->csrfToken($app),
+            'discount_code' => 'SPRING',
+        ] + $this->carriedFields());
+
+        self::assertSame(303, $response->getStatusCode());
+        self::assertSame('/checkout/', $response->getHeaderLine('Location'));
+
+        $page = \Dom\HTMLDocument::createFromString((string) $app->handle($this->get('/checkout/'))->getBody(), LIBXML_NOERROR);
+        $line = $page->querySelector('[data-line="tirzepatide"]');
+
+        self::assertNotNull($line);
+        self::assertSame('$90.00', trim($line->querySelector('[data-line-total]')?->textContent ?? ''), 'the line after the discount');
+        self::assertFalse($line->querySelector('[data-line-original]')?->hasAttribute('hidden'), 'beside its price before it');
+        self::assertSame('$120.00', trim($line->querySelector('[data-line-original]')?->textContent ?? ''));
+        self::assertTrue($page->querySelector('[data-promo-entry]')?->hasAttribute('hidden'), 'the code box gives way to the applied code');
+        self::assertFalse($page->querySelector('[data-promo-applied]')?->hasAttribute('hidden'));
+    }
+
+    public function testEveryFigureACodeChangesCarriesTheHookTheScriptWritesTo(): void
+    {
+        // A markup contract: the script finds each figure by these hooks, so
+        // one lost here is a figure left at its old value after an apply.
+        $this->seedCart();
+
+        $page = \Dom\HTMLDocument::createFromString(
+            (string) $this->app()->handle($this->get('/checkout/'))->getBody(),
+            LIBXML_NOERROR,
+        );
+
+        foreach (['tirzepatide', 'blocked-thing'] as $slug) {
+            $line = $page->querySelector('[data-line="' . $slug . '"]');
+            self::assertNotNull($line, "the line {$slug}");
+            self::assertNotNull($line->querySelector('[data-line-total]'));
+            self::assertTrue($line->querySelector('[data-line-original]')?->hasAttribute('hidden'), 'no discount, no struck-through price');
+        }
+
+        foreach ([
+            '[data-total-subtotal]', '[data-total-discount-row]', '[data-total-discount]', '[data-total]',
+            '[data-promo-applied]', '[data-promo-code]',
+            '[data-promo-message="success"] [data-promo-message-text]', '[data-promo-message="error"]',
+        ] as $hook) {
+            self::assertCount(1, $page->querySelectorAll($hook), $hook);
+        }
+
+        self::assertTrue($page->querySelector('[data-total-discount-row]')?->hasAttribute('hidden'), 'no code, no discount row');
+        self::assertFalse($page->querySelector('[data-promo-entry]')?->hasAttribute('hidden'), 'and the code box showing');
+
+        // The error is the box's own, the id its `aria-describedby` names when
+        // the script shows it -- as every other checkout field error is.
+        self::assertSame('checkout-error-discount_code', $page->querySelector('[data-promo-message="error"]')?->getAttribute('id'));
+
+        // Apply and Remove each carry what they say while busy, and the
+        // figures about to change are the ones dimmed.
+        self::assertSame('Applying…', $page->querySelector('[data-promo-entry] button')?->getAttribute('data-busy-label'));
+        self::assertSame('Removing…', $page->querySelector('[data-promo-applied] button')?->getAttribute('data-busy-label'));
+        self::assertCount(3, $page->querySelectorAll('[data-promo-busy]'), 'the lines, the totals and the total');
+        self::assertNotNull($page->querySelector('[data-promo-busy] [data-line="tirzepatide"]'));
+        self::assertNotNull($page->querySelector('[data-promo-busy] [data-total]'));
+    }
+
     public function testSwitchingThePlanRepricesTheRxLineAndReturnsToCheckout(): void
     {
         // `[12.4]`, `[12.7]`: a variant is a plan, so choosing one is what
@@ -699,6 +853,7 @@ final class CheckoutControllerTest extends TestCase
         array $bumps = ['max_on_page' => 3, 'bumps' => []],
         bool $recordEvents = false,
         ?PaymentAdapter $adapter = null,
+        ?PromotionQuote $quote = null,
     ): App {
         $this->transport->queueFixture($fixture);
         $catalog = self::catalog();
@@ -730,7 +885,7 @@ final class CheckoutControllerTest extends TestCase
                     false,
                 )
                 : new NullCheckoutEventReporter(),
-            PaymentAdapter::class => static function () use ($transport, $log, $promotions, $adapter): PaymentAdapter {
+            PaymentAdapter::class => static function () use ($transport, $log, $promotions, $adapter, $quote): PaymentAdapter {
                 if ($adapter !== null) {
                     return $adapter;
                 }
@@ -741,6 +896,10 @@ final class CheckoutControllerTest extends TestCase
                     $log,
                     shippingProfileId: 1,
                 );
+
+                if ($quote !== null) {
+                    return new RedeclaredAdapter($adapter, null, true, quote: $quote);
+                }
 
                 return $promotions
                     ? $adapter
@@ -988,13 +1147,20 @@ final class CheckoutControllerTest extends TestCase
             ->withCookieParams(['amd_session' => self::SESSION]);
     }
 
-    /** @param array<string, mixed> $body */
-    private function post(App $app, string $path, array $body): ResponseInterface
+    /**
+     * @param array<string, mixed> $body
+     * @param array<string, string> $headers
+     */
+    private function post(App $app, string $path, array $body, array $headers = []): ResponseInterface
     {
-        return $app->handle(
-            (new ServerRequestFactory())->createServerRequest('POST', $path)
-                ->withParsedBody($body)
-                ->withCookieParams(['amd_session' => self::SESSION]),
-        );
+        $request = (new ServerRequestFactory())->createServerRequest('POST', $path)
+            ->withParsedBody($body)
+            ->withCookieParams(['amd_session' => self::SESSION]);
+
+        foreach ($headers as $name => $value) {
+            $request = $request->withHeader($name, $value);
+        }
+
+        return $app->handle($request);
     }
 }

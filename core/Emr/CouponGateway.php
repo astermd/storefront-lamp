@@ -26,14 +26,20 @@ use AsterMD\Storefront\Payment\PromotionQuote;
 interface CouponGateway
 {
     /**
-     * Prices a code against the lines it would discount.
+     * Prices a code against the lines it would discount, for the shopper
+     * buying them.
+     *
+     * A coupon can be limited to one patient, or to so many uses per patient,
+     * and the EMR checks that against whoever it can tell is buying: the
+     * email they gave, or else the opportunity their journey opened. A shopper
+     * it cannot name fits only a coupon open to anyone.
      *
      * An accepted quote carries the coupon's id as its reference, which is
      * what the order names the discount by.
      *
      * @param list<OrderLine> $lines
      */
-    public function quote(string $code, array $lines): PromotionQuote;
+    public function quote(string $code, array $lines, ?string $email = null, ?string $opportunityId = null): PromotionQuote;
 
     /** Whether codes can be priced at all, so the storefront hides the control rather than refusing every code. */
     public function available(): bool;

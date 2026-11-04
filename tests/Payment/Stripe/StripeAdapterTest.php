@@ -43,6 +43,8 @@ final class StripeAdapterTest extends TestCase
 
     private const string CHANNEL = '6acf1d207e507866cd5c453d';
 
+    private const string OPPORTUNITY = '6a0f1e2d3c4b5a6978877665';
+
     private FakeStripeTransport $transport;
 
     protected function setUp(): void
@@ -71,6 +73,7 @@ final class StripeAdapterTest extends TestCase
         ?string $couponId = null,
         int $discountCents = 0,
         array $attribution = [],
+        ?string $opportunityId = null,
     ): OrderEnvelope {
         $lines ??= [self::line()];
         $subtotal = array_sum(array_map(static fn (OrderLine $l): int => $l->lineTotalCents(), $lines));
@@ -92,6 +95,7 @@ final class StripeAdapterTest extends TestCase
             settlement: $settlement,
             promotionReference: $couponId,
             followOn: $followOn,
+            opportunityId: $opportunityId,
         );
     }
 
@@ -155,6 +159,14 @@ final class StripeAdapterTest extends TestCase
     {
         self::assertFalse($this->adapter()->capabilities()->supportsPromotions);
         self::assertTrue($this->adapter(coupons: new FixedCoupons())->capabilities()->supportsPromotions);
+    }
+
+    public function testTheCheckoutIsToldToPriceTheCodeAgainAsTheBuyerPays(): void
+    {
+        // Stripe takes the amount it is given and the EMR records the coupon
+        // at sync without refusing it, so nothing after the payment would
+        // catch a code that ran out since it was applied.
+        self::assertTrue($this->adapter(coupons: new FixedCoupons())->capabilities()->requotesPromotionAtPayment);
     }
 
     public function testASucceededPaymentIsPlacedAndKeepsTheCustomerAndCardForTheNextCharge(): void
@@ -475,43 +487,6 @@ final class StripeAdapterTest extends TestCase
         self::assertTrue($result->orders[0]->isTest);
     }
 
-    public function testACodeThatNoLongerAppliesIsRefusedBeforeStripeIsCalled(): void
-    {
-        $refused = new FixedCoupons(PromotionQuote::rejected('foobar', 'denied', 'The coupon has expired'));
-        $outcome = $this->adapter(coupons: $refused)->place(
-            $this->envelope(code: 'foobar', couponId: self::COUPON, discountCents: 1000),
-            PaymentCredential::token('ctoken_1Abc'),
-        );
-
-        self::assertSame('promotion_repriced', $outcome->rawStatus);
-        self::assertSame('The coupon has expired', $outcome->reason);
-        self::assertSame([], $this->transport->requests);
-    }
-
-    public function testACodeWhoseDiscountChangedIsRefusedBeforeStripeIsCalled(): void
-    {
-        $outcome = $this->adapter(coupons: new FixedCoupons())->place(
-            $this->envelope(code: 'foobar', couponId: self::COUPON, discountCents: 2000),
-            PaymentCredential::token('ctoken_1Abc'),
-        );
-
-        self::assertSame('promotion_repriced', $outcome->rawStatus);
-        self::assertSame([], $this->transport->requests);
-    }
-
-    public function testACouponServiceThatCannotAnswerDoesNotTurnTheBuyerAway(): void
-    {
-        $this->queueNoCustomer();
-        $this->transport->queue(200, self::paymentIntent('succeeded', 11000));
-
-        $outcome = $this->adapter(coupons: new FixedCoupons(PromotionQuote::rejected('foobar', 'unavailable')))->place(
-            $this->envelope(code: 'foobar', couponId: self::COUPON, discountCents: 1000),
-            PaymentCredential::token('ctoken_1Abc'),
-        );
-
-        self::assertTrue($outcome->isPlaced());
-    }
-
     public function testACouponIsPricedByTheEmr(): void
     {
         $quote = $this->adapter(coupons: new FixedCoupons())->quotePromotion($this->envelope(), 'foobar');
@@ -520,17 +495,53 @@ final class StripeAdapterTest extends TestCase
         self::assertSame(1000, $quote->discountCents);
         self::assertSame(self::COUPON, $quote->reference);
     }
+
+    public function testACouponIsCheckedForTheShopperBuying(): void
+    {
+        // A coupon limited to a patient is the EMR's to check against whoever
+        // it can tell is buying.
+        $coupons = new FixedCoupons();
+
+        $this->adapter(coupons: $coupons)->quotePromotion($this->envelope(opportunityId: self::OPPORTUNITY), 'foobar');
+
+        self::assertSame([['email' => 'ada@example.com', 'opportunity' => self::OPPORTUNITY]], $coupons->asked);
+    }
+
+    public function testThePaymentChargesTheTotalItIsHandedWithoutPricingTheCodeAgain(): void
+    {
+        // The checkout quotes the code as the buyer pays and hands over the
+        // total that quote gave (requotesPromotionAtPayment). A second check
+        // here would ask the EMR the same question again on every payment.
+        $coupons = new FixedCoupons(PromotionQuote::rejected('foobar', 'denied', 'The coupon has expired'));
+        $this->queueNoCustomer();
+        $this->transport->queue(200, self::paymentIntent('succeeded', 11400));
+
+        $outcome = $this->adapter(coupons: $coupons)->place(
+            $this->envelope(code: 'foobar', couponId: self::COUPON, discountCents: 600),
+            PaymentCredential::token('ctoken_1Abc'),
+        );
+
+        self::assertTrue($outcome->isPlaced());
+        self::assertSame([], $coupons->asked);
+        self::assertSame(11400, $this->transport->params(2)['amount']);
+        self::assertSame(600, $this->transport->params(2)['amount_details']['discount_amount']);
+    }
 }
 
-/** A coupon gateway that prices every code at $10 off, or answers what it is given. */
+/** A coupon gateway that prices every code at $10 off, or answers what it is given, and records who it was asked for. */
 final class FixedCoupons implements CouponGateway
 {
+    /** @var list<array{email: ?string, opportunity: ?string}> */
+    public array $asked = [];
+
     public function __construct(private readonly ?PromotionQuote $answer = null)
     {
     }
 
-    public function quote(string $code, array $lines): PromotionQuote
+    public function quote(string $code, array $lines, ?string $email = null, ?string $opportunityId = null): PromotionQuote
     {
+        $this->asked[] = ['email' => $email, 'opportunity' => $opportunityId];
+
         return $this->answer ?? PromotionQuote::accepted($code, 1000, '6a01b2c3d4e5f6a7b8c9d0f9');
     }
 

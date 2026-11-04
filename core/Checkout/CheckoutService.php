@@ -28,6 +28,7 @@ use AsterMD\Storefront\Payment\PaymentAdapter;
 use AsterMD\Storefront\Payment\PaymentCredential;
 use AsterMD\Storefront\Payment\PaymentDescriptor;
 use AsterMD\Storefront\Payment\PlacementOutcome;
+use AsterMD\Storefront\Payment\PromotionQuote;
 use AsterMD\Storefront\Payment\SettlementMode;
 use AsterMD\Storefront\Repository\CheckoutAttemptRepository;
 use AsterMD\Storefront\Support\CardScrubber;
@@ -301,7 +302,7 @@ final class CheckoutService
             errors: $errors,
             notice: $notice,
             totals: $totals,
-            lines: $this->lineViewModels($cart),
+            lines: $this->lineViewModels($cart, $promotion),
             bumps: $this->bumpViewModels($cart, $prefill['territory'] ?? ''),
             plans: $plans[0] ?? null,
             consents: $this->consents->definitions(),
@@ -455,6 +456,26 @@ final class CheckoutService
                 static fn (ConsentRecord $record): array => $record->toArray(),
                 $recorded['records'],
             );
+        }
+
+        // 4b. `[13.11]`, `[14.6b]`. A provider told the amount rather than the
+        //     code prices nothing itself, so the code is quoted once more as
+        //     the buyer pays -- after step 4, so it is checked for the email
+        //     that is paying -- and the total that quote gives is the one
+        //     charged, recorded and shown on the receipt. A code that no
+        //     longer applies at all stops here instead: the buyer applied it
+        //     and has not seen the undiscounted total.
+        if ($promotion !== null && $this->adapter->capabilities()->requotesPromotionAtPayment) {
+            [$promotion, $refusal] = $this->requotePromotion($cart, $state, $promotion);
+            $totals = Totals::of($cart->subtotalCents(), $promotion);
+
+            if ($refusal !== null) {
+                return new CheckoutResult(
+                    outcome: PlacementOutcome::declined(null, $refusal, 'promotion_repriced'),
+                    totals: $totals,
+                    notice: $refusal,
+                );
+            }
         }
 
         // 5. `[13.37]`. The claim, and the sent marker below it, are the last
@@ -1589,9 +1610,75 @@ final class CheckoutService
      * One read-only quote of a code against one cart, with no promotion when
      * the code does not price against it.
      *
-     * The single place a quote is turned into a stored promotion, so the two
-     * entry points — the buyer applying a code, and a re-price after the cart
-     * moved — cannot come to different conclusions about the same answer.
+     * @return array{0: ?Promotion, 1: ?string} the promotion, or null with the
+     *                                          provider's own reason for the
+     *                                          refusal when it gave one fit to
+     *                                          show the buyer
+     */
+    private function quoteAgainst(Cart $cart, ?JourneyState $state, string $code): array
+    {
+        if (!$this->adapter->capabilities()->supportsPromotions) {
+            return [null, null];
+        }
+
+        return $this->promotionFrom($this->adapter->quotePromotion($this->quoteEnvelope($cart, $state), $code), $cart);
+    }
+
+    /**
+     * The stored code quoted once more as the buyer pays, for a provider that
+     * is told the amount rather than the code (step 4b of {@see self::submit()}).
+     *
+     * A figure that moved since the code was applied is the one charged: it
+     * is what the pricing system will honour when it reads the order back,
+     * and the envelope, the receipt and the recorded order are all built from
+     * what this returns. A provider that cannot be asked right now is not a
+     * refusal -- the code was priced when it was applied, and a buyer is not
+     * turned away because the coupon service is slow -- so the stored figure
+     * stands. A code that no longer applies is dropped, with the provider's
+     * own reason when it gave one.
+     *
+     * @return array{0: ?Promotion, 1: ?string} the promotion to charge, or
+     *                                          null with the notice to stop
+     *                                          the submission with
+     */
+    private function requotePromotion(Cart $cart, ?JourneyState $state, Promotion $stored): array
+    {
+        $quote = $this->adapter->quotePromotion($this->quoteEnvelope($cart, $state), $stored->code);
+
+        if (!$quote->valid && $quote->reason === 'unavailable') {
+            $this->log->warning('checkout.promotion_unconfirmed', ['code' => $stored->code]);
+
+            return [$stored, null];
+        }
+
+        [$fresh, $notice] = $this->promotionFrom($quote, $cart);
+        $this->storePromotion($state, $cart, $fresh);
+
+        if ($fresh === null) {
+            $this->log->info('checkout.promotion_dropped', ['code' => $stored->code]);
+
+            return [null, $notice ?? self::PROMOTION_DROPPED_NOTICE];
+        }
+
+        if ($fresh->discountCents !== $stored->discountCents) {
+            $this->log->info('checkout.promotion_requoted', [
+                'code' => $fresh->code,
+                'was_discount_cents' => $stored->discountCents,
+                'now_discount_cents' => $fresh->discountCents,
+            ]);
+        }
+
+        return [$fresh, null];
+    }
+
+    /**
+     * A provider's quote as a promotion, or none with the provider's reason
+     * for refusing it.
+     *
+     * The single place a quote is turned into a stored promotion, so the
+     * three entry points — the buyer applying a code, a re-price after the
+     * cart moved, and the quote again as the buyer pays — cannot come to
+     * different conclusions about the same answer.
      *
      * **A discount larger than the cart is refused rather than clamped.** The
      * clamp in {@see Totals} guards the *display* and cannot reach the charge,
@@ -1609,14 +1696,8 @@ final class CheckoutService
      *                                          refusal when it gave one fit to
      *                                          show the buyer
      */
-    private function quoteAgainst(Cart $cart, ?JourneyState $state, string $code): array
+    private function promotionFrom(PromotionQuote $quote, Cart $cart): array
     {
-        if (!$this->adapter->capabilities()->supportsPromotions) {
-            return [null, null];
-        }
-
-        $quote = $this->adapter->quotePromotion($this->quoteEnvelope($cart, $state), $code);
-
         if (!$quote->valid) {
             $this->log->info('checkout.promotion_rejected', ['reason' => $quote->reason]);
 
@@ -1633,7 +1714,7 @@ final class CheckoutService
             return [null, null];
         }
 
-        return [new Promotion($quote->code, $quote->discountCents, $quote->reference), null];
+        return [new Promotion($quote->code, $quote->discountCents, $quote->reference, $quote->lineDiscounts), null];
     }
 
     /**
@@ -1732,6 +1813,7 @@ final class CheckoutService
             // line on a subscription plan settles as its plan says.
             settlement: $this->settlement->forLines(...$cart->lines()),
             promotionReference: $promotion?->reference,
+            opportunityId: $state?->opportunityId,
         );
     }
 
@@ -1739,10 +1821,11 @@ final class CheckoutService
      * A cheap envelope for pricing a discount code, and for asking the adapter
      * how it will settle the cart before the page is rendered.
      *
-     * The adapter needs the lines and nothing else to quote, but the contract
-     * takes a whole envelope, so the buyer is filled from whatever the journey
-     * already holds rather than being demanded from the caller — a code is
-     * applied long before the address is necessarily complete.
+     * The adapter needs the lines and who is buying to quote -- a coupon can be
+     * limited to a patient -- but the contract takes a whole envelope, so the
+     * buyer is filled from whatever the journey already holds rather than
+     * being demanded from the caller — a code is applied long before the
+     * address is necessarily complete.
      */
     private function quoteEnvelope(Cart $cart, ?JourneyState $state): OrderEnvelope
     {
@@ -1766,6 +1849,7 @@ final class CheckoutService
             // As envelopeFor() resolves it, so the page is set up for the
             // settlement the submit will ask for.
             settlement: $this->settlement->forLines(...$cart->lines()),
+            opportunityId: $state?->opportunityId,
         );
     }
 
@@ -1895,15 +1979,21 @@ final class CheckoutService
      * (`[7.14a]`) rather than hidden — a supply the buyer is receiving belongs
      * on the summary whether or not it is charged for.
      *
+     * Each line carries its share of the applied discount when the provider
+     * gave one (`discount_cents`, 0 otherwise) and what the line comes to after
+     * it (`total_cents`). Display only: the order is charged the promotion's
+     * total, never a sum of these.
+     *
      * @return list<array<string, mixed>>
      */
-    private function lineViewModels(Cart $cart): array
+    private function lineViewModels(Cart $cart, ?Promotion $promotion = null): array
     {
         $models = [];
 
         foreach ($cart->lines() as $line) {
             $product = $this->catalog->product($line->slug);
             $variant = $this->variantFor($line->slug, $line->variantId);
+            $discount = min($line->lineTotalCents(), $promotion?->discountOn($line->slug) ?? 0);
 
             $models[] = [
                 'slug' => $line->slug,
@@ -1911,6 +2001,8 @@ final class CheckoutService
                 'quantity' => $line->quantity,
                 'unit_price_cents' => $line->unitPriceCents,
                 'line_total_cents' => $line->lineTotalCents(),
+                'discount_cents' => $discount,
+                'total_cents' => $line->lineTotalCents() - $discount,
                 'variant_name' => $variant === null ? null : (string) ($variant['name'] ?? ''),
                 'image' => isset($product['image']) && is_string($product['image']) ? $product['image'] : null,
                 'is_free' => $line->unitPriceCents === 0,

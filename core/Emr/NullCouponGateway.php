@@ -17,7 +17,7 @@ use AsterMD\Storefront\Payment\PromotionQuote;
  */
 final class NullCouponGateway implements CouponGateway
 {
-    public function quote(string $code, array $lines): PromotionQuote
+    public function quote(string $code, array $lines, ?string $email = null, ?string $opportunityId = null): PromotionQuote
     {
         return PromotionQuote::rejected($code, 'unsupported');
     }
