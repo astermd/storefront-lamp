@@ -200,6 +200,74 @@
         </div>
       </div>
 
+      <!-- ==================== BILLING ADDRESS ==================== -->
+      {# Unchecked, billing is the delivery address above. The fields show and
+         hide on `:has()` rather than a script, so the page still works with
+         no JavaScript, like every other control on it. #}
+      {% set billing_different = checkout.prefill.billing_different|default('') == 'on' %}
+      <div class="group mt-8">
+        <h2 class="font-heading text-base font-bold sm:text-lg text-heading">Billing address</h2>
+        <label class="mt-4 flex cursor-pointer items-center gap-3">
+          <input type="checkbox" id="checkout-billing-different" name="billing_different" value="on" class="peer sr-only"{% if billing_different %} checked{% endif %} />
+          <span class="flex size-4 shrink-0 items-center justify-center rounded border border-border-darker bg-background transition-colors peer-checked:border-primary peer-checked:bg-primary peer-focus-visible:ring-2 peer-focus-visible:ring-primary">
+            <i data-lucide="check" class="size-3 text-background" stroke-width="3"></i>
+          </span>
+          <span class="text-sm text-body">Use a different billing address</span>
+        </label>
+
+        <div id="checkout-billing-fields" class="mt-4 hidden flex-col gap-4 group-has-[#checkout-billing-different:checked]:flex">
+          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div class="relative">
+              <input type="text" id="checkout-billing-first-name" name="billing_first_name" value="{{ checkout.prefill.billing_first_name|default('') }}" autocomplete="billing given-name" placeholder=" " class="field-input w-full rounded-sm border border-border bg-background px-4 text-sm text-heading"
+                {% if checkout.errors.billing_first_name|default(null) %}aria-invalid="true" aria-describedby="checkout-error-billing_first_name"{% endif %} />
+              <label for="checkout-billing-first-name" class="field-label">Billing first name</label>
+              {% include 'partials/checkout/field-error.twig' with { field: 'billing_first_name' } %}
+            </div>
+            <div class="relative">
+              <input type="text" id="checkout-billing-last-name" name="billing_last_name" value="{{ checkout.prefill.billing_last_name|default('') }}" autocomplete="billing family-name" placeholder=" " class="field-input w-full rounded-sm border border-border bg-background px-4 text-sm text-heading"
+                {% if checkout.errors.billing_last_name|default(null) %}aria-invalid="true" aria-describedby="checkout-error-billing_last_name"{% endif %} />
+              <label for="checkout-billing-last-name" class="field-label">Billing last name</label>
+              {% include 'partials/checkout/field-error.twig' with { field: 'billing_last_name' } %}
+            </div>
+          </div>
+
+          <div class="relative">
+            <input type="text" id="checkout-billing-address" name="billing_address_line" value="{{ checkout.prefill.billing_address_line|default('') }}" autocomplete="billing street-address" placeholder=" " class="field-input w-full rounded-sm border border-border bg-background px-4 text-sm text-heading"
+              {% if checkout.errors.billing_address_line|default(null) %}aria-invalid="true" aria-describedby="checkout-error-billing_address_line"{% endif %} />
+            <label for="checkout-billing-address" class="field-label">Billing address</label>
+            {% include 'partials/checkout/field-error.twig' with { field: 'billing_address_line' } %}
+          </div>
+
+          <div class="relative">
+            <input type="text" id="checkout-billing-city" name="billing_city" value="{{ checkout.prefill.billing_city|default('') }}" autocomplete="billing address-level2" placeholder=" " class="field-input w-full rounded-sm border border-border bg-background px-4 text-sm text-heading"
+              {% if checkout.errors.billing_city|default(null) %}aria-invalid="true" aria-describedby="checkout-error-billing_city"{% endif %} />
+            <label for="checkout-billing-city" class="field-label">Billing city</label>
+            {% include 'partials/checkout/field-error.twig' with { field: 'billing_city' } %}
+          </div>
+
+          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div class="relative">
+              <label for="checkout-billing-state" class="sr-only">Billing state</label>
+              <select id="checkout-billing-state" name="billing_territory" autocomplete="billing address-level1" class="focus-ring-primary h-12 w-full appearance-none rounded-sm border border-border bg-background px-4 py-0 pr-10 text-sm text-heading"
+                {% if checkout.errors.billing_territory|default(null) %}aria-invalid="true" aria-describedby="checkout-error-billing_territory"{% endif %}>
+                <option value="">Choose your state</option>
+                {% for code, name in territories %}
+                <option value="{{ code }}"{% if checkout.prefill.billing_territory|default('') == code %} selected{% endif %}>{{ name }}</option>
+                {% endfor %}
+              </select>
+              <i data-lucide="chevron-down" class="pointer-events-none absolute right-4 top-6 size-4 -translate-y-1/2 text-heading"></i>
+              {% include 'partials/checkout/field-error.twig' with { field: 'billing_territory' } %}
+            </div>
+            <div class="relative">
+              <input type="text" id="checkout-billing-postal" name="billing_postal_code" value="{{ checkout.prefill.billing_postal_code|default('') }}" autocomplete="billing postal-code" placeholder=" " class="field-input w-full rounded-sm border border-border bg-background px-4 text-sm text-heading"
+                {% if checkout.errors.billing_postal_code|default(null) %}aria-invalid="true" aria-describedby="checkout-error-billing_postal_code"{% endif %} />
+              <label for="checkout-billing-postal" class="field-label">Billing postal code</label>
+              {% include 'partials/checkout/field-error.twig' with { field: 'billing_postal_code' } %}
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- ==================== PAYMENT ==================== -->
       <h2 class="mt-8 font-heading text-base font-bold sm:text-lg text-heading">Payment</h2>
       <p class="mt-1 text-sm text-muted">All transactions are secure and encrypted.</p>
@@ -257,7 +325,7 @@
               <input type="text" id="checkout-card-name" autocomplete="cc-name" placeholder=" " class="field-input w-full rounded-sm border border-border bg-background px-4 text-sm text-heading" />
               <label for="checkout-card-name" class="field-label">Name on card</label>
             </div>
-            <p class="text-sm text-muted">Billing address is the delivery address above.</p>
+            <p class="text-sm text-muted">Billing address is the delivery address above unless you entered a different one.</p>
           </div>
         </div>
 

@@ -168,19 +168,15 @@
               {% if receipt.shipping.country %}{{ receipt.shipping.country }}{% endif %}
             </p>
           </div>
-          {# The mockup shows a second, different billing address. There is no
-             separate billing address in this deployment — the card is billed to the
-             shipping address — so the same block is repeated rather than a second
-             set of fields invented. A reader who expects two addresses is reading
-             the mockup, not the data. #}
+          {# The separate billing address when the buyer gave one, otherwise the
+             shipping address again: unticked, the card was billed to where the
+             order ships, so repeating it is the truth rather than a placeholder. #}
+          {% set billing = receipt.billing ?: receipt.shipping %}
+          {% set billing_region = (billing.territory ~ ' ' ~ billing.postal_code)|trim %}
           <div>
             <p class="text-sm font-medium text-heading">Billing address</p>
             <p class="mt-3 text-sm leading-6 text-body">
-              {% if receipt.shipping.name %}{{ receipt.shipping.name }}<br />{% endif %}
-              {% if receipt.shipping.address_line %}{{ receipt.shipping.address_line }}<br />{% endif %}
-              {% if receipt.shipping.city %}{{ receipt.shipping.city }}<br />{% endif %}
-              {% if region %}{{ region }}<br />{% endif %}
-              {% if receipt.shipping.country %}{{ receipt.shipping.country }}{% endif %}
+             .
             </p>
           </div>
           {% endif %}

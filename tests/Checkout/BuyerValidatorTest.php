@@ -223,4 +223,74 @@ final class BuyerValidatorTest extends TestCase
     {
         self::assertSame([], BuyerValidator::validate($this->details(), $this->answering(true)));
     }
+
+    /** @param array<string, string> $overrides */
+    private function billedElsewhere(array $overrides = []): BuyerDetails
+    {
+        return $this->details($overrides + [
+            'billing_different' => 'on',
+            'billing_first_name' => 'Charles',
+            'billing_last_name' => 'Babbage',
+            'billing_address_line' => '1 Analytical Way',
+            'billing_city' => 'Boston',
+            'billing_territory' => 'ma',
+            'billing_postal_code' => '02110',
+        ]);
+    }
+
+    public function testACompleteSeparateBillingAddressHasNothingWrongWithIt(): void
+    {
+        $details = $this->billedElsewhere();
+        self::assertTrue($details->billingDifferent);
+        self::assertSame('MA', $details->billingTerritory);
+
+        self::assertSame([], BuyerValidator::validate($details, $this->offline()));
+    }
+
+    public function testATickedBillingAddressWithEmptyFieldsIsReportedFieldByField(): void
+    {
+        $errors = BuyerValidator::validate($this->details(['billing_different' => 'on']), $this->offline());
+
+        foreach (['billing_first_name', 'billing_last_name', 'billing_address_line', 'billing_city', 'billing_territory', 'billing_postal_code'] as $field) {
+            self::assertArrayHasKey($field, $errors);
+        }
+        self::assertArrayNotHasKey('address_line', $errors);
+    }
+
+    public function testABadBillingStateAndZipAreRejected(): void
+    {
+        $errors = BuyerValidator::validate(
+            $this->billedElsewhere(['billing_territory' => 'ON', 'billing_postal_code' => '0211']),
+            $this->offline(),
+        );
+
+        self::assertArrayHasKey('billing_territory', $errors);
+        self::assertArrayHasKey('billing_postal_code', $errors);
+    }
+
+    public function testUntickedBillingFieldsAreIgnoredEvenWhenTheFormStillHoldsThem(): void
+    {
+        // The fields are only hidden when unticked, so they still post.
+        $details = $this->details([
+            'billing_first_name' => 'Charles',
+            'billing_address_line' => '1 Analytical Way',
+            'billing_postal_code' => 'not a zip',
+        ]);
+
+        self::assertFalse($details->billingDifferent);
+        self::assertSame('', $details->billingAddressLine);
+        self::assertSame([], BuyerValidator::validate($details, $this->offline()));
+        self::assertNull($details->toBuyer()->billing);
+        self::assertArrayNotHasKey('billing_different', $details->toArray());
+    }
+
+    public function testATickedBillingAddressReachesTheBuyerAndTheStoredFieldSet(): void
+    {
+        $details = $this->billedElsewhere();
+
+        self::assertSame('1 Analytical Way', $details->toBuyer()->billing?->addressLine);
+        self::assertSame('350 5th Avenue', $details->toBuyer()->addressLine);
+        self::assertSame('on', $details->toArray()['billing_different']);
+        self::assertSame('MA', $details->toArray()['billing_territory']);
+    }
 }

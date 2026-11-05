@@ -1861,7 +1861,7 @@ final class CheckoutService
 
     /**
      * @param  array<string, string> $stored
-     * @return array<string, string>
+     * @return array<string, string|bool>
      */
     private static function buyerArguments(array $stored): array
     {
@@ -1874,6 +1874,13 @@ final class CheckoutService
             'city' => $stored['city'] ?? '',
             'territory' => $stored['territory'] ?? '',
             'postalCode' => $stored['postal_code'] ?? '',
+            'billingDifferent' => ($stored['billing_different'] ?? '') === BuyerDetails::BILLING_DIFFERENT,
+            'billingFirstName' => $stored['billing_first_name'] ?? '',
+            'billingLastName' => $stored['billing_last_name'] ?? '',
+            'billingAddressLine' => $stored['billing_address_line'] ?? '',
+            'billingCity' => $stored['billing_city'] ?? '',
+            'billingTerritory' => $stored['billing_territory'] ?? '',
+            'billingPostalCode' => $stored['billing_postal_code'] ?? '',
         ];
     }
 
