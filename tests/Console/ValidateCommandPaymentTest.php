@@ -180,6 +180,88 @@ final class ValidateCommandPaymentTest extends TestCase
         self::assertStringContainsString('does not support authorize-and-capture', $tester->getDisplay());
     }
 
+    /** @return array<string, mixed> */
+    private static function plan(string $id, mixed $settlement = self::UNSET): array
+    {
+        $plan = ['id' => $id, 'name' => 'Monthly', 'description' => '', 'first_payment_cents' => 14000, 'allow_coupons' => true];
+        if ($settlement !== self::UNSET) {
+            $plan['settlement'] = $settlement;
+        }
+
+        return $plan;
+    }
+
+    public function testOnePlanHoldingItsFirstPaymentIsEnoughToFailAnUnsupportingProvider(): void
+    {
+        // Not the default plan, so only reading every plan finds it.
+        $this->writeCatalog(plans: [self::plan('plan-a', 'capture'), self::plan('plan-b', 'authorize')]);
+
+        $tester = new CommandTester($this->command(
+            fn (): PaymentAdapter => new RedeclaredAdapter($this->vrioAdapter(), null, true, supportsAuthorizeCapture: false),
+        ));
+
+        self::assertSame(2, $tester->execute([]));
+        self::assertStringContainsString('does not support authorize-and-capture', $tester->getDisplay());
+    }
+
+    public function testAPlanWhoseSettlementIsNotAModeIsAnErrorNamingThePlan(): void
+    {
+        $this->writeCatalog(plans: [self::plan('plan-a', 'pre_auth')]);
+
+        $tester = new CommandTester($this->command());
+
+        self::assertSame(2, $tester->execute([]));
+        self::assertStringContainsString('product tirzepatide is sold on plan plan-a, whose settlement is "pre_auth"', $tester->getDisplay());
+    }
+
+    public function testAPlanSyncedBeforePlansSaidHowTheySettleIsNotAFinding(): void
+    {
+        $this->writeCatalog(plans: [self::plan('plan-a')]);
+
+        $tester = new CommandTester($this->command(
+            fn (): PaymentAdapter => new RedeclaredAdapter($this->vrioAdapter(), null, true, supportsAuthorizeCapture: false),
+        ));
+
+        self::assertSame(0, $tester->execute([]));
+        self::assertStringNotContainsString('settlement', $tester->getDisplay());
+    }
+
+    public function testAProductKeyItsSubscriptionVariantsIgnoreIsAWarning(): void
+    {
+        $this->writeCatalog(settlement: 'authorize', plans: [self::plan('plan-a', 'capture')]);
+
+        $tester = new CommandTester($this->command());
+
+        self::assertSame(0, $tester->execute([]));
+        self::assertStringContainsString(
+            'warning: payment: product tirzepatide sets settlement, which does not apply to its variants sold on a subscription plan',
+            $tester->getDisplay(),
+        );
+    }
+
+    public function testAPlanHoldingTheFirstPaymentOfSomethingNoDoctorApprovesIsAWarning(): void
+    {
+        $this->writeCatalog(plans: [self::plan('plan-a', 'authorize')], kind: 'otc');
+
+        $tester = new CommandTester($this->command());
+
+        self::assertSame(0, $tester->execute([]));
+        self::assertStringContainsString(
+            'warning: payment: plan plan-a holds the first payment of product tirzepatide, which is not a prescription',
+            $tester->getDisplay(),
+        );
+    }
+
+    public function testAPlanHoldingAPrescriptionsFirstPaymentIsNotWarnedAbout(): void
+    {
+        $this->writeCatalog(plans: [self::plan('plan-a', 'authorize')]);
+
+        $tester = new CommandTester($this->command());
+
+        self::assertSame(0, $tester->execute([]));
+        self::assertStringNotContainsString('plan plan-a', $tester->getDisplay());
+    }
+
     public function testAProviderThatCannotAuthorizeIsFineWhileNothingAsksItTo(): void
     {
         $tester = new CommandTester($this->command(
@@ -565,13 +647,14 @@ final class ValidateCommandPaymentTest extends TestCase
         return static fn (): PaymentAdapter => new RedeclaredAdapter($inner, $strategy, true);
     }
 
-    private function writeCatalog(bool $withUnmappedExtra = false, mixed $settlement = self::UNSET): void
+    /** @param list<array<string, mixed>> $plans the subscription plans the one variant is sold on, the first its default */
+    private function writeCatalog(bool $withUnmappedExtra = false, mixed $settlement = self::UNSET, array $plans = [], string $kind = 'rx'): void
     {
         $products = [
             'tirzepatide' => [
                 'slug' => 'tirzepatide',
                 'name' => 'Tirzepatide',
-                'kind' => 'rx',
+                'kind' => $kind,
                 'emr_product_id' => '3414',
                 'variants' => [
                     ['id' => 't-1m', 'name' => '1 Month', 'price_cents' => 14000, 'provider' => ['offer_id' => '337', 'product_id' => '3414']],
@@ -581,6 +664,11 @@ final class ValidateCommandPaymentTest extends TestCase
 
         if ($settlement !== self::UNSET) {
             $products['tirzepatide']['settlement'] = $settlement;
+        }
+
+        if ($plans !== []) {
+            $products['tirzepatide']['variants'][0]['plan'] = $plans[0];
+            $products['tirzepatide']['variants'][0]['plans'] = $plans;
         }
 
         if ($withUnmappedExtra) {

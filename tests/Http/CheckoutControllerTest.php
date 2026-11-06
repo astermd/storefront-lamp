@@ -34,6 +34,7 @@ use AsterMD\Storefront\Journey\CartStore;
 use AsterMD\Storefront\Journey\JourneyStore;
 use AsterMD\Storefront\Payment\AdapterCapabilities;
 use AsterMD\Storefront\Payment\PaymentAdapter;
+use AsterMD\Storefront\Payment\PromotionQuote;
 use AsterMD\Storefront\Payment\Vrio\VrioAdapter;
 use AsterMD\Storefront\Payment\Vrio\VrioApiFactory;
 use AsterMD\Storefront\Payment\Vrio\VrioCredentials;
@@ -43,6 +44,7 @@ use AsterMD\Storefront\Repository\SessionRepository;
 use AsterMD\Storefront\Support\Config;
 use AsterMD\Storefront\Support\DatabaseRateLimiter;
 use AsterMD\Storefront\Support\OperatorLog;
+use AsterMD\Storefront\Tests\Checkout\ChallengingAdapter;
 use AsterMD\Storefront\Tests\Domain\FakeCatalog;
 use AsterMD\Storefront\Tests\Payment\RedeclaredAdapter;
 use AsterMD\Storefront\Tests\Support\CapturedLog;
@@ -381,6 +383,159 @@ final class CheckoutControllerTest extends TestCase
         self::assertStringContainsString('name="discount_code"', $body);
     }
 
+    public function testAScriptApplyingACodeIsAnsweredWithEveryLinesPriceAndTheTotals(): void
+    {
+        // `[13.11]`: theme/js/checkout.js applies a code without a reload and
+        // puts these figures on the page as they come. So every one is the
+        // server's, already formatted the way the page formats it -- the
+        // script does no arithmetic of its own.
+        $this->seedCart();
+        $app = $this->app(quote: PromotionQuote::accepted('SPRING', 3000, null, ['tirzepatide' => 3000]));
+
+        $response = $this->post($app, '/checkout/promo/', [
+            '_csrf' => $this->csrfToken($app),
+            'discount_code' => 'SPRING',
+        ] + $this->carriedFields(), ['Accept' => 'application/json']);
+
+        self::assertSame(200, $response->getStatusCode());
+        self::assertStringStartsWith('application/json', $response->getHeaderLine('Content-Type'));
+
+        $pricing = json_decode((string) $response->getBody(), true, flags: JSON_THROW_ON_ERROR);
+
+        self::assertTrue($pricing['accepted'], 'shown as a confirmation');
+        self::assertTrue($pricing['applied']);
+        self::assertSame('Discount code SPRING applied.', $pricing['notice']);
+        self::assertSame(['code' => 'SPRING'], $pricing['promotion']);
+        self::assertSame([
+            'slug' => 'tirzepatide', 'name' => 'Tirzepatide', 'quantity' => 1,
+            'line_total_cents' => 12000, 'line_total' => '$120.00',
+            'discount_cents' => 3000, 'discount' => '$30.00',
+            'total_cents' => 9000, 'total' => '$90.00',
+        ], $pricing['lines'][0], 'the line the code discounts, before and after');
+        self::assertSame(0, $pricing['lines'][1]['discount_cents'], 'and the free attachment it does not');
+        self::assertSame([
+            'currency' => 'USD',
+            'subtotal_cents' => 12000, 'subtotal' => '$120.00',
+            'discount_cents' => 3000, 'discount' => '$30.00',
+            'total_cents' => 9000, 'total' => '$90.00',
+        ], $pricing['totals']);
+
+        // Said in the answer rather than flashed: no page load follows to show
+        // a flash, and the next one would show it out of context.
+        $body = (string) $app->handle($this->get('/checkout/'))->getBody();
+        self::assertStringNotContainsString('Discount code SPRING applied.', $body);
+        self::assertStringContainsString('$90.00', $body, 'and a reload shows what the script was told');
+    }
+
+    public function testARefusedCodeAnswersAScriptWithTheReasonAndThePricesUnchanged(): void
+    {
+        $this->seedCart();
+        $app = $this->app(quote: PromotionQuote::rejected('OLD', 'denied', 'This coupon has expired.'));
+
+        $response = $this->post($app, '/checkout/promo/', [
+            '_csrf' => $this->csrfToken($app),
+            'discount_code' => 'OLD',
+        ] + $this->carriedFields(), ['Accept' => 'application/json']);
+
+        $pricing = json_decode((string) $response->getBody(), true, flags: JSON_THROW_ON_ERROR);
+
+        self::assertSame(200, $response->getStatusCode());
+        self::assertFalse($pricing['accepted'], 'shown as the box\'s error');
+        self::assertFalse($pricing['applied']);
+        self::assertSame('This coupon has expired.', $pricing['notice']);
+        self::assertNull($pricing['promotion']);
+        self::assertSame(12000, $pricing['totals']['total_cents']);
+        self::assertSame(12000, $pricing['lines'][0]['total_cents']);
+    }
+
+    public function testAScriptRemovingTheCodeIsAnsweredWithThePricesWithoutIt(): void
+    {
+        $this->seedCart();
+        $app = $this->app(quote: PromotionQuote::accepted('SPRING', 3000, null, ['tirzepatide' => 3000]));
+        $token = $this->csrfToken($app);
+        $this->post($app, '/checkout/promo/', ['_csrf' => $token, 'discount_code' => 'SPRING'] + $this->carriedFields());
+
+        $response = $this->post($app, '/checkout/promo/remove/', ['_csrf' => $token] + $this->carriedFields(), [
+            'Accept' => 'application/json',
+        ]);
+
+        $pricing = json_decode((string) $response->getBody(), true, flags: JSON_THROW_ON_ERROR);
+
+        self::assertSame(200, $response->getStatusCode());
+        self::assertFalse($pricing['applied']);
+        self::assertNull($pricing['notice']);
+        self::assertSame(0, $pricing['lines'][0]['discount_cents']);
+        self::assertSame('$120.00', $pricing['totals']['total']);
+    }
+
+    public function testWithoutAScriptApplyingACodeIsStillAPostAndARedirect(): void
+    {
+        // `[27.10]`, `[8.7]`: the JSON answer is only for a request that asks
+        // for it, so the page keeps working with script off.
+        $this->seedCart();
+        $app = $this->app(quote: PromotionQuote::accepted('SPRING', 3000, null, ['tirzepatide' => 3000]));
+
+        $response = $this->post($app, '/checkout/promo/', [
+            '_csrf' => $this->csrfToken($app),
+            'discount_code' => 'SPRING',
+        ] + $this->carriedFields());
+
+        self::assertSame(303, $response->getStatusCode());
+        self::assertSame('/checkout/', $response->getHeaderLine('Location'));
+
+        $page = \Dom\HTMLDocument::createFromString((string) $app->handle($this->get('/checkout/'))->getBody(), LIBXML_NOERROR);
+        $line = $page->querySelector('[data-line="tirzepatide"]');
+
+        self::assertNotNull($line);
+        self::assertSame('$90.00', trim($line->querySelector('[data-line-total]')?->textContent ?? ''), 'the line after the discount');
+        self::assertFalse($line->querySelector('[data-line-original]')?->hasAttribute('hidden'), 'beside its price before it');
+        self::assertSame('$120.00', trim($line->querySelector('[data-line-original]')?->textContent ?? ''));
+        self::assertTrue($page->querySelector('[data-promo-entry]')?->hasAttribute('hidden'), 'the code box gives way to the applied code');
+        self::assertFalse($page->querySelector('[data-promo-applied]')?->hasAttribute('hidden'));
+    }
+
+    public function testEveryFigureACodeChangesCarriesTheHookTheScriptWritesTo(): void
+    {
+        // A markup contract: the script finds each figure by these hooks, so
+        // one lost here is a figure left at its old value after an apply.
+        $this->seedCart();
+
+        $page = \Dom\HTMLDocument::createFromString(
+            (string) $this->app()->handle($this->get('/checkout/'))->getBody(),
+            LIBXML_NOERROR,
+        );
+
+        foreach (['tirzepatide', 'blocked-thing'] as $slug) {
+            $line = $page->querySelector('[data-line="' . $slug . '"]');
+            self::assertNotNull($line, "the line {$slug}");
+            self::assertNotNull($line->querySelector('[data-line-total]'));
+            self::assertTrue($line->querySelector('[data-line-original]')?->hasAttribute('hidden'), 'no discount, no struck-through price');
+        }
+
+        foreach ([
+            '[data-total-subtotal]', '[data-total-discount-row]', '[data-total-discount]', '[data-total]',
+            '[data-promo-applied]', '[data-promo-code]',
+            '[data-promo-message="success"] [data-promo-message-text]', '[data-promo-message="error"]',
+        ] as $hook) {
+            self::assertCount(1, $page->querySelectorAll($hook), $hook);
+        }
+
+        self::assertTrue($page->querySelector('[data-total-discount-row]')?->hasAttribute('hidden'), 'no code, no discount row');
+        self::assertFalse($page->querySelector('[data-promo-entry]')?->hasAttribute('hidden'), 'and the code box showing');
+
+        // The error is the box's own, the id its `aria-describedby` names when
+        // the script shows it -- as every other checkout field error is.
+        self::assertSame('checkout-error-discount_code', $page->querySelector('[data-promo-message="error"]')?->getAttribute('id'));
+
+        // Apply and Remove each carry what they say while busy, and the
+        // figures about to change are the ones dimmed.
+        self::assertSame('Applying…', $page->querySelector('[data-promo-entry] button')?->getAttribute('data-busy-label'));
+        self::assertSame('Removing…', $page->querySelector('[data-promo-applied] button')?->getAttribute('data-busy-label'));
+        self::assertCount(3, $page->querySelectorAll('[data-promo-busy]'), 'the lines, the totals and the total');
+        self::assertNotNull($page->querySelector('[data-promo-busy] [data-line="tirzepatide"]'));
+        self::assertNotNull($page->querySelector('[data-promo-busy] [data-total]'));
+    }
+
     public function testSwitchingThePlanRepricesTheRxLineAndReturnsToCheckout(): void
     {
         // `[12.4]`, `[12.7]`: a variant is a plan, so choosing one is what
@@ -428,6 +583,112 @@ final class CheckoutControllerTest extends TestCase
         $variants = array_column($_SESSION['cart']['lines'], 'variant_id', 'slug');
         self::assertSame('l-1m', $variants['liraglutide']);
         self::assertSame('t-3m', $variants['tirzepatide']);
+    }
+
+    public function testASubscriptionGetsAPlanPickerBesideItsDosePicker(): void
+    {
+        $this->seedSubscription('plan-monthly');
+
+        $body = (string) $this->app()->handle($this->get('/checkout/'))->getBody();
+
+        self::assertStringContainsString('name="plan[semaglutide]"', $body, 'the dose is still chosen first');
+        self::assertStringContainsString('Select Subscription', $body);
+        self::assertMatchesRegularExpression(
+            '/formaction="\/checkout\/subscription\/" name="subscription\[semaglutide\]" value="plan-monthly" data-select-option aria-pressed="true"/',
+            $body,
+        );
+        self::assertMatchesRegularExpression(
+            '/formaction="\/checkout\/subscription\/" name="subscription\[semaglutide\]" value="plan-quarterly" data-select-option aria-pressed="false"/',
+            $body,
+        );
+        self::assertStringNotContainsString('value="plan-2mg"', $body, 'only the chosen dose\'s plans are offered');
+        self::assertSame(1, substr_count($body, '<form'), 'and the page is still one form');
+    }
+
+    public function testACartWithNoSubscriptionHasNoSubscriptionPicker(): void
+    {
+        $this->seedCart();
+
+        $body = (string) $this->app()->handle($this->get('/checkout/'))->getBody();
+
+        self::assertStringContainsString('name="plan[tirzepatide]"', $body, 'precondition: the page rendered its pickers');
+        self::assertStringNotContainsString('Select Subscription', $body);
+        self::assertStringNotContainsString('/checkout/subscription/', $body);
+    }
+
+    public function testSwitchingTheSubscriptionRepricesTheLineAndReturnsToCheckout(): void
+    {
+        $this->seedSubscription('plan-monthly');
+        $app = $this->app();
+
+        $response = $this->post($app, '/checkout/subscription/', [
+            '_csrf' => $this->csrfToken($app),
+            'subscription' => ['semaglutide' => 'plan-quarterly'],
+        ] + $this->carriedFields());
+
+        self::assertSame(303, $response->getStatusCode());
+        self::assertSame('/checkout/', $response->getHeaderLine('Location'));
+
+        $line = array_column($_SESSION['cart']['lines'], null, 'slug')['semaglutide'];
+        self::assertSame('plan-quarterly', $line['plan_id']);
+        self::assertSame(27000, $line['unit_price_cents']);
+
+        $body = (string) $app->handle($this->get('/checkout/'))->getBody();
+        self::assertStringContainsString('$270.00', $body);
+    }
+
+    public function testASubscriptionAnotherDoseIsSoldOnIsRefusedWithANotice(): void
+    {
+        $this->seedSubscription('plan-monthly');
+        $app = $this->app();
+
+        $response = $this->post($app, '/checkout/subscription/', [
+            '_csrf' => $this->csrfToken($app),
+            'subscription' => ['semaglutide' => 'plan-2mg'],
+        ] + $this->carriedFields());
+
+        self::assertSame(303, $response->getStatusCode());
+        self::assertSame('plan-monthly', array_column($_SESSION['cart']['lines'], 'plan_id', 'slug')['semaglutide']);
+
+        $body = (string) $app->handle($this->get('/checkout/'))->getBody();
+        self::assertStringContainsString(CartRules::UNKNOWN_SUBSCRIPTION, $body);
+    }
+
+    public function testThePaymentNoticeFollowsTheSubscriptionsPlan(): void
+    {
+        $held = 'Payment authorization will be held';
+        $charged = 'Your card will be charged today';
+
+        $this->seedSubscription('plan-quarterly');
+        $body = (string) $this->app()->handle($this->get('/checkout/'))->getBody();
+        self::assertStringContainsString($charged, $body, 'a plan that takes its first payment says so');
+        self::assertStringNotContainsString($held, $body);
+
+        $this->seedSubscription('plan-monthly');
+        $body = (string) $this->app()->handle($this->get('/checkout/'))->getBody();
+        self::assertStringContainsString($held, $body, 'a plan that holds its first payment keeps the hold notice');
+        self::assertStringNotContainsString($charged, $body);
+
+        // A cart with no subscription is told what it always was, on a
+        // deployment that charges as much as on one that holds.
+        $this->seedCart();
+        $body = (string) $this->app()->handle($this->get('/checkout/'))->getBody();
+        self::assertStringContainsString($held, $body);
+        self::assertStringNotContainsString($charged, $body);
+    }
+
+    public function testTheCardFormIsSetUpForTheSettlementThePlanAsksFor(): void
+    {
+        // A provider that hosts its own card fields, which is what renders them.
+        $hosted = new ChallengingAdapter();
+
+        $this->seedSubscription('plan-monthly');
+        $body = (string) $this->app(adapter: $hosted)->handle($this->get('/checkout/'))->getBody();
+        self::assertStringContainsString('data-settlement="authorize"', $body);
+
+        $this->seedSubscription('plan-quarterly');
+        $body = (string) $this->app(adapter: $hosted)->handle($this->get('/checkout/'))->getBody();
+        self::assertStringContainsString('data-settlement="capture"', $body);
     }
 
     /**
@@ -591,6 +852,8 @@ final class CheckoutControllerTest extends TestCase
         bool $promotions = true,
         array $bumps = ['max_on_page' => 3, 'bumps' => []],
         bool $recordEvents = false,
+        ?PaymentAdapter $adapter = null,
+        ?PromotionQuote $quote = null,
     ): App {
         $this->transport->queueFixture($fixture);
         $catalog = self::catalog();
@@ -622,13 +885,21 @@ final class CheckoutControllerTest extends TestCase
                     false,
                 )
                 : new NullCheckoutEventReporter(),
-            PaymentAdapter::class => static function () use ($transport, $log, $promotions): PaymentAdapter {
+            PaymentAdapter::class => static function () use ($transport, $log, $promotions, $adapter, $quote): PaymentAdapter {
+                if ($adapter !== null) {
+                    return $adapter;
+                }
+
                 $adapter = new VrioAdapter(
                     new VrioCredentials('api.vrio.app', '', 'test-key', 147, 1),
                     new VrioApiFactory($transport),
                     $log,
                     shippingProfileId: 1,
                 );
+
+                if ($quote !== null) {
+                    return new RedeclaredAdapter($adapter, null, true, quote: $quote);
+                }
 
                 return $promotions
                     ? $adapter
@@ -703,6 +974,19 @@ final class CheckoutControllerTest extends TestCase
                 'slug' => 'blocked-thing', 'name' => 'Blocked Thing', 'kind' => 'free-addon',
                 'emr_product_id' => null, 'parent_slug' => 'tirzepatide',
                 'quantity' => 1, 'unit_price_cents' => 0, 'variant_id' => null,
+            ],
+        ]];
+    }
+
+    /** One prescription with its 1mg dose chosen, on the given subscription plan. */
+    private function seedSubscription(string $planId): void
+    {
+        $_SESSION['cart'] = ['session' => null, 'territory' => null, 'lines' => [
+            [
+                'slug' => 'semaglutide', 'name' => 'Semaglutide', 'kind' => 'rx',
+                'emr_product_id' => null, 'parent_slug' => null,
+                'quantity' => 1, 'unit_price_cents' => $planId === 'plan-quarterly' ? 27000 : 10000,
+                'variant_id' => 's-1mg', 'plan_id' => $planId,
             ],
         ]];
     }
@@ -821,8 +1105,33 @@ final class CheckoutControllerTest extends TestCase
                 'price_cents' => 499,
                 'variants' => [['id' => 'po-1', 'name' => 'One', 'price_cents' => 499, 'provider' => ['offer_id' => '338', 'product_id' => '3500']]],
             ],
+            // Its 1mg dose is sold on two subscription plans, one holding its
+            // first payment and one taking it; its 2mg dose on a plan of its own.
+            'semaglutide' => [
+                'slug' => 'semaglutide',
+                'name' => 'Semaglutide',
+                'kind' => 'rx',
+                'variants' => [
+                    [
+                        'id' => 's-1mg', 'name' => '1mg', 'price_cents' => 10000, 'provider' => ['offer_id' => '337', 'product_id' => '3418'],
+                        'plan' => self::PLAN_MONTHLY,
+                        'plans' => [self::PLAN_MONTHLY, self::PLAN_QUARTERLY],
+                    ],
+                    [
+                        'id' => 's-2mg', 'name' => '2mg', 'price_cents' => 12000, 'provider' => ['offer_id' => '337', 'product_id' => '3419'],
+                        'plan' => self::PLAN_2MG,
+                        'plans' => [self::PLAN_2MG],
+                    ],
+                ],
+            ],
         ]);
     }
+
+    private const array PLAN_MONTHLY = ['id' => 'plan-monthly', 'name' => 'Monthly', 'description' => 'Renews every 30 days', 'first_payment_cents' => 10000, 'settlement' => 'authorize'];
+
+    private const array PLAN_QUARTERLY = ['id' => 'plan-quarterly', 'name' => 'Every 3 months', 'description' => '', 'first_payment_cents' => 27000, 'settlement' => 'capture'];
+
+    private const array PLAN_2MG = ['id' => 'plan-2mg', 'name' => 'Monthly', 'description' => '', 'first_payment_cents' => 12000, 'settlement' => 'capture'];
 
     /** Seeds the CSRF token with a GET, exactly as {@see CsrfTest} does. */
     private function csrfToken(App $app): string
@@ -838,13 +1147,20 @@ final class CheckoutControllerTest extends TestCase
             ->withCookieParams(['amd_session' => self::SESSION]);
     }
 
-    /** @param array<string, mixed> $body */
-    private function post(App $app, string $path, array $body): ResponseInterface
+    /**
+     * @param array<string, mixed> $body
+     * @param array<string, string> $headers
+     */
+    private function post(App $app, string $path, array $body, array $headers = []): ResponseInterface
     {
-        return $app->handle(
-            (new ServerRequestFactory())->createServerRequest('POST', $path)
-                ->withParsedBody($body)
-                ->withCookieParams(['amd_session' => self::SESSION]),
-        );
+        $request = (new ServerRequestFactory())->createServerRequest('POST', $path)
+            ->withParsedBody($body)
+            ->withCookieParams(['amd_session' => self::SESSION]);
+
+        foreach ($headers as $name => $value) {
+            $request = $request->withHeader($name, $value);
+        }
+
+        return $app->handle($request);
     }
 }

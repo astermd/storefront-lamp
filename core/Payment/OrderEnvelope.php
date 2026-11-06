@@ -41,6 +41,11 @@ namespace AsterMD\Storefront\Payment;
  * from {@see PromotionQuote::$reference}, for a provider whose order names the
  * discount by id. `$followOn` marks an order taken after the main one on the
  * same journey -- an upsell -- for a provider whose order says so.
+ *
+ * `$opportunityId` is the journey's EMR opportunity, for a provider whose
+ * discount check names the shopper: a coupon limited to one patient, or to
+ * so many uses per patient, is checked against whoever the EMR can tell is
+ * buying, and the buyer's email is not always known yet.
  */
 final class OrderEnvelope
 {
@@ -65,6 +70,7 @@ final class OrderEnvelope
         public readonly SettlementMode $settlement = SettlementMode::Capture,
         public readonly ?string $promotionReference = null,
         public readonly bool $followOn = false,
+        public readonly ?string $opportunityId = null,
     ) {
     }
 

@@ -6,6 +6,7 @@ declare(strict_types=1);
 
 namespace AsterMD\Storefront\Completion;
 
+use AsterMD\Storefront\Checkout\BuyerDetails;
 use AsterMD\Storefront\Payment\PlacementOutcome;
 use AsterMD\Storefront\Payment\SettlementMode;
 
@@ -67,6 +68,7 @@ final class Receipt
      * @param list<string>                                                                                     $declinedReferences orders that exist at the provider but were not charged
      * @param list<array{slug: string, name: string, kind: string, quantity: int, unit_price_cents: int}>       $lines
      * @param array<string, string>                                                                            $shipping           keyed by {@see self::SHIPPING_FIELDS}
+     * @param array<string, string>                                                                            $billing            keyed by {@see self::SHIPPING_FIELDS}, or empty when billing was the shipping address (`[13.2]`)
      */
     private function __construct(
         public readonly array $references,
@@ -86,6 +88,7 @@ final class Receipt
         public readonly ?string $placedAt,
         public readonly bool $pendingReview,
         public readonly string $settlement = SettlementMode::Capture->value,
+        public readonly array $billing = [],
     ) {
     }
 
@@ -174,7 +177,35 @@ final class Receipt
             placedAt: self::firstOf($placed, 'placed_at'),
             pendingReview: true,
             settlement: self::settlementOf($placed),
+            billing: self::billingOf($buyer),
         );
+    }
+
+    /**
+     * The separate billing address, or empty when the buyer did not give one.
+     *
+     * Empty rather than a copy of the shipping block, so a stored receipt says
+     * which of the two it was: "billed to the delivery address" and "billed to
+     * an address that happens to match it" are different facts.
+     *
+     * @param array<string, string> $buyer
+     * @return array<string, string>
+     */
+    private static function billingOf(array $buyer): array
+    {
+        if (self::text($buyer['billing_different'] ?? null) !== BuyerDetails::BILLING_DIFFERENT) {
+            return [];
+        }
+
+        return [
+            'name' => trim(self::text($buyer['billing_first_name'] ?? null) . ' ' . self::text($buyer['billing_last_name'] ?? null)),
+            'address_line' => self::text($buyer['billing_address_line'] ?? null),
+            'city' => self::text($buyer['billing_city'] ?? null),
+            'territory' => self::text($buyer['billing_territory'] ?? null),
+            'postal_code' => self::text($buyer['billing_postal_code'] ?? null),
+            // Not collected, as for shipping (`[13.36]`).
+            'country' => '',
+        ];
     }
 
     /**
@@ -229,6 +260,7 @@ final class Receipt
             'placed_at' => $this->placedAt,
             'pending_review' => $this->pendingReview,
             'settlement' => $this->settlement,
+            'billing' => $this->billing,
         ];
     }
 
@@ -250,6 +282,16 @@ final class Receipt
         $raw = is_array($stored['shipping'] ?? null) ? $stored['shipping'] : [];
         foreach (self::SHIPPING_FIELDS as $field) {
             $shipping[$field] = self::text($raw[$field] ?? null);
+        }
+
+        // Absent on a receipt stored before a billing address could be given,
+        // which is the same answer as "billed to the shipping address".
+        $billing = [];
+        $rawBilling = is_array($stored['billing'] ?? null) ? $stored['billing'] : [];
+        if ($rawBilling !== []) {
+            foreach (self::SHIPPING_FIELDS as $field) {
+                $billing[$field] = self::text($rawBilling[$field] ?? null);
+            }
         }
 
         return new self(
@@ -278,6 +320,7 @@ final class Receipt
             // *was* charged, so the absent case has a true answer rather than an
             // unsubstantiable one.
             settlement: SettlementMode::parse($stored['settlement'] ?? null)?->value ?? SettlementMode::Capture->value,
+            billing: $billing,
         );
     }
 

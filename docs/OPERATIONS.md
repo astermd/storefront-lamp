@@ -579,7 +579,16 @@ back to the shipped default so a typo cannot take a storefront down — which is
 exactly why nothing on the page would show for it), and a provider that does not
 support authorize-and-capture while the effective configuration asks it to. That
 second check reads the catalog as well as the key, because **one** product marked
-`authorize` is enough to make a cart authorize.
+`authorize` is enough to make a cart authorize — and so is one subscription plan
+whose first charge is a pre-auth, which is read off every plan a variant is sold
+on, not just its default. A plan `settlement` that is neither mode (only a hand
+edit in the override layer can write one) is an error too.
+
+Two warnings belong to the same area. A product that sets `settlement` beside
+variants sold on a subscription plan is told the key does not reach them — those
+lines settle as their plan says. And a plan that holds the first payment of a
+product that is not a prescription is flagged: a hold is captured when a doctor
+approves a prescription, so a cart with none is charged at once instead.
 
 ### `emr:ping` / `provider:ping`
 
@@ -627,7 +636,9 @@ configured and the provider answers.
 Takes the money on an order that was authorized rather than charged. Only
 relevant on a deployment that has set `payment.settlement` to `authorize`, or
 that has marked a product `'settlement' => 'authorize'` in
-`config/products.overrides.php`.
+`config/products.overrides.php`. (A hold placed because a subscription plan's
+first charge is a pre-auth is on a Stripe channel, where the EMR captures it
+when the doctor completes the case and this command refuses.)
 
 ```
 $ bin/console payment:capture 36727
@@ -789,6 +800,8 @@ While it is on, those files hold, in clear text:
 
 - primary account numbers, security codes and expiry dates;
 - live bearer tokens and the OAuth client secret;
+- the Stripe secret key, in every call's `Authorization` header
+  (`storage/logs/stripe-wire.log`);
 - identity-check payloads carrying Social Security Numbers and dates of birth;
 - the buyer's name, address and telephone number, alongside all of it.
 

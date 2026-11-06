@@ -16,6 +16,7 @@ use AsterMD\Storefront\Payment\PaymentAdapter;
 use AsterMD\Storefront\Payment\PaymentCredential;
 use AsterMD\Storefront\Payment\PromotionQuote;
 use AsterMD\Storefront\Payment\PlacementOutcome;
+use AsterMD\Storefront\Payment\SettlementMode;
 
 /**
  * `[20.9]` over the provider boundary: placement, promotion, and the reverse
@@ -74,6 +75,12 @@ final class InstrumentedPaymentAdapter implements PaymentAdapter
                 'currency' => $order->currency,
             ],
         );
+    }
+
+    /** Not timed: nothing here reaches the provider. */
+    public function settlementFor(OrderEnvelope $order): SettlementMode
+    {
+        return $this->inner->settlementFor($order);
     }
 
     /**

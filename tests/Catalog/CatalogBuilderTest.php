@@ -595,6 +595,64 @@ final class CatalogBuilderTest extends TestCase
         self::assertNull($catalog['products']['addon0-unmapped-addon']['variants'][0]['provider']);
     }
 
+    /** @return array<string, mixed> one row as {@see \AsterMD\Storefront\Catalog\SubscriptionPlans::fromChannelDetails()} writes it */
+    private static function planRow(string $planId, string $variantId, int $firstPaymentCents, string $settlement = 'capture'): array
+    {
+        return [
+            'plan_id' => $planId,
+            'name' => 'plan-' . $planId,
+            'display_name' => 'Plan ' . $planId,
+            'description' => 'About plan ' . $planId,
+            'product_id' => 'sub01xxxxxxxxxxxxxxxxxxxxx',
+            'variant_id' => $variantId,
+            'first_payment_cents' => $firstPaymentCents,
+            'allow_coupons' => true,
+            'settlement' => $settlement,
+        ];
+    }
+
+    public function testEveryPlanSellingAVariantIsKeptWithTheLowestIdAsTheDefault(): void
+    {
+        $entry = self::minimalEntry('entry01', 'sub01xxxxxxxxxxxxxxxxxxxxx', 'Subscription Product');
+        $entry['product']['variants'] = [
+            ['_id' => 'variantA', 'name' => '1mg', 'default_price' => 100],
+            ['_id' => 'variantB', 'name' => '2mg', 'default_price' => 120],
+        ];
+
+        // Listed highest id first, so only the ordering rule puts the lower one first.
+        $catalog = CatalogBuilder::build(
+            ['_id' => 'chan01', 'name' => 'Synthetic Channel', 'products' => [$entry]],
+            'USD',
+            [self::planRow('plan-b', 'variantA', 27000, 'authorize'), self::planRow('plan-a', 'variantA', 10000)],
+        );
+        [$planned, $oneOff] = $catalog['products']['sub01x-subscription-product']['variants'];
+
+        self::assertSame(['plan-a', 'plan-b'], array_column($planned['plans'], 'id'));
+        self::assertSame($planned['plans'][0], $planned['plan']);
+        self::assertSame(10000, $planned['price_cents']);
+        self::assertSame(10000, $planned['list_price_cents']);
+        self::assertSame(
+            ['id' => 'plan-b', 'name' => 'Plan plan-b', 'description' => 'About plan plan-b', 'first_payment_cents' => 27000, 'allow_coupons' => true, 'settlement' => 'authorize'],
+            $planned['plans'][1],
+        );
+
+        self::assertArrayNotHasKey('plan', $oneOff);
+        self::assertArrayNotHasKey('plans', $oneOff);
+        self::assertSame(12000, $oneOff['price_cents']);
+    }
+
+    public function testAPlanRowThatDoesNotSayHowItSettlesTakesTheMoney(): void
+    {
+        $entry = self::minimalEntry('entry01', 'sub01xxxxxxxxxxxxxxxxxxxxx', 'Subscription Product');
+        $entry['product']['variants'] = [['_id' => 'variantA', 'name' => '1mg', 'default_price' => 100]];
+        $row = self::planRow('plan-a', 'variantA', 10000);
+        unset($row['settlement']);
+
+        $catalog = CatalogBuilder::build(['_id' => 'chan01', 'name' => 'Synthetic Channel', 'products' => [$entry]], 'USD', [$row]);
+
+        self::assertSame('capture', $catalog['products']['sub01x-subscription-product']['variants'][0]['plan']['settlement']);
+    }
+
     public function testFractionalDollarPricesRoundCorrectlyBeforeCastToCents(): void
     {
         $entry = self::minimalEntry('entry01', 'fract01xxxxxxxxxxxxxxxxxxx', 'Fractional Widget');

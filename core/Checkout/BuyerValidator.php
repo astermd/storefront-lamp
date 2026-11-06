@@ -110,6 +110,23 @@ final class BuyerValidator
             $errors['postal_code'] = 'Enter a ZIP code as five digits, or five plus four.';
         }
 
+        // The billing address gets the same shape checks as the delivery
+        // address, but never the geo gate: a prescription is restricted by
+        // where it ships to, not by where the card is registered.
+        if ($details->billingDifferent) {
+            if (!isset($errors['billing_territory'])) {
+                $territory = self::territoryError($details->billingTerritory);
+                if ($territory !== null) {
+                    $errors['billing_territory'] = $territory;
+                }
+            }
+
+            if (!isset($errors['billing_postal_code'])
+                && preg_match(self::POSTAL_SHAPE, $details->billingPostalCode) !== 1) {
+                $errors['billing_postal_code'] = 'Enter a ZIP code as five digits, or five plus four.';
+            }
+        }
+
         // Only once the address is locally well-formed, and only when the
         // capability is actually granted: a check that cannot run must not
         // cost every buyer a round trip on every render.
@@ -142,6 +159,14 @@ final class BuyerValidator
             'city' => 'Enter your city.',
             'territory' => 'Choose your state.',
             'postal_code' => 'Enter your ZIP code.',
+            // Present in the field set only when the box is ticked
+            // ({@see BuyerDetails::toArray()}), so unticked asks for nothing.
+            'billing_first_name' => 'Enter the first name on your billing address.',
+            'billing_last_name' => 'Enter the last name on your billing address.',
+            'billing_address_line' => 'Enter your billing street address.',
+            'billing_city' => 'Enter your billing city.',
+            'billing_territory' => 'Choose your billing state.',
+            'billing_postal_code' => 'Enter your billing ZIP code.',
         ];
 
         $missing = [];

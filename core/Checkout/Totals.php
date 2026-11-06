@@ -63,4 +63,14 @@ final class Totals
     {
         return number_format($cents / 100, 2, '.', '');
     }
+
+    /**
+     * Integer cents → the figure a buyer reads, `$1,234.50`. The templates'
+     * `money` filter and the checkout's JSON both use it, so a figure updated
+     * by script reads exactly as the page renders it.
+     */
+    public static function money(int $cents): string
+    {
+        return '$' . number_format($cents / 100, 2);
+    }
 }

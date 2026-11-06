@@ -21,6 +21,11 @@ namespace AsterMD\Storefront\Payment;
  * stop trying, where "could not be applied" sends them to support. It is
  * shown as given, so an adapter sets it only from text it knows is about the
  * code, never from an error about its own request.
+ *
+ * `$lineDiscounts` is how `$discountCents` falls across the lines, keyed by
+ * line slug, when the provider said so -- empty when it gave only the total.
+ * An adapter sets it only when the parts add up to the total, so a summary
+ * that shows both never shows two different discounts.
  */
 final class PromotionQuote
 {
@@ -31,16 +36,23 @@ final class PromotionQuote
         public readonly ?string $reason,
         public readonly ?string $notice = null,
         public readonly ?string $reference = null,
+        /** @var array<string, int> */
+        public readonly array $lineDiscounts = [],
     ) {
     }
 
     /**
      * @param ?string $reference the pricing system's own id for the code, for a provider whose
      *                           order has to name the discount by it rather than by the code
+     * @param array<string, int> $lineDiscounts line slug → that line's share of the discount
      */
-    public static function accepted(string $code, int $discountCents, ?string $reference = null): self
-    {
-        return new self(true, $code, max(0, $discountCents), null, reference: $reference);
+    public static function accepted(
+        string $code,
+        int $discountCents,
+        ?string $reference = null,
+        array $lineDiscounts = [],
+    ): self {
+        return new self(true, $code, max(0, $discountCents), null, reference: $reference, lineDiscounts: $lineDiscounts);
     }
 
     public static function rejected(string $code, string $reason, ?string $notice = null): self

@@ -39,9 +39,24 @@ use AsterMD\Storefront\Payment\AdapterCapabilities;
  * buyer's bank (`[14.22]`): the value the provider's script on the page needs
  * to run the verification step. It is a secret for at least one provider, so
  * it is rendered into this one response and never stored anywhere.
+ *
+ * `$paymentNotice` says which promise the page makes about the money. It is
+ * {@see self::NOTICE_HOLD} — funds held until a doctor approves — unless the
+ * cart holds a subscription whose plan takes its first payment at once, which
+ * is {@see self::NOTICE_CHARGE}; a cart with no subscription is always told
+ * what it always was.
+ *
+ * `$settlement` is what the payment adapter will actually do with this order's
+ * money (a {@see \AsterMD\Storefront\Payment\SettlementMode} value), after any
+ * narrowing the provider applies. A provider-hosted card surface is set up from
+ * it, because the provider refuses a payment collected for the other mode.
  */
 final class CheckoutViewModel
 {
+    public const string NOTICE_HOLD = 'hold';
+
+    public const string NOTICE_CHARGE = 'charge';
+
     /**
      * @param array<string, string>       $prefill  checkout field name → the value to render
      * @param array<string, string>       $errors   checkout field name → the message to render beside it
@@ -50,6 +65,7 @@ final class CheckoutViewModel
      * @param array<string, mixed>|null   $plans    the first Rx line's variant selector, or null when there is none — kept for templates written before an order could carry several
      * @param list<array<string, mixed>>  $planChoices every Rx line's variant selector, in cart order (`[8.0f]`)
      * @param list<ConsentDefinition>     $consents the controls §26 asks for, rendered unchecked
+     * @param list<array<string, mixed>>  $subscriptionChoices every subscription line's plan selector, in cart order
      */
     public function __construct(
         public readonly array $prefill,
@@ -67,6 +83,9 @@ final class CheckoutViewModel
         public readonly array $planChoices = [],
         public readonly bool $postCheckoutSteps = false,
         public readonly ?string $paymentChallenge = null,
+        public readonly array $subscriptionChoices = [],
+        public readonly string $paymentNotice = self::NOTICE_HOLD,
+        public readonly string $settlement = 'capture',
     ) {
     }
 }

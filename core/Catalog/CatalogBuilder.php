@@ -6,6 +6,8 @@ declare(strict_types=1);
 
 namespace AsterMD\Storefront\Catalog;
 
+use AsterMD\Storefront\Payment\SettlementMode;
+
 /**
  * Pure transform: the `data` subtree of an EMR Channel Details response ->
  * the generated catalog every later step of the pipeline (rendering, provider
@@ -251,16 +253,19 @@ final class CatalogBuilder
 
     /**
      * The EMR's sellable subscription plans, keyed by the product and variant
-     * each one sells.
+     * each one sells, every plan for a variant kept and ordered by plan id.
      *
-     * Where two plans sell the same variant, the lower plan id wins, so a
-     * re-sync of the same plans always writes the same catalog. A row missing
+     * The EMR lets several plans sell one variant -- a monthly and a
+     * three-month plan of the same dose -- and the checkout offers each of
+     * them, so none is dropped here. Ordering by id makes a re-sync of the
+     * same plans write the same catalog, and makes the lowest id the default
+     * the variant is priced on until the buyer picks another. A row missing
      * any identifier, or whose first payment is not a non-negative integer, is
      * skipped rather than repaired: a plan the storefront cannot price is one
      * it must not sell.
      *
      * @param list<array<string, mixed>> $plans as the EMR lists them
-     * @return array<string, array{id: string, name: string, first_payment_cents: int, allow_coupons: bool}>
+     * @return array<string, list<array{id: string, name: string, description: string, first_payment_cents: int, allow_coupons: bool, settlement: string}>>
      */
     private static function planIndex(array $plans): array
     {
@@ -281,36 +286,46 @@ final class CatalogBuilder
                 continue;
             }
 
-            $key = $productId . '|' . $variantId;
-            if (isset($index[$key]) && strcmp($index[$key]['id'], $id) < 0) {
-                continue;
-            }
-
             $name = $plan['display_name'] ?? $plan['name'] ?? '';
-            $index[$key] = [
+            $description = $plan['description'] ?? '';
+            $index[$productId . '|' . $variantId][$id] = [
                 'id' => $id,
                 'name' => is_string($name) ? $name : '',
+                'description' => is_string($description) ? $description : '',
                 'first_payment_cents' => $firstPayment,
                 'allow_coupons' => ($plan['allow_coupons'] ?? true) !== false,
+                // The EMR's own default when the plan says nothing is to take
+                // the money, so an unreadable mode is that and not a hold.
+                'settlement' => (SettlementMode::parse($plan['settlement'] ?? null) ?? SettlementMode::Capture)->value,
             ];
+        }
+
+        foreach ($index as $key => $byId) {
+            ksort($byId, SORT_STRING);
+            $index[$key] = array_values($byId);
         }
 
         return $index;
     }
 
     /**
-     * Puts each variant the EMR sells on a plan onto that plan.
+     * Puts each variant the EMR sells on plans onto them.
      *
-     * A variant on a plan is sold at the plan's first payment, which is what
-     * the EMR's own checkout charges for it and what the buyer must be shown,
-     * so `price_cents` becomes that figure and the variant's own price is kept
-     * beside it as `list_price_cents`. Done here, once, rather than at each
-     * place a price is read, so the product page, the cart and the charge
-     * cannot disagree. A deployment that sells the variant one-off instead
-     * sets `plan` to null and `price_cents` back in the override layer.
+     * `plans` is every plan that sells the variant, and `plan` is the first of
+     * them: the default, and the one that says the variant is sold on a plan
+     * at all. A variant on a plan is sold at the plan's first payment, which
+     * is what the EMR's own checkout charges for it and what the buyer must be
+     * shown, so `price_cents` becomes the default's first payment and the
+     * variant's own price is kept beside it as `list_price_cents`. Done here,
+     * once, rather than at each place a price is read, so the product page,
+     * the cart and the charge cannot disagree. A buyer who picks another of
+     * the plans at checkout is priced on that one instead
+     * ({@see \AsterMD\Storefront\Domain\VariantPlans}). A deployment that
+     * sells the variant one-off instead sets `plan` to null and `price_cents`
+     * back in the override layer; `plans` is never read without `plan`.
      *
      * @param list<array<string, mixed>> $variants
-     * @param array<string, array{id: string, name: string, first_payment_cents: int, allow_coupons: bool}> $planIndex
+     * @param array<string, list<array{id: string, name: string, description: string, first_payment_cents: int, allow_coupons: bool, settlement: string}>> $planIndex
      * @return list<array<string, mixed>>
      */
     private static function attachPlans(array $variants, string $productId, array $planIndex): array
@@ -320,14 +335,15 @@ final class CatalogBuilder
         }
 
         foreach ($variants as $i => $variant) {
-            $plan = $planIndex[$productId . '|' . (string) $variant['id']] ?? null;
-            if ($plan === null) {
+            $plans = $planIndex[$productId . '|' . (string) $variant['id']] ?? [];
+            if ($plans === []) {
                 continue;
             }
 
             $variants[$i]['list_price_cents'] = $variant['price_cents'];
-            $variants[$i]['price_cents'] = $plan['first_payment_cents'];
-            $variants[$i]['plan'] = $plan;
+            $variants[$i]['price_cents'] = $plans[0]['first_payment_cents'];
+            $variants[$i]['plan'] = $plans[0];
+            $variants[$i]['plans'] = $plans;
         }
 
         return $variants;

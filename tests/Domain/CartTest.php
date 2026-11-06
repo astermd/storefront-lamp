@@ -66,6 +66,25 @@ final class CartTest extends TestCase
         self::assertSame(13800, $restored->line('sema')?->unitPriceCents);
     }
 
+    public function testTheChosenSubscriptionSurvivesTheRoundTrip(): void
+    {
+        $cart = new Cart();
+        $cart->put(new CartLine('glp', 'GLP Care', 'rx', 'emr-glp', null, unitPriceCents: 27000, variantId: 'glp-1mg', planId: 'plan-quarterly'));
+
+        self::assertSame('plan-quarterly', Cart::fromArray($cart->toArray())->line('glp')?->planId);
+    }
+
+    public function testALineStoredBeforeSubscriptionsCouldBeChosenLoadsOnNone(): void
+    {
+        $stored = (new CartLine('glp', 'GLP Care', 'rx', 'emr-glp', null, variantId: 'glp-1mg'))->toArray();
+        unset($stored['plan_id']);
+
+        $line = CartLine::fromArray($stored);
+
+        self::assertNull($line->planId);
+        self::assertSame('glp-1mg', $line->variantId);
+    }
+
     public function testFromArrayWithEmptyDataYieldsAnEmptyCart(): void
     {
         $cart = Cart::fromArray([]);

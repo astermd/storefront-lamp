@@ -49,7 +49,15 @@
  *   `'capture'` therefore cannot force a charge; it only declines to ask for a
  *   hold. The configured payment provider must support authorize-and-capture
  *   or an order carrying this is refused before it reaches the provider —
- *   `bin/console config:validate` reports that combination as an error.
+ *   `bin/console config:validate` reports that combination as an error. It
+ *   does not reach a variant sold on a subscription plan: that line settles
+ *   as its plan's first charge says, and `config:validate` warns when a
+ *   product sets this beside such variants.
+ * - `variants[<i>].plan` / `variants[<i>].plans`: written by `theme:sync` for
+ *   a variant the EMR sells on subscription plans — `plans` every one, `plan`
+ *   the default it is priced on. Setting `plan` to null (and `price_cents`
+ *   back to the variant's own price) sells the variant one-off; `plans` is
+ *   then ignored.
  * - `prequalification_teleform_id`: which questionnaire that dedicated
  *   eligibility step should collect. Only consulted when
  *   `requires_prequalification` is true. Absent means there is no separate

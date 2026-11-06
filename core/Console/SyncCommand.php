@@ -100,6 +100,7 @@ final class SyncCommand extends Command
             $http = $this->httpClient ?? new NativeCurlClient();
             $client = $this->clientFactory->create($http);
             $data = $client->channels()->details($channelId)->data();
+            // var_dump(json_encode($data));
         } catch (\Throwable $e) {
             $output->writeln('<error>theme:sync: failed to fetch channel details: ' . $e->getMessage() . '</error>');
 

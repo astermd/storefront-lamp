@@ -99,6 +99,7 @@ final class ReceiptPageTest extends TestCase
     /**
      * @param array<string, mixed> $overrides merged into the container, for the cases that vary configuration
      * @param list<array<string, mixed>>|null $checkoutLines the checkout order's lines, when a case needs to state them
+     * @param array<string, string> $buyerExtra merged into the stored buyer, for a case that gave a billing address
      */
     private function appWithReceipt(
         int $discountCents = 2450,
@@ -106,6 +107,7 @@ final class ReceiptPageTest extends TestCase
         array $overrides = [],
         string $settlement = 'capture',
         ?array $checkoutLines = null,
+        array $buyerExtra = [],
     ): \Slim\App {
         $pdo = $this->tempPdo();
 
@@ -126,7 +128,7 @@ final class ReceiptPageTest extends TestCase
                     'city' => 'Portland',
                     'territory' => 'OR',
                     'postal_code' => '97205',
-                ],
+                ] + $buyerExtra,
             ],
             null,
         );
@@ -351,6 +353,30 @@ final class ReceiptPageTest extends TestCase
         // `[13.36]` is a declared gap: no country is collected, so the address
         // block drops the line rather than assuming one.
         self::assertStringNotContainsString('United States', $body);
+    }
+
+    public function testASeparateBillingAddressIsShownUnderBillingAndShippingIsUnchanged(): void
+    {
+        $body = $this->receiptBody($this->appWithReceipt(buyerExtra: [
+            'billing_different' => 'on',
+            'billing_first_name' => 'Sam',
+            'billing_last_name' => 'Okafor',
+            'billing_address_line' => '12 Harbor Street',
+            'billing_city' => 'Seattle',
+            'billing_territory' => 'WA',
+            'billing_postal_code' => '98101',
+        ]));
+
+        $billing = substr($body, (int) strpos($body, 'Billing address'));
+        self::assertNotSame($body, $billing, 'the page must have a billing block to look in');
+
+        self::assertStringContainsString('Sam Okafor', $billing);
+        self::assertStringContainsString('12 Harbor Street', $billing);
+        self::assertStringContainsString('Seattle', $billing);
+        self::assertStringContainsString('WA 98101', $billing);
+        // The delivery address is shown once, under shipping, and not repeated.
+        self::assertSame(1, substr_count($body, '900 Larkin Avenue'));
+        self::assertStringNotContainsString('900 Larkin Avenue', $billing);
     }
 
     public function testReceiptTotalIsSummedFromTheOrderRows(): void

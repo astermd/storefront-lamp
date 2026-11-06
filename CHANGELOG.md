@@ -48,20 +48,38 @@ Stripe mints, reusing the buyer's Stripe customer by email, and the EMR builds
 the treatment from that PaymentIntent when the order is synced. A line whose
 variant the EMR sells on a subscription plan is sold on that plan, at the
 plan's first payment, and makes the order renew. Discount codes are the EMR's
-coupons, priced again just before paying: a code that ran out in between is
-refused before Stripe is called and dropped from the order. A held payment (`settlement: authorize`) is captured by the EMR when
+coupons, checked for the buyer -- by their email, or before one is typed by
+the journey's opportunity -- so a coupon for one patient, or with a
+per-patient limit, applies to the patient it was meant for. A code is checked
+again as the buyer pays, and the PaymentIntent takes the total that check
+gives: a coupon whose value changed in between is charged at its new value,
+and one that no longer applies is dropped before Stripe is called, with the
+EMR's reason shown to the buyer. Applying or removing a code no longer reloads
+the checkout page: `/checkout/promo/` answers a request for JSON with each
+line's price before and after the discount and the new totals, and the page
+updates in place, along with the amount Stripe's card form shows. Each line
+the EMR discounted shows its old price struck through beside the new one.
+While the code is checked, Apply shows a spinner and the prices dim; then a
+confirmation, or the reason it did not apply, appears under the box. Without
+JavaScript the code is applied by a plain form post, as before. A held payment (`settlement: authorize`) is captured by the EMR when
 the doctor completes the case, never by `payment:capture`. When the buyer's
 bank asks them to verify a payment, the checkout runs the verification and
 finishes the order on `/checkout/confirm/` — for any provider that declares it
 can; Vrio and CheckoutChamp still stop the checkout as before.
+With `WIRE_LOG` on, every Stripe API call is written to
+`storage/logs/stripe-wire.log`, as the other two providers' calls are -- with
+the secret key, verbatim.
 
 Run `composer install` for `stripe/stripe-php`, then
 `bin/console theme:sync --apply`. Plans come with the channel details: the
 plans assigned to the channel in the EMR, each priced at its first payment
 from its own steps (`core/Catalog/SubscriptionPlans.php`), on Stripe channels
-only. Discount codes are checked through the SDK's `coupons()`, which
-`astermd/sdk` 0.0.4 provides; on an older SDK the promo box is hidden on
-Stripe channels. Then `npm run build`.
+only. Discount codes need `astermd/sdk` 0.0.4, which adds `coupons()` and
+which `composer install` brings; on an older SDK the promo box stays hidden on
+Stripe channels. The channel's API user needs `health~coupons~instance~validate`
+on its role; run `bin/console cache:clear` after granting it, or the cached
+token keeps answering 403 and every code is refused as unavailable. Then
+`npm run build`.
 
 - `core/Payment/Stripe/` (new), `core/Catalog/SubscriptionPlans.php` (new),
   `core/Emr/CouponGateway.php`,
@@ -83,10 +101,69 @@ Stripe channels. Then `npm run build`.
   `core/Upsell/Upsells.php`, `core/Upsell/UpsellService.php`,
   `core/Catalog/CatalogBuilder.php`, `core/Console/SyncCommand.php`,
   `core/Bootstrap/AppFactory.php`, `bin/console`, `config/routes.php`,
+  `core/Checkout/Totals.php`, `core/Http/TwigExtensions.php`,
   `theme/templates/pages/checkout.twig`, `theme/js/checkout.js`,
   `public/assets/build/`,
   `composer.json`, `composer.lock`, `docs/ARCHITECTURE.md`,
   `docs/INTEGRATION-NOTES.md`
+
+### A subscription's plan decides hold or charge, and the buyer picks the plan
+
+On a Stripe channel, a variant the EMR sells on several subscription plans now
+gets all of them, not just the lowest plan id. Checkout lists the plans for the
+chosen dose in a second picker under the dose picker. Choosing one re-prices the
+line at that plan's first payment, and the order names that plan.
+
+Whether the first payment is held or taken comes from the plan's first charge:
+`pre_auth` holds and `charge_now` takes. Neither `payment.settlement` nor a
+product's `settlement` key applies to such a line, or to the free items it
+brings into the cart. Every other line settles as before, and a cart that holds
+anything still holds as a whole. A hold still needs a prescription line in the
+cart, because the doctor's approval is what captures it. The notice beside the
+total says "charged today" for a subscription whose plan takes its first
+payment. Every other cart keeps the hold notice.
+
+`config:validate` now reports a plan settlement it cannot read. It also counts a
+holding plan when it checks that the provider can authorize. It warns about a
+product key that cannot reach the product's subscription variants, and about a
+holding plan on a product that is not a prescription.
+
+Run `bin/console theme:sync --apply` to pick up every plan and how each one
+settles. Until then a variant stays on its one plan and settles as it did.
+
+- `core/Domain/VariantPlans.php` (new)
+- `core/Catalog/SubscriptionPlans.php`, `core/Catalog/CatalogBuilder.php`,
+  `core/Domain/CartLine.php`, `core/Domain/CartRules.php`,
+  `core/Checkout/SettlementPolicy.php`, `core/Checkout/CheckoutService.php`,
+  `core/Checkout/CheckoutViewModel.php`,
+  `core/Http/Controller/CheckoutController.php`,
+  `core/Console/ValidateCommand.php`, `config/routes.php`,
+  `config/payment.php`, `config/products.overrides.php`,
+  `theme/templates/pages/checkout.twig`,
+  `docs/ARCHITECTURE.md`, `docs/OPERATIONS.md`, `docs/INTEGRATION-NOTES.md`
+
+### Fixed: a held Stripe payment could never be paid
+
+Every Stripe order that held its payment was refused, and the buyer saw "We
+could not complete your payment". The card fields were always set up to charge
+at once, and Stripe refuses a card collected that way for a PaymentIntent that
+only holds. The page now sets up the card fields for what the order will do.
+A new `PaymentAdapter::settlementFor()` reports whether an order will be held
+or charged, after any narrowing by the provider. Stripe still charges a cart
+with no prescription line at once. The checkout page sets Stripe's fields from
+that answer through `data-settlement`. The notice beside the total uses the
+same answer, so a hold that Stripe will charge instead says "charged today".
+
+Run `npm run build`.
+
+- `core/Payment/PaymentAdapter.php`, `core/Payment/NullPaymentAdapter.php`,
+  `core/Payment/Stripe/StripeAdapter.php`, `core/Payment/Stripe/StripePayload.php`,
+  `core/Payment/Vrio/VrioAdapter.php`,
+  `core/Payment/CheckoutChamp/CheckoutChampAdapter.php`,
+  `core/Observability/InstrumentedPaymentAdapter.php`,
+  `core/Checkout/CheckoutService.php`, `core/Checkout/CheckoutViewModel.php`,
+  `theme/templates/pages/checkout.twig`, `theme/js/payment-stripe.js`,
+  `public/assets/build/`, `docs/ARCHITECTURE.md`
 
 ### Runs in Docker
 

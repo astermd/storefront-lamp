@@ -57,6 +57,13 @@ namespace AsterMD\Storefront\Payment;
  * {@see PaymentAdapter::resume()} reads back what happened. An adapter that
  * declares it false has its challenge stop the checkout instead, which is what
  * every adapter did before the round trip existed -- so it defaults to false.
+ *
+ * `$requotesPromotionAtPayment` says the provider is told the amount to take
+ * rather than the discount code, so nothing after the buyer pays prices the
+ * code again: the checkout quotes it once more as it submits and charges what
+ * that quote says. A provider that applies the code itself when the order is
+ * placed declares it false, because a second quote there would only cost a
+ * provider call.
  */
 final class AdapterCapabilities
 {
@@ -98,6 +105,7 @@ final class AdapterCapabilities
         public readonly array $requiredDeploymentKeys = [],
         public readonly array $clientConfig = [],
         public readonly bool $supportsClientAction = false,
+        public readonly bool $requotesPromotionAtPayment = false,
     ) {
     }
 

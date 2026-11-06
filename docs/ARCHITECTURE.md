@@ -744,7 +744,10 @@ What the buyer sees: the product page hides "Start Assessment" when adding that 
 make two prescriptions, and checkout and the receipt carry a short note
 (`theme/templates/partials/post-checkout-steps.twig`) that a few steps may follow the order.
 Checkout shows one plan picker per prescription; each picker's buttons post
-`plan[<slug>]=<variant>`, and the older `slug` + `variant_id` pair is still accepted.
+`plan[<slug>]=<variant>`, and the older `slug` + `variant_id` pair is still accepted. A line
+whose chosen variant the EMR sells on subscription plans gets a second picker beneath, listing
+those plans; its buttons post `subscription[<slug>]=<plan>` to `/checkout/subscription/`, which
+re-prices the line at the chosen plan's first payment (see "Plans" under Stripe below).
 
 **Shared intake forms are a possible extension, not part of this release.** Several products
 could one day declare a single intake form between them, and a cart whose prescriptions all
@@ -851,11 +854,17 @@ provider spells `action: "process"` versus `action: "authorize"` and another spe
 `/order/import/` versus `/order/preauth/`; `OrderEnvelope` carries the resolved mode, and
 translating it into a provider's verb is the adapter's job.
 
-The decision is made **once**, in `Checkout\SettlementPolicy`, over two layers.
+The decision is made **once**, in `Checkout\SettlementPolicy`, over three layers.
 `payment.settlement` is the deployment default — a commercial arrangement with one provider.
 A per-product `settlement` key in `config/products.overrides.php` is a clinical or fulfilment
-fact about one product; like `geo_blocks` it is override-layer only, because the EMR channel
-payload has no such concept and `theme:sync` therefore neither writes it nor can overwrite it.
+fact about one product; like `geo_blocks` it is override-layer only, because the EMR's
+products have no such concept and `theme:sync` therefore neither writes it nor can overwrite it.
+And a line sold on a subscription plan settles as **the plan's first charge** says: the
+subscription engine's `payment_mode` on that charge step, `pre_auth` (hold) or `charge_now`
+(take, its default), which `theme:sync` writes onto each catalog plan as `settlement`. Neither
+the default nor the product key applies to such a line — the plan is the EMR's own statement of
+how its first payment is taken — nor does the default reach the free attachments it brings into
+the cart. Every other line settles exactly as before.
 
 A cart is one order, so a cart resolves to one action and **authorize wins**: capturing a
 product a deployment marked hold-until-event is a charge nobody asked for, while authorizing
@@ -991,7 +1000,12 @@ checkout template takes its second branch: Stripe's Payment Element mounts in th
 slot from the adapter's `clientConfig` (the publishable key and Stripe.js's URL, nothing
 secret), `theme/js/payment-stripe.js` turns what the buyer entered into a confirmation token,
 and the form posts `payment_token` instead of a card. `CheckoutController` makes that a
-`PaymentCredential::token()`; every other step of the submit is unchanged.
+`PaymentCredential::token()`; every other step of the submit is unchanged. Stripe refuses a
+token minted under parameters other than the PaymentIntent's, so the Element is given the
+same `setupFutureUsage`, payment method types and `captureMethod`. The capture method comes
+from `PaymentAdapter::settlementFor()`, which the checkout view asks for every cart it renders.
+The page receives it as `data-settlement`, so a held order's card is collected for manual
+capture.
 
 `place()` confirms a PaymentIntent the storefront creates itself, on the buyer's Stripe
 customer (found by email first, as the EMR's own checkout finds it). **The EMR is the reader
@@ -1011,17 +1025,40 @@ Three things the other providers do here, Stripe hands to the EMR:
   and never for an upsell, because the EMR would capture neither.
 - **Discount codes.** A PaymentIntent has none, so `quotePromotion()` asks the EMR through
   `Emr\CouponGateway`, and the coupon's id rides on `PromotionQuote::$reference` →
-  `Promotion::$reference` → `OrderEnvelope::$promotionReference` into the metadata. Nothing after
+  `Promotion::$reference` → `OrderEnvelope::$promotionReference` into the metadata. The check
+  names the shopper -- the buyer's email, else `OrderEnvelope::$opportunityId` from the journey --
+  because a coupon for some patients, or with a per-patient limit, is checked against the patient
+  the EMR finds for them; each is sent only when well-formed, since a malformed one is a 400 for
+  the whole check. Nothing after
   the payment re-checks the code — Stripe takes any amount and the EMR records the coupon at sync
-  without refusing it — so `place()` prices it once more first. A code the EMR now refuses or
-  prices differently declines with `promotion_repriced` before Stripe is called, and the checkout
-  drops the stored code so the buyer sees the real total; an EMR that cannot answer right then is
-  not a refusal.
+  without refusing it — so the adapter declares `requotesPromotionAtPayment` and
+  `CheckoutService::submit()` quotes the code once more after storing the submitted buyer (step 4b),
+  before the envelope is built. A discount that moved since the code was applied is charged at its
+  new figure, and the PaymentIntent, receipt and recorded order all carry it; a code the EMR now
+  refuses is dropped and the submit stops with `promotion_repriced` and the EMR's reason before
+  Stripe is called; an EMR that cannot answer right then is not a refusal, and the figure the buyer
+  was shown stands. Vrio and CheckoutChamp apply the code themselves when the order is placed, so
+  they do not declare it. On the page, `theme/js/checkout.js` sends Apply and Remove with `fetch`,
+  asking for `application/json`. `CheckoutController` then answers with the summary instead of the
+  303: every line with its share of the discount and its price after it, and the totals, each
+  formatted by `Totals::money()` as the `money` filter does. The script only puts that text in place,
+  and `payment-stripe.js` hands the new total to the Element with `elements.update()`. The EMR's
+  answer names the lines it discounted (`items[]`, by plan or by product and variant).
+  `EmrCouponGateway` maps them back to cart lines as `PromotionQuote::$lineDiscounts` →
+  `Promotion::$lineDiscounts`, stored in the journey as `line_discounts`. A breakdown that names a
+  line the cart lacks, or does not add up to the discount, is dropped and the total shown alone. The
+  breakdown is display only: the amount charged is still the one step 4b prices.
 - **Plans.** The channel details `theme:sync` already fetches list the plans assigned to the
   channel (`subscriptions`). `SubscriptionPlans` works out each plan's product, variant and first
-  payment from its steps -- the EMR's own rule, ported -- and `CatalogBuilder::attachPlans()`
-  sells the variant on the plan at that price. Only on a Stripe channel: a CRM's orders name no
-  plan. A line on a plan is named by the plan alone and makes the order a `cycle`.
+  payment from its steps -- the EMR's own rule, ported -- and whether that first payment is held
+  or taken, and `CatalogBuilder::attachPlans()` puts the variant on every plan that sells it:
+  `plans` lists them by id, and `plan` is the first, the default the variant is priced on. The
+  buyer picks among them at checkout; the cart line keeps the choice (`CartLine::$planId`), and
+  `Domain\VariantPlans` is the one reader the price, the order line and the settlement all
+  resolve it through. Only on a Stripe channel: a CRM's orders name no plan. A line on a plan
+  is named by the plan alone and makes the order a `cycle`. A plan that holds its first payment
+  makes the order hold under the same rule as any other hold: only for a cart with a
+  prescription line, since a doctor's approval is what captures it.
 
 The test fence is `StripeRefusingTransport`. Stripe's SDK takes its HTTP client process-wide
 (`ApiRequestor::setHttpClient()`), so `StripeApiFactory` installs it on every client it

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace AsterMD\Storefront\Tests\Journey;
 
 use AsterMD\Storefront\Attribution\Attribution;
+use AsterMD\Storefront\Checkout\Promotion;
 use AsterMD\Storefront\Journey\JourneyState;
 use AsterMD\Storefront\Payment\PaymentCredential;
 use PHPUnit\Framework\TestCase;
@@ -41,7 +42,7 @@ class JourneyStateTest extends TestCase
                 'furthest_step', 'emr_events', 'reconciled', 'read_model_shape', 'cart', 'cart_mirrored',
                 'form_answers', 'form_status', 'disqualified_rule', 'disqualified_teleform',
                 'buyer', 'promotion', 'promotion_quoted_against', 'accepted_bumps', 'consents', 'placed_orders',
-                'payment_handle', 'upsell_queue', 'upsell_cursor', 'upsell_outcomes', 'upsell_quotes',
+                'payment_handle', 'pending_payment', 'upsell_queue', 'upsell_cursor', 'upsell_outcomes', 'upsell_quotes',
                 'verification', 'receipt', 'completed_at', 'session_retired',
             ],
             array_keys($state->toArray()),
@@ -51,6 +52,19 @@ class JourneyStateTest extends TestCase
         // from it is already pinned; asserted again by name because this is
         // the one key whose arrival would put a card in the `sessions` table.
         self::assertArrayNotHasKey('payment_credential', $state->toArray());
+    }
+
+    public function testHowAPromotionFallsAcrossTheLinesRoundTripsThroughTheStateArray(): void
+    {
+        // The checkout summary shows each line's share of the discount on
+        // every page load after the one that applied it, and each load reads
+        // the journey back from its row.
+        $state = new JourneyState();
+        $state->promotion = (new Promotion('SPRING', 3000, 'cpn-1', ['tirzepatide' => 3000]))->toArray();
+
+        $restored = Promotion::fromArray(JourneyState::fromArray($state->toArray(), null, null)->promotion);
+
+        self::assertSame(3000, $restored?->discountOn('tirzepatide'));
     }
 
     public function testTheCartAndItsMirrorFlagRoundTripThroughTheStateArray(): void

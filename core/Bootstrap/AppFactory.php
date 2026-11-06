@@ -105,6 +105,9 @@ use AsterMD\Storefront\Payment\Stripe\StripeAdapter;
 use AsterMD\Storefront\Payment\Stripe\StripeApiFactory;
 use AsterMD\Storefront\Payment\Stripe\StripeCredentials;
 use AsterMD\Storefront\Payment\Stripe\StripeRefusingTransport;
+use AsterMD\Storefront\Payment\Stripe\StripeWireLog;
+use Stripe\HttpClient\ClientInterface as StripeHttpClient;
+use Stripe\HttpClient\CurlClient as StripeCurlClient;
 use AsterMD\Storefront\Payment\Vrio\VrioAdapter;
 use AsterMD\Storefront\Payment\Vrio\VrioApiFactory;
 use AsterMD\Storefront\Payment\Vrio\VrioCredentials;
@@ -816,7 +819,22 @@ final class AppFactory
                 StripeCredentials::fromChannelConfig(
                     (array) $config->get('channel.generated.payment_processor.config', []),
                 ),
-                new StripeApiFactory($config->get('app.env') === 'test' ? new StripeRefusingTransport() : null),
+                new StripeApiFactory(
+                    // Composed as the other two are: the fence underneath, the
+                    // wire log wrapping whatever is there.
+                    (static function () use ($config, $rootDir): ?StripeHttpClient {
+                        $inner = $config->get('app.env') === 'test' ? new StripeRefusingTransport() : null;
+
+                        if ($config->get('app.debug.wire_log') !== true) {
+                            return $inner;
+                        }
+
+                        return new StripeWireLog(
+                            $inner ?? StripeCurlClient::instance(),
+                            $rootDir . '/storage/logs/stripe-wire.log',
+                        );
+                    })(),
+                ),
                 $c->get(OperatorLog::class),
                 $c->get(CouponGateway::class),
                 (string) $config->get('channel.generated.channel.id', ''),

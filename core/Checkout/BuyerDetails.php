@@ -6,6 +6,7 @@ declare(strict_types=1);
 
 namespace AsterMD\Storefront\Checkout;
 
+use AsterMD\Storefront\Payment\BillingAddress;
 use AsterMD\Storefront\Payment\Buyer;
 
 /**
@@ -25,7 +26,10 @@ use AsterMD\Storefront\Payment\Buyer;
  * {@see Prefill::from()} produces, so a prefilled render and a submitted form
  * are the same set of keys read in opposite directions.
  *
- * Billing is shipping (`[13.2]`), so there is one address here, not two.
+ * Billing is shipping (`[13.2]`) unless the buyer ticks "Use a different
+ * billing address", and only then are the `billing_*` fields read. The fields
+ * stay in the form while hidden, so reading them unticked would bill a card to
+ * an address the buyer can no longer see.
  */
 final class BuyerDetails
 {
@@ -41,6 +45,19 @@ final class BuyerDetails
         'postal_code' => 'postalCode',
     ];
 
+    /** The value the "Use a different billing address" checkbox posts. */
+    public const string BILLING_DIFFERENT = 'on';
+
+    /** Billing field name → the property it fills; read only when ticked. */
+    private const array BILLING_FIELDS = [
+        'billing_first_name' => 'billingFirstName',
+        'billing_last_name' => 'billingLastName',
+        'billing_address_line' => 'billingAddressLine',
+        'billing_city' => 'billingCity',
+        'billing_territory' => 'billingTerritory',
+        'billing_postal_code' => 'billingPostalCode',
+    ];
+
     public function __construct(
         public readonly string $firstName = '',
         public readonly string $lastName = '',
@@ -50,6 +67,13 @@ final class BuyerDetails
         public readonly string $city = '',
         public readonly string $territory = '',
         public readonly string $postalCode = '',
+        public readonly bool $billingDifferent = false,
+        public readonly string $billingFirstName = '',
+        public readonly string $billingLastName = '',
+        public readonly string $billingAddressLine = '',
+        public readonly string $billingCity = '',
+        public readonly string $billingTerritory = '',
+        public readonly string $billingPostalCode = '',
     ) {
     }
 
@@ -70,6 +94,11 @@ final class BuyerDetails
             $values[$field] = self::text($body[$field] ?? null);
         }
 
+        $billingDifferent = self::text($body['billing_different'] ?? null) === self::BILLING_DIFFERENT;
+        foreach (array_keys(self::BILLING_FIELDS) as $field) {
+            $values[$field] = $billingDifferent ? self::text($body[$field] ?? null) : '';
+        }
+
         return new self(
             firstName: $values['first_name'],
             lastName: $values['last_name'],
@@ -79,12 +108,23 @@ final class BuyerDetails
             city: $values['city'],
             territory: strtoupper($values['territory']),
             postalCode: $values['postal_code'],
+            billingDifferent: $billingDifferent,
+            billingFirstName: $values['billing_first_name'],
+            billingLastName: $values['billing_last_name'],
+            billingAddressLine: $values['billing_address_line'],
+            billingCity: $values['billing_city'],
+            billingTerritory: strtoupper($values['billing_territory']),
+            billingPostalCode: $values['billing_postal_code'],
         );
     }
 
     /**
      * The canonical field set, keyed the way the form, journey state and
      * prefill all key it.
+     *
+     * The billing keys are present only when ticked, so an unticked buyer's
+     * set -- and with it the idempotency key derived from it (`[13.37]`) --
+     * is exactly what it was before a billing address could be given.
      *
      * @return array<string, string>
      */
@@ -93,6 +133,13 @@ final class BuyerDetails
         $out = [];
         foreach (self::FIELDS as $field => $property) {
             $out[$field] = $this->{$property};
+        }
+
+        if ($this->billingDifferent) {
+            $out['billing_different'] = self::BILLING_DIFFERENT;
+            foreach (self::BILLING_FIELDS as $field => $property) {
+                $out[$field] = $this->{$property};
+            }
         }
 
         return $out;
@@ -117,6 +164,14 @@ final class BuyerDetails
             city: $this->city,
             territory: $this->territory,
             postalCode: $this->postalCode,
+            billing: $this->billingDifferent ? new BillingAddress(
+                firstName: $this->billingFirstName,
+                lastName: $this->billingLastName,
+                addressLine: $this->billingAddressLine,
+                city: $this->billingCity,
+                territory: $this->billingTerritory,
+                postalCode: $this->billingPostalCode,
+            ) : null,
         );
     }
 
