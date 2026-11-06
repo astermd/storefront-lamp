@@ -38,6 +38,8 @@ final class CartRules
 
     public const string UNKNOWN_VARIANT = 'Choose a treatment plan before continuing.';
 
+    public const string UNKNOWN_SUBSCRIPTION = 'That subscription is not available for this treatment.';
+
     /** sprintf: parent name, unavailable child slug. */
     public const string CHILD_UNAVAILABLE = '%s cannot be added right now: a required item (%s) is unavailable.';
 
@@ -112,7 +114,8 @@ final class CartRules
         if ($variantId !== null) {
             $line->variantId = $variantId;
         }
-        $line->unitPriceCents = self::priceFor($product, $line->variantId);
+        $line->planId = self::planFor($product, $line->variantId, $line->planId);
+        $line->unitPriceCents = self::priceFor($product, $line->variantId, $line->planId);
         $line->quantity = self::clampQuantity($product, $line->quantity + max(1, $quantity));
 
         $this->attachChildren($cart, $slug);
@@ -228,7 +231,33 @@ final class CartRules
         }
 
         $line->variantId = $variantId;
-        $line->unitPriceCents = self::priceFor($product, $variantId);
+        $line->planId = self::planFor($product, $variantId, $line->planId);
+        $line->unitPriceCents = self::priceFor($product, $variantId, $line->planId);
+
+        return CartOutcome::accepted();
+    }
+
+    /**
+     * `[12.4]`: which of its variant's subscription plans a line is sold on,
+     * re-pricing it at that plan's first payment. A plan the line's variant is
+     * not sold on is refused rather than replaced by the default, for the
+     * reason a foreign variant is (`[12.9]`): the order would name a plan the
+     * buyer was never shown.
+     */
+    public function chooseSubscription(Cart $cart, string $slug, string $planId): CartOutcome
+    {
+        $line = $cart->line($slug);
+        $product = $this->catalog->product($slug);
+        if ($line === null || $product === null) {
+            return CartOutcome::rejected(self::UNKNOWN_PRODUCT);
+        }
+
+        if (!VariantPlans::offers(self::pricedVariant($product, $line->variantId), $planId)) {
+            return CartOutcome::rejected(self::UNKNOWN_SUBSCRIPTION);
+        }
+
+        $line->planId = $planId;
+        $line->unitPriceCents = self::priceFor($product, $line->variantId, $planId);
 
         return CartOutcome::accepted();
     }
@@ -401,11 +430,13 @@ final class CartRules
      * `[7.4]` with `[7.14a]` on top: a `free-addon` is always zero, an `rx`
      * with no plan chosen yet is zero because its price is not knowable until
      * the variant is (`[12.4]`), and everything else takes the chosen
-     * variant's price or the first variant's.
+     * variant's price or the first variant's -- or, for a variant sold on a
+     * subscription plan the buyer chose over its default, that plan's first
+     * payment.
      *
      * @param array<string, mixed> $product
      */
-    private static function priceFor(array $product, ?string $variantId): int
+    private static function priceFor(array $product, ?string $variantId, ?string $planId = null): int
     {
         if (($product['kind'] ?? null) === 'free-addon') {
             return 0;
@@ -414,7 +445,7 @@ final class CartRules
         if ($variantId !== null) {
             $variant = self::variant($product, $variantId);
             if ($variant !== null) {
-                return (int) ($variant['price_cents'] ?? 0);
+                return self::planPrice($variant, $planId) ?? (int) ($variant['price_cents'] ?? 0);
             }
         }
 
@@ -423,8 +454,65 @@ final class CartRules
         }
 
         $variants = self::variants($product);
+        $planned = isset($variants[0]) ? self::planPrice($variants[0], $planId) : null;
 
-        return (int) ($variants[0]['price_cents'] ?? $product['price_cents'] ?? 0);
+        return $planned ?? (int) ($variants[0]['price_cents'] ?? $product['price_cents'] ?? 0);
+    }
+
+    /**
+     * The first payment of the plan the buyer chose for this variant, or null
+     * when the variant's own price stands: it is sold one-off, or on its
+     * default plan, whose first payment `theme:sync` already wrote into
+     * `price_cents` -- where a deployment's override of that price must keep
+     * winning, as it did before a plan could be chosen.
+     *
+     * @param array<string, mixed> $variant
+     */
+    private static function planPrice(array $variant, ?string $planId): ?int
+    {
+        $plan = VariantPlans::chosen($variant, $planId);
+        $default = VariantPlans::of($variant)[0] ?? null;
+
+        if ($plan === null || $plan['id'] === ($default['id'] ?? null) || !is_int($plan['first_payment_cents'] ?? null)) {
+            return null;
+        }
+
+        return $plan['first_payment_cents'];
+    }
+
+    /**
+     * The plan a line is on once its variant is known: the one it is already
+     * on while that variant is still sold on it, otherwise the variant's
+     * default; null for a variant sold one-off, and for an Rx line whose
+     * variant is not chosen yet, which has no plan until it has a variant
+     * (`[12.9]`).
+     *
+     * @param array<string, mixed> $product
+     */
+    private static function planFor(array $product, ?string $variantId, ?string $planId): ?string
+    {
+        $plan = VariantPlans::chosen(self::pricedVariant($product, $variantId), $planId);
+
+        return is_string($plan['id'] ?? null) ? $plan['id'] : null;
+    }
+
+    /**
+     * The variant a line is priced on, by {@see self::priceFor()}'s rule: the
+     * chosen one, or the first for anything but an Rx line, whose variant has
+     * to be chosen.
+     *
+     * @param array<string, mixed> $product
+     *
+     * @return array<string, mixed>|null
+     */
+    private static function pricedVariant(array $product, ?string $variantId): ?array
+    {
+        $variant = $variantId !== null ? self::variant($product, $variantId) : null;
+        if ($variant !== null || ($product['kind'] ?? null) === 'rx') {
+            return $variant;
+        }
+
+        return self::variants($product)[0] ?? null;
     }
 
     /**

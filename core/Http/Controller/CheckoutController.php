@@ -10,6 +10,7 @@ use AsterMD\Storefront\Checkout\BuyerDetails;
 use AsterMD\Storefront\Checkout\CheckoutResult;
 use AsterMD\Storefront\Checkout\CheckoutService;
 use AsterMD\Storefront\Checkout\CheckoutViewModel;
+use AsterMD\Storefront\Checkout\Totals;
 use AsterMD\Storefront\Journey\CartStore;
 use AsterMD\Storefront\Payment\PaymentCredential;
 use AsterMD\Storefront\Support\RequestContext;
@@ -28,13 +29,18 @@ use Slim\Views\Twig;
  * service enforces everywhere else.
  *
  * **Every sub-action is a native form post that carries the whole form**
- * (`[27.10]`): a bump toggle, a promo apply, a promo remove and a plan switch
- * each repost the buyer's typed contact details, store them in journey state
+ * (`[27.10]`): a bump toggle, a promo apply, a promo remove, a plan switch and
+ * a subscription switch each repost the buyer's typed contact details, store them in journey state
  * on the way through, and answer with a **303 See Other** back to
  * `/checkout/`. That is what lets the summary update without leaving the page
  * and without losing anything typed, and it needs no JavaScript to be correct
  * (`[8.7]`'s reasoning applied here). The 303 also means a reload replays the
  * GET rather than the mutation, exactly as `CartController`'s do.
+ *
+ * The two promo actions also answer a script. A request that accepts
+ * `application/json` gets the re-priced summary as JSON instead of the 303
+ * (see {@see self::pricing()}): theme/js/checkout.js applies a code without
+ * a reload, and the figures it shows are still the server's.
  *
  * `submit()` is the one method that does not always redirect. A decline, a
  * geo block and a failed validation all re-render the page at 200 with the
@@ -160,6 +166,10 @@ final class CheckoutController
             RequestContext::fromRequest($request),
         );
 
+        if (self::wantsJson($request)) {
+            return self::pricing($response, $this->checkout->view(), $outcome->accepted, $outcome->notice);
+        }
+
         if ($outcome->notice !== null) {
             $this->carts->flash($outcome->notice);
         }
@@ -173,6 +183,10 @@ final class CheckoutController
         $body = (array) ($request->getParsedBody() ?? []);
         $this->checkout->rememberBuyer(BuyerDetails::fromSubmitted($body));
         $this->checkout->removePromotion();
+
+        if (self::wantsJson($request)) {
+            return self::pricing($response, $this->checkout->view(), true, null);
+        }
 
         return self::redirect($response, self::CHECKOUT_PATH);
     }
@@ -198,6 +212,33 @@ final class CheckoutController
         }
 
         $outcome = $this->checkout->choosePlan($slug, $variantId);
+
+        if ($outcome->notice !== null) {
+            $this->carts->flash($outcome->notice);
+        }
+
+        return self::redirect($response, self::CHECKOUT_PATH);
+    }
+
+    /**
+     * `[12.4]`: switching the subscription plan re-prices the line it names.
+     *
+     * Each button posts `subscription[<slug>]=<plan>` for the same reason the
+     * plan picker names its line: an order may carry several.
+     */
+    public function subscription(ServerRequestInterface $request, ResponseInterface $response): ResponseInterface
+    {
+        $body = (array) ($request->getParsedBody() ?? []);
+        $this->checkout->rememberBuyer(BuyerDetails::fromSubmitted($body));
+
+        $slug = '';
+        $planId = '';
+        if (is_array($body['subscription'] ?? null) && count($body['subscription']) === 1) {
+            $slug = self::text(array_key_first($body['subscription']));
+            $planId = self::text(reset($body['subscription']));
+        }
+
+        $outcome = $this->checkout->chooseSubscription($slug, $planId);
 
         if ($outcome->notice !== null) {
             $this->carts->flash($outcome->notice);
@@ -302,6 +343,67 @@ final class CheckoutController
     private static function text(mixed $value): string
     {
         return is_string($value) ? trim($value) : '';
+    }
+
+    /** A script asking for the answer as data rather than a page to go to. */
+    private static function wantsJson(ServerRequestInterface $request): bool
+    {
+        return str_contains($request->getHeaderLine('Accept'), 'application/json');
+    }
+
+    /**
+     * The summary a discount code changes, as JSON: each line with its share of
+     * the discount, and the totals.
+     *
+     * Every figure is the one the page would render -- the same view model,
+     * formatted by the same {@see Totals::money()} -- so the script only puts
+     * text in place and never does arithmetic of its own. `notice` is what the
+     * code came back with, said here rather than flashed, because no page load
+     * follows to show a flash; `accepted` is whether that is good news, so the
+     * script shows it as a confirmation or as the box's error. `applied` is a
+     * different question -- whether a code is on the order now -- and a refused
+     * second code can leave the first one applied.
+     */
+    private static function pricing(
+        ResponseInterface $response,
+        CheckoutViewModel $view,
+        bool $accepted,
+        ?string $notice,
+    ): ResponseInterface
+    {
+        $promotion = $view->promotion;
+        $lines = array_map(static fn (array $line): array => [
+            'slug' => $line['slug'],
+            'name' => $line['name'],
+            'quantity' => $line['quantity'],
+            'line_total_cents' => $line['line_total_cents'],
+            'line_total' => Totals::money($line['line_total_cents']),
+            'discount_cents' => $line['discount_cents'],
+            'discount' => Totals::money($line['discount_cents']),
+            'total_cents' => $line['total_cents'],
+            'total' => Totals::money($line['total_cents']),
+        ], $view->lines);
+
+        $response->getBody()->write((string) json_encode([
+            'accepted' => $accepted,
+            'applied' => $promotion !== null,
+            'notice' => $notice ?? $view->notice,
+            'promotion' => $promotion === null ? null : ['code' => $promotion->code],
+            'lines' => $lines,
+            'totals' => [
+                'currency' => $view->currency,
+                'subtotal_cents' => $view->totals->subtotalCents,
+                'subtotal' => Totals::money($view->totals->subtotalCents),
+                'discount_cents' => $view->totals->discountCents,
+                'discount' => Totals::money($view->totals->discountCents),
+                'total_cents' => $view->totals->totalCents,
+                'total' => Totals::money($view->totals->totalCents),
+            ],
+        ]));
+
+        return $response
+            ->withHeader('Content-Type', 'application/json')
+            ->withHeader('Cache-Control', 'no-store');
     }
 
     private static function redirect(ResponseInterface $response, string $path): ResponseInterface

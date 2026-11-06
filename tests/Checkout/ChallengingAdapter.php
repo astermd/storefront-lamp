@@ -14,6 +14,7 @@ use AsterMD\Storefront\Payment\PaymentAdapter;
 use AsterMD\Storefront\Payment\PaymentCredential;
 use AsterMD\Storefront\Payment\PlacementOutcome;
 use AsterMD\Storefront\Payment\PromotionQuote;
+use AsterMD\Storefront\Payment\SettlementMode;
 
 /**
  * An adapter whose every placement is challenged by the buyer's bank, and
@@ -29,6 +30,12 @@ final class ChallengingAdapter implements PaymentAdapter
     public const string CLIENT_ACTION = 'pi_challenge_secret_never_stored';
 
     public int $placements = 0;
+
+    /** The order the last placement was asked for, so a case can read what the checkout assembled. */
+    public ?OrderEnvelope $placed = null;
+
+    /** What this adapter settles every order as, standing in for a provider that narrows a hold; null honours the order's own. */
+    public ?SettlementMode $settlesAs = null;
 
     /** @var list<PlacementOutcome> */
     private array $resumes = [];
@@ -56,8 +63,14 @@ final class ChallengingAdapter implements PaymentAdapter
     public function place(OrderEnvelope $order, PaymentCredential $credential): PlacementOutcome
     {
         ++$this->placements;
+        $this->placed = $order;
 
         return PlacementOutcome::pendingAction(self::REFERENCE, '', 'requires_action', self::CLIENT_ACTION);
+    }
+
+    public function settlementFor(OrderEnvelope $order): SettlementMode
+    {
+        return $this->settlesAs ?? $order->settlement;
     }
 
     public function resume(string $reference): PlacementOutcome

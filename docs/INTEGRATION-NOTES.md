@@ -877,6 +877,23 @@ fails so Stripe retries — for up to three days. Every declined storefront
 attempt is such a PaymentIntent. That is the EMR's to change; the storefront
 cannot avoid creating one per attempt.
 
+### 35. A plan says whether its first payment is held, and the EMR never reads it
+
+A subscription plan's first payment is its first `charge` step due on day 0
+that captures nothing. That step's `payment_mode` is `pre_auth` or
+`charge_now`, and `charge_now` is the subscription engine's default when the
+key is absent. Nothing in the EMR reads it to decide how the checkout payment is
+taken. Sales reads it only to take `allow_coupons` from the capturing step.
+Since the EMR's own checkout was removed, the storefront that creates the
+PaymentIntent is the only thing that can honour it. `theme:sync` therefore
+writes it onto each catalog plan as `settlement`.
+
+The hold is still captured the way item 33 describes, when the doctor completes
+the case. The plan's own capturing step (`captures_step_id`) does not capture
+it. Several plans may sell one variant: the engine has no uniqueness rule, and
+channel details lists every assigned plan. There is no cadence field to show a
+buyer. The plan's `display_name` and `description` are all there is.
+
 ---
 
 ## What to take from all of this

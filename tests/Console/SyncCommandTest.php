@@ -430,8 +430,74 @@ final class SyncCommandTest extends TestCase
         self::assertNull($this->syncedPlanOn('vrio', $variantId));
     }
 
+    /**
+     * A variant several plans sell is put on every one of them, each saying
+     * whether checkout holds its first payment or takes it -- the plan's
+     * first charge's `payment_mode`, which nothing else carries to checkout.
+     */
+    public function testEveryPlanSellingAVariantIsSyncedWithHowItsFirstPaymentSettles(): void
+    {
+        $variantId = '6a1c28245f315cee0e41c344';
+        $held = [
+            'plan_id' => '6adf4668a103373c607b85a2',
+            'plan' => [
+                '_id' => '6adf4668a103373c607b85a2',
+                'name' => 'tadalafil-quarterly',
+                'display_name' => 'Tadalafil — every 3 months',
+                'description' => 'Held until your doctor approves',
+                'product_id' => '6a1c28245f315cee0e41c346',
+                'steps' => [
+                    [
+                        'step_id' => 's1',
+                        'type' => 'shipment',
+                        'schedule' => ['start_day' => 0, 'recurrence' => 'ongoing', 'interval_days' => 90, 'occurrence_count' => 1],
+                        'items_by_cycle' => [['items' => [[
+                            'product_id' => '6a1c28245f315cee0e41c346',
+                            'variant_id' => $variantId,
+                            'price_cents' => 27000,
+                            'quantity' => 1,
+                        ]]]],
+                    ],
+                    [
+                        'step_id' => 'hold',
+                        'type' => 'charge',
+                        'schedule' => ['start_day' => 0, 'recurrence' => 'once', 'interval_days' => 0, 'occurrence_count' => 1],
+                        'payment_mode' => 'pre_auth',
+                        'amount_source' => 'fixed',
+                        'amount_cents' => 27000,
+                    ],
+                ],
+            ],
+        ];
+
+        $variant = $this->syncedVariant('stripe', $variantId, [$held]);
+
+        self::assertSame('6adf4668a103373c607b85a1', $variant['plan']['id'] ?? null, 'the lower id is still the default');
+        self::assertSame(9900, $variant['price_cents']);
+        self::assertSame(['6adf4668a103373c607b85a1', '6adf4668a103373c607b85a2'], array_column($variant['plans'] ?? [], 'id'));
+        self::assertSame(['capture', 'authorize'], array_column($variant['plans'] ?? [], 'settlement'));
+        self::assertSame('Held until your doctor approves', $variant['plans'][1]['description'] ?? null);
+        self::assertSame(27000, $variant['plans'][1]['first_payment_cents'] ?? null);
+    }
+
     /** @return array{0: string, 1: int, 2: mixed}|null the plan id, the variant's price and its list price */
     private function syncedPlanOn(string $providerCategory, string $variantId): ?array
+    {
+        $variant = $this->syncedVariant($providerCategory, $variantId);
+
+        return isset($variant['plan'])
+            ? [$variant['plan']['id'], $variant['price_cents'], $variant['list_price_cents']]
+            : null;
+    }
+
+    /**
+     * Syncs the fixture channel with a monthly plan selling the variant, plus
+     * any further subscriptions, and returns the variant as it was written.
+     *
+     * @param list<array<string, mixed>> $moreSubscriptions
+     * @return array<string, mixed>
+     */
+    private function syncedVariant(string $providerCategory, string $variantId, array $moreSubscriptions = []): array
     {
         $envelope = $this->fixtureEnvelope();
         $envelope['data']['payment_processor']['provider_category'] = $providerCategory;
@@ -463,7 +529,7 @@ final class SyncCommandTest extends TestCase
                     ],
                 ],
             ],
-        ]];
+        ], ...$moreSubscriptions];
 
         $fake = new FakeEmrHttpClient([
             '/v1/auth/api-credentials/token' => $this->tokenRoute(),
@@ -478,9 +544,7 @@ final class SyncCommandTest extends TestCase
         foreach ($catalog['products'] as $product) {
             foreach ($product['variants'] as $variant) {
                 if ((string) $variant['id'] === $variantId) {
-                    return isset($variant['plan'])
-                        ? [$variant['plan']['id'], $variant['price_cents'], $variant['list_price_cents']]
-                        : null;
+                    return $variant;
                 }
             }
         }

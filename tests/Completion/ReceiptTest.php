@@ -344,6 +344,53 @@ final class ReceiptTest extends TestCase
         ];
     }
 
+    public function testASeparateBillingAddressIsKeptOnTheReceiptAndSurvivesStorage(): void
+    {
+        $buyer = self::buyer() + [
+            'billing_different' => 'on',
+            'billing_first_name' => 'Sam',
+            'billing_last_name' => 'Okafor',
+            'billing_address_line' => '12 Harbor Street',
+            'billing_city' => 'Seattle',
+            'billing_territory' => 'WA',
+            'billing_postal_code' => '98101',
+        ];
+        self::assertNotSame($buyer['address_line'], $buyer['billing_address_line'], 'billing under test must differ from shipping');
+
+        $receipt = Receipt::fromOrderRows([self::row('34788', 'placed', amountCents: 12000)], $buyer, 'USD');
+
+        $expected = [
+            'name' => 'Sam Okafor',
+            'address_line' => '12 Harbor Street',
+            'city' => 'Seattle',
+            'territory' => 'WA',
+            'postal_code' => '98101',
+            'country' => '',
+        ];
+        self::assertSame($expected, $receipt->billing);
+        self::assertSame('1 Nightingale Way', $receipt->shipping['address_line']);
+        self::assertSame($expected, Receipt::fromArray($receipt->toArray())->billing);
+    }
+
+    public function testBillingFieldsLeftInTheFormButUntickedNeverReachTheReceipt(): void
+    {
+        $receipt = Receipt::fromOrderRows(
+            [self::row('34788', 'placed', amountCents: 12000)],
+            self::buyer() + ['billing_address_line' => '12 Harbor Street'],
+            'USD',
+        );
+
+        self::assertSame([], $receipt->billing);
+    }
+
+    public function testAReceiptStoredBeforeBillingExistedReadsBackAsBilledToShipping(): void
+    {
+        $stored = Receipt::fromOrderRows([self::row('34788', 'placed', amountCents: 12000)], self::buyer(), 'USD')->toArray();
+        unset($stored['billing']);
+
+        self::assertSame([], Receipt::fromArray($stored)->billing);
+    }
+
     /** @return array<string, string> as JourneyState::$buyer holds it */
     private static function buyer(): array
     {

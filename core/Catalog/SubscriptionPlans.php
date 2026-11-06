@@ -6,6 +6,8 @@ declare(strict_types=1);
 
 namespace AsterMD\Storefront\Catalog;
 
+use AsterMD\Storefront\Payment\SettlementMode;
+
 /**
  * Pure transform: the `subscriptions` of an EMR Channel Details response ->
  * the plan rows {@see CatalogBuilder::build()} sells variants on.
@@ -21,6 +23,11 @@ namespace AsterMD\Storefront\Catalog;
  * in step: a figure that differs from the EMR's is a discount the EMR prices
  * on a different total.
  *
+ * Each row also says whether that first payment is held or taken
+ * ({@see self::settlement()}). The EMR never reads that off the plan itself:
+ * the storefront decides when it creates the payment, so this row is the only
+ * place the plan's answer reaches the checkout.
+ *
  * A plan that names no product, or whose first payment cannot be priced, is
  * left out rather than repaired: a plan the storefront cannot price is one it
  * must not sell.
@@ -34,7 +41,7 @@ final class SubscriptionPlans
 
     /**
      * @param array<string, mixed> $channelData the `data` subtree of a Channel Details response
-     * @return list<array{plan_id: string, name: string, display_name: string, product_id: string, variant_id: string, first_payment_cents: int, allow_coupons: bool}>
+     * @return list<array{plan_id: string, name: string, display_name: string, description: string, product_id: string, variant_id: string, first_payment_cents: int, allow_coupons: bool, settlement: string}>
      */
     public static function fromChannelDetails(array $channelData): array
     {
@@ -60,10 +67,12 @@ final class SubscriptionPlans
                 'plan_id' => $id,
                 'name' => $name,
                 'display_name' => $displayName,
+                'description' => is_string($plan['description'] ?? null) ? $plan['description'] : '',
                 'product_id' => $ref['product_id'],
                 'variant_id' => $ref['variant_id'],
                 'first_payment_cents' => $payment['amount_cents'],
                 'allow_coupons' => $payment['allow_coupons'],
+                'settlement' => self::settlement($plan),
             ];
         }
 
@@ -123,15 +132,7 @@ final class SubscriptionPlans
     {
         $steps = self::rows($plan['steps'] ?? null);
 
-        $step = null;
-        foreach ($steps as $candidate) {
-            $schedule = is_array($candidate['schedule'] ?? null) ? $candidate['schedule'] : [];
-            if (($candidate['type'] ?? null) === 'charge' && self::num($schedule['start_day'] ?? null) === 0.0
-                && empty($candidate['captures_step_id'])) {
-                $step = $candidate;
-                break;
-            }
-        }
+        $step = self::firstChargeStep($steps);
         if ($step === null) {
             return ['amount_cents' => 0, 'allow_coupons' => true];
         }
@@ -182,6 +183,46 @@ final class SubscriptionPlans
         }
 
         return self::wholeCents($amount) ? ['amount_cents' => (int) $amount, 'allow_coupons' => $allowCoupons] : null;
+    }
+
+    /**
+     * Whether the plan holds its first payment or takes it, as a
+     * {@see SettlementMode} value: `authorize` when the charge that is the
+     * first payment ({@see self::firstPayment()}) is the engine's `pre_auth`,
+     * `capture` for its `charge_now` -- the engine's default, so a step that
+     * names no mode takes the money -- and for a plan that charges nothing at
+     * checkout, which has nothing to hold.
+     *
+     * @param array<string, mixed> $plan
+     */
+    public static function settlement(array $plan): string
+    {
+        $step = self::firstChargeStep(self::rows($plan['steps'] ?? null));
+
+        return ($step['payment_mode'] ?? null) === 'pre_auth'
+            ? SettlementMode::Authorize->value
+            : SettlementMode::Capture->value;
+    }
+
+    /**
+     * The charge that is the plan's first payment: the first charge step, in
+     * step order, due on day 0 that does not capture a pre-auth. Null when
+     * the plan charges nothing at checkout.
+     *
+     * @param list<array<string, mixed>> $steps
+     * @return array<string, mixed>|null
+     */
+    private static function firstChargeStep(array $steps): ?array
+    {
+        foreach ($steps as $candidate) {
+            $schedule = is_array($candidate['schedule'] ?? null) ? $candidate['schedule'] : [];
+            if (($candidate['type'] ?? null) === 'charge' && self::num($schedule['start_day'] ?? null) === 0.0
+                && empty($candidate['captures_step_id'])) {
+                return $candidate;
+            }
+        }
+
+        return null;
     }
 
     /**

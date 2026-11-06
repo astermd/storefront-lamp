@@ -39,6 +39,13 @@ return [
     // deployment marked hold-until-event is a charge nobody asked for, and only
     // that direction needs a refund to undo.
     //
+    // A line sold on an EMR subscription plan is the exception: neither this
+    // nor the product's key applies to it. The plan's first charge says
+    // whether its first payment is held ('pre_auth') or taken ('charge_now'),
+    // `theme:sync` writes that onto the plan, and the line settles as the plan
+    // says — in either direction. Other lines in the same cart still settle as
+    // above, and authorize still wins the cart.
+    //
     // The provider has to be able to honour it. An adapter that does not
     // declare authorize-and-capture support refuses an authorize order before
     // the call rather than charging it; `bin/console config:validate` reports

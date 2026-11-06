@@ -175,11 +175,78 @@ final class SubscriptionPlansTest extends TestCase
             'plan_id' => self::PLAN_ID,
             'name' => 'tadalafil-monthly',
             'display_name' => 'Tadalafil — monthly',
+            'description' => '',
             'product_id' => self::PRODUCT_ID,
             'variant_id' => self::VARIANT_ID,
             'first_payment_cents' => 9900,
             'allow_coupons' => false,
+            'settlement' => 'capture',
         ]], $rows);
+    }
+
+    public function testARowCarriesThePlansDescriptionAndWhetherItHoldsItsFirstPayment(): void
+    {
+        $plan = self::plan(
+            [
+                self::shipment('s1', [[self::item(2500)]], self::monthly()),
+                ['step_id' => 'c1', 'type' => 'charge', 'schedule' => self::monthly(), 'payment_mode' => 'pre_auth', 'amount_source' => 'fixed', 'amount_cents' => 9900],
+            ],
+            ['description' => 'Billed every 30 days'],
+        );
+
+        $rows = SubscriptionPlans::fromChannelDetails(['subscriptions' => [['plan_id' => self::PLAN_ID, 'plan' => $plan]]]);
+
+        self::assertCount(1, $rows);
+        self::assertSame('Billed every 30 days', $rows[0]['description']);
+        self::assertSame('authorize', $rows[0]['settlement']);
+    }
+
+    public function testAPreAuthFirstChargeHoldsTheFirstPayment(): void
+    {
+        $plan = self::plan([
+            ['step_id' => 'hold', 'type' => 'charge', 'schedule' => self::monthly(0, 'once'), 'payment_mode' => 'pre_auth', 'amount_source' => 'fixed', 'amount_cents' => 12000],
+            ['step_id' => 'take', 'type' => 'charge', 'schedule' => self::monthly(0, 'once'), 'captures_step_id' => 'hold'],
+        ]);
+
+        self::assertSame('authorize', SubscriptionPlans::settlement($plan));
+    }
+
+    public function testAChargeNowFirstChargeTakesTheFirstPayment(): void
+    {
+        $plan = self::plan([
+            ['step_id' => 'c1', 'type' => 'charge', 'schedule' => self::monthly(), 'payment_mode' => 'charge_now', 'amount_source' => 'fixed', 'amount_cents' => 9900],
+        ]);
+
+        self::assertSame('capture', SubscriptionPlans::settlement($plan));
+    }
+
+    public function testAFirstChargeThatNamesNoModeTakesTheMoneyAsTheEngineDoes(): void
+    {
+        $plan = self::plan([
+            ['step_id' => 'c1', 'type' => 'charge', 'schedule' => self::monthly(), 'amount_source' => 'fixed', 'amount_cents' => 9900],
+        ]);
+
+        self::assertSame('capture', SubscriptionPlans::settlement($plan));
+    }
+
+    public function testOnlyTheFirstPaymentsChargeDecidesNotALaterPreAuth(): void
+    {
+        // A pre-auth due on day 30 is a renewal's business; checkout takes the day-0 charge.
+        $plan = self::plan([
+            ['step_id' => 'c1', 'type' => 'charge', 'schedule' => self::monthly(), 'amount_source' => 'fixed', 'amount_cents' => 9900],
+            ['step_id' => 'c2', 'type' => 'charge', 'schedule' => self::monthly(30), 'payment_mode' => 'pre_auth', 'amount_source' => 'fixed', 'amount_cents' => 9900],
+        ]);
+
+        self::assertSame('capture', SubscriptionPlans::settlement($plan));
+    }
+
+    public function testAPlanThatChargesNothingAtCheckoutHasNothingToHold(): void
+    {
+        $plan = self::plan([
+            ['step_id' => 'c1', 'type' => 'charge', 'schedule' => self::monthly(14), 'payment_mode' => 'pre_auth', 'amount_source' => 'fixed', 'amount_cents' => 9900],
+        ]);
+
+        self::assertSame('capture', SubscriptionPlans::settlement($plan));
     }
 
     public function testAChannelWithoutSubscriptionsSellsNoPlans(): void

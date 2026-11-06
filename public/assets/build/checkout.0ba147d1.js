@@ -5,10 +5,13 @@
  * HTML form, and each sub-action (bump, promo, plan) is a submit button that
  * redirects it with `formaction`, so every one of them posts what is typed in
  * the boxes right now with no script involved ([8.7], [27.10]). What this
- * script adds on top is two things:
+ * script adds on top is three things:
  *
  * - the credit-card fields show and hide with the selected payment method,
  *   which is the mockup's own behaviour kept verbatim;
+ * - a discount code is applied or removed without a reload: the same post,
+ *   sent with `fetch`, answered with the re-priced lines and totals as JSON
+ *   ([13.11]);
  * - a submitted button goes busy and stops answering a second click, which is
  *   the content-loader state cart.js already establishes as this theme's
  *   pattern.
@@ -124,6 +127,160 @@
   // hunting for a way to retry.
   var RELEASE_AFTER_MS = 30000;
 
+  // ---- Discount code without a reload ------------------------------------
+  // Apply and Remove post the form exactly as the native button would, asking
+  // for JSON: /checkout/promo/ then answers with every line's price after the
+  // code and the totals, already formatted, instead of a 303. This puts that
+  // text in place and does no arithmetic, so what is shown is the server's;
+  // Pay Now prices the code again on the server whatever is shown here.
+  //
+  // While it waits, the button pressed goes busy the way Pay Now does and the
+  // figures about to change are dimmed. What the code came back with is shown
+  // under the box: the theme's circle-check line when it applied, the
+  // checkout's inline field error when it did not.
+  //
+  // Anything unexpected -- a network error, a status that is not 200, an
+  // answer that is not the summary -- falls back to the native post, which is
+  // what the page did before this existed.
+  var promoBusy = false;
+  var native = false;
+  var canPromo = typeof window.fetch === 'function' && typeof form.requestSubmit === 'function';
+
+  function text(selector, value, scope) {
+    var node = (scope || form).querySelector(selector);
+    if (node) node.textContent = value;
+  }
+
+  function show(selector, visible) {
+    var node = form.querySelector(selector);
+    if (node) node.hidden = !visible;
+  }
+
+  /**
+   * One message under the code box, or none: `kind` is 'success' or 'error'.
+   * The error is tied to the box as the checkout's other field errors are.
+   */
+  function message(kind, value) {
+    var box = document.getElementById('checkout-discount');
+    var error = kind === 'error' && !!value;
+
+    text('[data-promo-message-text]', kind === 'success' ? value : '');
+    show('[data-promo-message="success"]', kind === 'success' && !!value);
+    text('[data-promo-message="error"]', error ? value : '');
+    show('[data-promo-message="error"]', error);
+
+    if (!box) return;
+    if (error) {
+      box.setAttribute('aria-invalid', 'true');
+      box.setAttribute('aria-describedby', 'checkout-error-discount_code');
+    } else {
+      box.removeAttribute('aria-invalid');
+      box.removeAttribute('aria-describedby');
+    }
+  }
+
+  /** The Apply or Remove button and the figures it changes, busy or not. */
+  function busy(button, on) {
+    var label = button && button.querySelector('[data-busy-text]');
+    if (button && label) {
+      if (on) {
+        button.setAttribute('data-idle-label', label.textContent);
+        label.textContent = button.getAttribute('data-busy-label') || label.textContent;
+        button.setAttribute('aria-busy', 'true');
+        button.setAttribute('aria-disabled', 'true');
+      } else {
+        label.textContent = button.getAttribute('data-idle-label') || label.textContent;
+        button.removeAttribute('aria-busy');
+        button.removeAttribute('aria-disabled');
+      }
+    }
+
+    form.querySelectorAll('[data-promo-busy]').forEach(function (node) {
+      if (on) node.setAttribute('aria-busy', 'true');
+      else node.removeAttribute('aria-busy');
+    });
+  }
+
+  function render(pricing) {
+    pricing.lines.forEach(function (line) {
+      var row = form.querySelector('[data-line="' + CSS.escape(line.slug) + '"]');
+      if (!row) return;
+      text('[data-line-total]', line.total, row);
+      text('[data-line-original]', line.line_total, row);
+      row.querySelector('[data-line-original]').hidden = line.discount_cents === 0;
+    });
+
+    var code = pricing.promotion ? pricing.promotion.code : '';
+    text('[data-promo-code]', code);
+    show('[data-promo-applied]', pricing.applied);
+    show('[data-promo-entry]', !pricing.applied);
+
+    text('[data-total-subtotal]', pricing.totals.subtotal);
+    text('[data-total-discount]', '\u2212' + pricing.totals.discount);
+    text('[data-total-discount-code]', code ? ' \u2022 ' + code : '');
+    show('[data-total-discount-row]', pricing.totals.discount_cents > 0);
+    text('[data-total]', pricing.totals.total);
+
+    message(pricing.accepted ? 'success' : 'error', pricing.notice || '');
+
+    // The provider's card form is told the new amount (payment-<provider>.js).
+    var surface = document.getElementById('payment-provider-surface');
+    if (surface) surface.setAttribute('data-amount', String(pricing.totals.total_cents));
+    form.dispatchEvent(new CustomEvent('checkout:totals', { detail: { amountCents: pricing.totals.total_cents } }));
+  }
+
+  function promo(submitter) {
+    var url = submitter.formAction;
+    var box = document.getElementById('checkout-discount');
+    // Enter in the box arrives through the hidden default button, so the
+    // spinner goes on the visible button for the same action.
+    var button = /\/remove\/?$/.test(url)
+      ? form.querySelector('[data-promo-applied] button[type="submit"]')
+      : form.querySelector('[data-promo-entry] button[type="submit"]');
+
+    promoBusy = true;
+    message(null, '');
+    busy(button, true);
+
+    function settle() {
+      promoBusy = false;
+      busy(button, false);
+    }
+
+    fetch(url, {
+      method: 'POST',
+      body: new FormData(form),
+      headers: { 'Accept': 'application/json', 'X-Requested-With': 'fetch' },
+      credentials: 'same-origin'
+    }).then(function (response) {
+      if (!response.ok) return Promise.reject(response.status);
+      return response.json();
+    }).then(function (pricing) {
+      if (!pricing || !pricing.totals || !Array.isArray(pricing.lines)) {
+        return Promise.reject('not the summary');
+      }
+
+      settle();
+      render(pricing);
+
+      // An applied code moves the buyer to its Remove button and empties the
+      // box behind it. A refused one keeps what was typed, so a typo is one
+      // edit away; a removed one brings the empty box back. Either way the box
+      // takes the focus.
+      if (pricing.applied) {
+        if (box) box.value = '';
+        var remove = form.querySelector('[data-promo-applied] button[type="submit"]');
+        if (remove) remove.focus();
+      } else if (box) {
+        box.focus();
+      }
+    }).catch(function () {
+      settle();
+      native = true;
+      form.requestSubmit(submitter);
+    });
+  }
+
   form.addEventListener('submit', function (event) {
     // Which button was pressed is the whole question here, and `submitter` is
     // the only thing that answers it. Where it is missing the guard sits out
@@ -144,6 +301,13 @@
       if (discount && submitter.getAttribute('aria-hidden') !== 'true') discount.focus();
       return;
     }
+
+    if (/\/checkout\/promo(\/remove)?\/?$/.test(formAction) && canPromo && !native) {
+      event.preventDefault();
+      if (!promoBusy) promo(submitter);
+      return;
+    }
+    native = false;
 
     if (submitter === pay) {
       // Second click on an already-busy Pay Now: swallowed here rather than by

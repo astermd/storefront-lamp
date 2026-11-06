@@ -200,6 +200,74 @@
         </div>
       </div>
 
+      <!-- ==================== BILLING ADDRESS ==================== -->
+      {# Unchecked, billing is the delivery address above. The fields show and
+         hide on `:has()` rather than a script, so the page still works with
+         no JavaScript, like every other control on it. #}
+      {% set billing_different = checkout.prefill.billing_different|default('') == 'on' %}
+      <div class="group mt-8">
+        <h2 class="font-heading text-base font-bold sm:text-lg text-heading">Billing address</h2>
+        <label class="mt-4 flex cursor-pointer items-center gap-3">
+          <input type="checkbox" id="checkout-billing-different" name="billing_different" value="on" class="peer sr-only"{% if billing_different %} checked{% endif %} />
+          <span class="flex size-4 shrink-0 items-center justify-center rounded border border-border-darker bg-background transition-colors peer-checked:border-primary peer-checked:bg-primary peer-focus-visible:ring-2 peer-focus-visible:ring-primary">
+            <i data-lucide="check" class="size-3 text-background" stroke-width="3"></i>
+          </span>
+          <span class="text-sm text-body">Use a different billing address</span>
+        </label>
+
+        <div id="checkout-billing-fields" class="mt-4 hidden flex-col gap-4 group-has-[#checkout-billing-different:checked]:flex">
+          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div class="relative">
+              <input type="text" id="checkout-billing-first-name" name="billing_first_name" value="{{ checkout.prefill.billing_first_name|default('') }}" autocomplete="billing given-name" placeholder=" " class="field-input w-full rounded-sm border border-border bg-background px-4 text-sm text-heading"
+                {% if checkout.errors.billing_first_name|default(null) %}aria-invalid="true" aria-describedby="checkout-error-billing_first_name"{% endif %} />
+              <label for="checkout-billing-first-name" class="field-label">Billing first name</label>
+              {% include 'partials/checkout/field-error.twig' with { field: 'billing_first_name' } %}
+            </div>
+            <div class="relative">
+              <input type="text" id="checkout-billing-last-name" name="billing_last_name" value="{{ checkout.prefill.billing_last_name|default('') }}" autocomplete="billing family-name" placeholder=" " class="field-input w-full rounded-sm border border-border bg-background px-4 text-sm text-heading"
+                {% if checkout.errors.billing_last_name|default(null) %}aria-invalid="true" aria-describedby="checkout-error-billing_last_name"{% endif %} />
+              <label for="checkout-billing-last-name" class="field-label">Billing last name</label>
+              {% include 'partials/checkout/field-error.twig' with { field: 'billing_last_name' } %}
+            </div>
+          </div>
+
+          <div class="relative">
+            <input type="text" id="checkout-billing-address" name="billing_address_line" value="{{ checkout.prefill.billing_address_line|default('') }}" autocomplete="billing street-address" placeholder=" " class="field-input w-full rounded-sm border border-border bg-background px-4 text-sm text-heading"
+              {% if checkout.errors.billing_address_line|default(null) %}aria-invalid="true" aria-describedby="checkout-error-billing_address_line"{% endif %} />
+            <label for="checkout-billing-address" class="field-label">Billing address</label>
+            {% include 'partials/checkout/field-error.twig' with { field: 'billing_address_line' } %}
+          </div>
+
+          <div class="relative">
+            <input type="text" id="checkout-billing-city" name="billing_city" value="{{ checkout.prefill.billing_city|default('') }}" autocomplete="billing address-level2" placeholder=" " class="field-input w-full rounded-sm border border-border bg-background px-4 text-sm text-heading"
+              {% if checkout.errors.billing_city|default(null) %}aria-invalid="true" aria-describedby="checkout-error-billing_city"{% endif %} />
+            <label for="checkout-billing-city" class="field-label">Billing city</label>
+            {% include 'partials/checkout/field-error.twig' with { field: 'billing_city' } %}
+          </div>
+
+          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div class="relative">
+              <label for="checkout-billing-state" class="sr-only">Billing state</label>
+              <select id="checkout-billing-state" name="billing_territory" autocomplete="billing address-level1" class="focus-ring-primary h-12 w-full appearance-none rounded-sm border border-border bg-background px-4 py-0 pr-10 text-sm text-heading"
+                {% if checkout.errors.billing_territory|default(null) %}aria-invalid="true" aria-describedby="checkout-error-billing_territory"{% endif %}>
+                <option value="">Choose your state</option>
+                {% for code, name in territories %}
+                <option value="{{ code }}"{% if checkout.prefill.billing_territory|default('') == code %} selected{% endif %}>{{ name }}</option>
+                {% endfor %}
+              </select>
+              <i data-lucide="chevron-down" class="pointer-events-none absolute right-4 top-6 size-4 -translate-y-1/2 text-heading"></i>
+              {% include 'partials/checkout/field-error.twig' with { field: 'billing_territory' } %}
+            </div>
+            <div class="relative">
+              <input type="text" id="checkout-billing-postal" name="billing_postal_code" value="{{ checkout.prefill.billing_postal_code|default('') }}" autocomplete="billing postal-code" placeholder=" " class="field-input w-full rounded-sm border border-border bg-background px-4 text-sm text-heading"
+                {% if checkout.errors.billing_postal_code|default(null) %}aria-invalid="true" aria-describedby="checkout-error-billing_postal_code"{% endif %} />
+              <label for="checkout-billing-postal" class="field-label">Billing postal code</label>
+              {% include 'partials/checkout/field-error.twig' with { field: 'billing_postal_code' } %}
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- ==================== PAYMENT ==================== -->
       <h2 class="mt-8 font-heading text-base font-bold sm:text-lg text-heading">Payment</h2>
       <p class="mt-1 text-sm text-muted">All transactions are secure and encrypted.</p>
@@ -257,7 +325,7 @@
               <input type="text" id="checkout-card-name" autocomplete="cc-name" placeholder=" " class="field-input w-full rounded-sm border border-border bg-background px-4 text-sm text-heading" />
               <label for="checkout-card-name" class="field-label">Name on card</label>
             </div>
-            <p class="text-sm text-muted">Billing address is the delivery address above.</p>
+            <p class="text-sm text-muted">Billing address is the delivery address above unless you entered a different one.</p>
           </div>
         </div>
 
@@ -292,6 +360,10 @@
            from the public configuration the adapter declares, and posts back
            a token in `payment_token` instead of a card ([15.1], [15.4c]).
 
+           `data-settlement` is whether this order's money is taken or held,
+           as the adapter will settle it; the provider refuses a token
+           collected for the other one.
+
            `data-challenge` is present only while the buyer's bank is waiting
            for them to verify the payment ([14.22]); it is what the provider's
            script needs to run that step, so it is rendered into this page and
@@ -301,6 +373,7 @@
           data-client-config="{{ checkout.capabilities.clientConfig|json_encode }}"
           data-amount="{{ checkout.totals.totalCents }}"
           data-currency="{{ checkout.currency|lower }}"
+          data-settlement="{{ checkout.settlement }}"
           data-confirm-url="{{ url('/checkout/confirm') }}"
           {% if checkout.paymentChallenge %}data-challenge="{{ checkout.paymentChallenge }}"{% endif %}></div>
         <input type="hidden" name="payment_token" value="" data-payment-token />
@@ -380,7 +453,37 @@
             </span>
             <span>
               <span class="block text-sm font-semibold text-heading">{{ option.name }}</span>
-              <span class="block text-sm text-muted mt-1">Billed once</span>
+              <span class="block text-sm text-muted mt-1">{{ option.subscription ? 'Subscription' : 'Billed once' }}</span>
+            </span>
+          </span>
+          <span class="shrink-0 text-sm font-semibold text-heading">{{ option.price_cents|money }}</span>
+        </button>
+        {% endfor %}
+      </div>
+      {% endfor %}
+      {% endif %}
+
+      <!-- ==================== SUBSCRIPTION SELECTOR ==================== -->
+      {# The plans the chosen variant is sold on, under the variant picker so the
+         dose is chosen first. Each button names its own line as
+         `subscription[slug]`, as the variant picker's do. The price is the
+         plan's first payment: what this order charges, not what it renews at. #}
+      {% if checkout.subscriptionChoices %}
+      <h2 class="{{ checkout.planChoices ? 'mt-8' : '' }} font-heading text-base font-bold sm:text-lg text-heading">Select Subscription</h2>
+
+      {% for subscription in checkout.subscriptionChoices %}
+      <p class="{{ loop.first ? 'mt-0.5' : 'mt-6' }} text-xs text-muted">{{ subscription.name }}{% if subscription.variant_name %} · {{ subscription.variant_name }}{% endif %}</p>
+
+      <div class="mt-3.5 flex flex-col gap-2 rounded-md border border-border bg-background overflow-hidden" data-select-group>
+        {% for option in subscription.options %}
+        <button type="submit" formaction="{{ url('/checkout/subscription') }}" name="subscription[{{ subscription.slug }}]" value="{{ option.id }}" data-select-option aria-pressed="{{ option.id == subscription.chosen ? 'true' : 'false' }}" class="group flex w-full items-center justify-between gap-3 rounded-md border border-transparent p-3 text-left transition-colors hover:border-primary/40 aria-pressed:border-primary aria-pressed:bg-primary-light">
+          <span class="flex gap-3">
+            <span class="flex mt-1 w-[18px] h-[18px] shrink-0 items-center justify-center rounded-full border-2 border-border-darker group-aria-pressed:border-primary">
+              <span class="size-2 rounded-full group-aria-pressed:bg-primary"></span>
+            </span>
+            <span>
+              <span class="block text-sm font-semibold text-heading">{{ option.name }}</span>
+              <span class="block text-sm text-muted mt-1">{{ option.description ?: 'Subscription' }}</span>
             </span>
           </span>
           <span class="shrink-0 text-sm font-semibold text-heading">{{ option.price_cents|money }}</span>
@@ -395,7 +498,9 @@
       {% endif %}
 
       <!-- ==================== LINE ITEMS ==================== -->
-      <div class="mt-8 flex flex-col gap-4">
+      {# `data-promo-busy`: dimmed while a discount code is being applied by
+         script, the figures in it about to change (checkout.js). #}
+      <div data-promo-busy class="mt-8 flex flex-col gap-4 transition-opacity aria-busy:opacity-50">
         {% for line in checkout.lines %}
         <div class="flex items-center gap-3">
           <div class="relative shrink-0">
@@ -419,8 +524,16 @@
           </div>
           {# A free attachment shows at 0¢ rather than being hidden: a supply the
              buyer is receiving belongs on the summary whether or not it is
-             charged for ([7.14a]). #}
-          <p class="shrink-0 text-base font-medium text-heading">{{ line.line_total_cents|money }}</p>
+             charged for ([7.14a]).
+
+             A line the applied code discounts shows its price struck through
+             beside what it comes to after the discount. `data-line` and the
+             two hooks inside are what checkout.js updates when a code is
+             applied or removed without a reload. #}
+          <p class="shrink-0 text-right text-base font-medium text-heading" data-line="{{ line.slug }}">
+            <span data-line-original class="mr-1 text-sm font-normal text-muted line-through"{% if line.discount_cents == 0 %} hidden{% endif %}>{{ line.line_total_cents|money }}</span>
+            <span data-line-total>{{ line.total_cents|money }}</span>
+          </p>
         </div>
         {% endfor %}
       </div>
@@ -428,49 +541,72 @@
       <!-- ==================== DISCOUNT CODE ==================== -->
       {# [13.18], [14.4]: hidden outright when the active adapter declares no
          promotion support, rather than shown and failing at runtime. #}
+      {# Both states are rendered and one is hidden, so checkout.js can switch
+         between them when /checkout/promo/ answers it with JSON; with script
+         off the page is the same one state it always was. #}
       {% if checkout.capabilities.supportsPromotions %}
-      {% if checkout.promotion %}
-      <div class="mt-6 flex items-center justify-between gap-3 rounded-sm border border-border bg-background px-4 py-3">
-        <span class="text-sm text-heading">Discount <span class="font-semibold">{{ checkout.promotion.code }}</span> applied</span>
-        <button type="submit" formaction="{{ url('/checkout/promo/remove') }}" class="shrink-0 text-sm font-medium text-primary underline hover:text-primary-hover">Remove</button>
+      {# Apply and Remove go busy the way Pay Now does: `aria-busy` set by
+         checkout.js, styled by `aria-busy:`, the label swapped for
+         `data-busy-label`, and a spinner shown beside it. #}
+      <div data-promo-applied class="mt-6 flex items-center justify-between gap-3 rounded-sm border border-border bg-background px-4 py-3"{% if not checkout.promotion %} hidden{% endif %}>
+        <span class="text-sm text-heading">Discount <span class="font-semibold" data-promo-code>{{ checkout.promotion ? checkout.promotion.code }}</span> applied</span>
+        <button type="submit" formaction="{{ url('/checkout/promo/remove') }}" data-busy-label="Removing…" class="group flex shrink-0 items-center gap-1.5 text-sm font-medium text-primary underline hover:text-primary-hover aria-busy:cursor-progress aria-busy:no-underline">
+          <i data-lucide="loader-circle" class="hidden size-4 animate-spin group-aria-busy:block" aria-hidden="true"></i>
+          <span data-busy-text>Remove</span>
+        </button>
       </div>
-      {% else %}
-      <div class="mt-6 flex gap-3">
+      <div data-promo-entry class="mt-6 flex gap-3"{% if checkout.promotion %} hidden{% endif %}>
         <label for="checkout-discount" class="sr-only">Discount code or gift card</label>
         <input type="text" id="checkout-discount" name="discount_code" placeholder="Discount code or gift card" class="focus-ring-primary h-12 min-w-0 flex-1 rounded-sm border border-border bg-background px-4 py-0 text-sm text-heading placeholder:text-sm placeholder:text-body" />
-        <button type="submit" formaction="{{ url('/checkout/promo') }}" class="flex h-12 items-center justify-center shrink-0 rounded-sm border border-border bg-background px-6 text-base font-medium text-heading transition-colors hover:border-primary hover:text-primary">Apply</button>
+        <button type="submit" formaction="{{ url('/checkout/promo') }}" data-busy-label="Applying…" class="group flex h-12 items-center justify-center gap-2 shrink-0 rounded-sm border border-border bg-background px-6 text-base font-medium text-heading transition-colors hover:border-primary hover:text-primary aria-busy:cursor-progress aria-busy:opacity-75">
+          <i data-lucide="loader-circle" class="hidden size-4 animate-spin group-aria-busy:block" aria-hidden="true"></i>
+          <span data-busy-text>Apply</span>
+        </button>
       </div>
-      {% endif %}
+      {# What the code came back with when it was applied by script; a plain
+         post says it in the page's notice banner instead. The failure is the
+         checkout's own inline field error (partials/checkout/field-error.twig),
+         tied to the box the same way; the success is the theme's circle-check
+         line. checkout.js fills one and shows it. #}
+      <p data-promo-message="success" role="status" class="mt-2 flex items-center gap-1.5 text-sm font-medium text-heading" hidden>
+        <i data-lucide="circle-check" class="size-4 shrink-0 text-primary" aria-hidden="true"></i>
+        <span data-promo-message-text></span>
+      </p>
+      <p data-promo-message="error" id="checkout-error-discount_code" role="alert" class="mt-2 text-sm font-medium text-danger" hidden></p>
       {% endif %}
 
       <!-- ==================== TOTALS ==================== -->
       {# No shipping and no tax rows: [13.35] is a declared gap, so the total is
          exactly subtotal minus discount, in integer cents. #}
-      <div class="mt-6 flex flex-col gap-2 border-t border-border pt-6 text-[14px] text-heading">
+      <div data-promo-busy class="mt-6 flex flex-col gap-2 border-t border-border pt-6 text-[14px] text-heading transition-opacity aria-busy:opacity-50">
         <div class="flex items-center justify-between">
           <span>Subtotal • {{ checkout.itemCount }} item{{ checkout.itemCount == 1 ? '' : 's' }}</span>
-          <span>{{ checkout.totals.subtotalCents|money }}</span>
+          <span data-total-subtotal>{{ checkout.totals.subtotalCents|money }}</span>
         </div>
         <div class="flex items-center justify-between">
           <span>Consultation Fee</span>
           <span>Included</span>
         </div>
-        {% if checkout.totals.discountCents > 0 %}
-        <div class="flex items-center justify-between">
-          <span>Discount{% if checkout.promotion %} • {{ checkout.promotion.code }}{% endif %}</span>
-          <span>−{{ checkout.totals.discountCents|money }}</span>
+        <div data-total-discount-row class="flex items-center justify-between"{% if checkout.totals.discountCents == 0 %} hidden{% endif %}>
+          <span>Discount<span data-total-discount-code>{% if checkout.promotion %} • {{ checkout.promotion.code }}{% endif %}</span></span>
+          <span data-total-discount>−{{ checkout.totals.discountCents|money }}</span>
         </div>
-        {% endif %}
       </div>
-      <div class="mt-4 flex items-center justify-between border-t border-border pt-4">
+      <div data-promo-busy class="mt-4 flex items-center justify-between border-t border-border pt-4 transition-opacity aria-busy:opacity-50">
         <span class="text-base font-medium sm:text-lg text-heading">Total</span>
-        <span class="text-base font-medium sm:text-lg text-heading"><span class="mr-1 text-sm font-normal text-muted align-middle">{{ checkout.currency }}</span>{{ checkout.totals.totalCents|money }}</span>
+        <span class="text-base font-medium sm:text-lg text-heading"><span class="mr-1 text-sm font-normal text-muted align-middle">{{ checkout.currency }}</span><span data-total>{{ checkout.totals.totalCents|money }}</span></span>
       </div>
 
       <!-- ==================== PAYMENT AUTHORIZATION NOTICE ==================== -->
+      {# Only a subscription whose plan takes its first payment at once is told
+         it is charged today; every other order keeps the hold notice. #}
       <div class="mt-6 flex items-start gap-3 rounded-sm border border-primary bg-primary-light px-4 py-4">
         <i data-lucide="info" class="mt-0.5 size-5 shrink-0 text-primary"></i>
+        {% if checkout.paymentNotice == 'charge' %}
+        <p class="text-sm leading-relaxed text-heading">Your card will be charged today for the first payment of your subscription.</p>
+        {% else %}
         <p class="text-sm leading-relaxed text-heading">Payment authorization will be held; you will only be charged if approved and prescribed by a doctor.</p>
+        {% endif %}
       </div>
 
       <!-- ==================== ORDER BUMPS ==================== -->

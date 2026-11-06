@@ -38,6 +38,7 @@ final class ReceiptViewModel
      * @param list<string>                                                                                                        $declinedReferences orders that exist at the provider but were not charged
      * @param list<array{slug: string, name: string, kind: string, quantity: int, unit_price_cents: int, line_total_cents: int}>   $lines
      * @param array<string, string>                                                                                               $shipping           keyed as {@see Receipt::$shipping}
+     * @param array<string, string>                                                                                               $billing            keyed as {@see Receipt::$billing}; empty when billing was the shipping address
      */
     private function __construct(
         public readonly array $references,
@@ -68,6 +69,7 @@ final class ReceiptViewModel
          * it to compare against a spelling the payment layer owns.
          */
         public readonly bool $authorizedOnly = false,
+        public readonly array $billing = [],
     ) {
     }
 
@@ -103,6 +105,7 @@ final class ReceiptViewModel
             orderNumber: $receipt->references[0] ?? null,
             itemCount: $itemCount,
             authorizedOnly: $receipt->isAuthorizedOnly(),
+            billing: $receipt->billing,
         );
     }
 

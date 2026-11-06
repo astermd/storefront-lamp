@@ -7,6 +7,7 @@ namespace AsterMD\Storefront\Tests\Checkout;
 use AsterMD\Storefront\Checkout\CheckoutEventReporter;
 use AsterMD\Storefront\Checkout\CheckoutResult;
 use AsterMD\Storefront\Checkout\CheckoutService;
+use AsterMD\Storefront\Checkout\CheckoutViewModel;
 use AsterMD\Storefront\Checkout\ConsentRecord;
 use AsterMD\Storefront\Checkout\Consents;
 use AsterMD\Storefront\Checkout\IdempotencyKey;
@@ -183,6 +184,128 @@ final class CheckoutServiceTest extends TestCase
         self::assertSame('settlement_unsupported', $result->outcome->rawStatus);
         self::assertSame([], $this->transport->requests, 'the provider was never called');
         self::assertFalse($this->cartStore->cart()->isEmpty(), 'the buyer keeps their cart');
+    }
+
+    public function testASubscriptionWhosePlanHoldsItsFirstPaymentAuthorizesOnACaptureDeployment(): void
+    {
+        $service = $this->serviceThatPlaces();
+        $this->subscriptionCart('plan-hold');
+
+        $result = $service->submit($this->buyer(), $this->card(), ['terms' => 'on']);
+
+        self::assertTrue($result->outcome->isAuthorizedOnly());
+        self::assertSame('authorize', $this->transport->body(0)['action']);
+    }
+
+    public function testASubscriptionWhosePlanTakesItsFirstPaymentChargesOnAnAuthorizeDeployment(): void
+    {
+        $service = $this->serviceThatPlaces(settlement: SettlementMode::Authorize);
+        $this->subscriptionCart('plan-take');
+
+        $result = $service->submit($this->buyer(), $this->card(), ['terms' => 'on']);
+
+        self::assertTrue($result->outcome->isPlaced());
+        self::assertFalse($result->outcome->isAuthorizedOnly());
+        self::assertSame('process', $this->transport->body(0)['action']);
+    }
+
+    public function testTheOrderNamesThePlanTheBuyerChoseNotTheDefault(): void
+    {
+        $adapter = new ChallengingAdapter();
+        $service = $this->service(null, adapter: $adapter);
+        $this->subscriptionCart('plan-take');
+
+        $service->submit($this->buyer(), $this->card(), ['terms' => 'on']);
+
+        self::assertSame('plan-take', $adapter->placed?->lines[0]->planId);
+        self::assertSame(SettlementMode::Capture, $adapter->placed?->settlement);
+    }
+
+    public function testALineStoredBeforeSubscriptionsCouldBeChosenIsOrderedOnTheDefaultPlan(): void
+    {
+        // The default holds, so the adapter has to be one that can.
+        $adapter = new ChallengingAdapter();
+        $service = $this->service(null, adapter: new RedeclaredAdapter($adapter, null, false, supportsAuthorizeCapture: true));
+        $this->subscriptionCart(null);
+
+        $service->submit($this->buyer(), $this->card(), ['terms' => 'on']);
+
+        self::assertSame('plan-hold', $adapter->placed?->lines[0]->planId);
+        self::assertSame(SettlementMode::Authorize, $adapter->placed?->settlement);
+    }
+
+    public function testChoosingASubscriptionRepricesTheLineAndIsRefusedForAnotherDosesPlan(): void
+    {
+        $service = $this->serviceThatPlaces();
+        $this->subscriptionCart('plan-hold');
+
+        self::assertFalse($service->chooseSubscription('glp-care', 'not-this-doses-plan')->accepted);
+        self::assertTrue($service->chooseSubscription('glp-care', 'plan-take')->accepted);
+        self::assertSame('plan-take', $this->cartStore->cart()->line('glp-care')?->planId);
+    }
+
+    public function testTheViewOffersTheChosenDosesSubscriptionsBesideTheDosePicker(): void
+    {
+        $service = $this->serviceThatPlaces();
+        $this->subscriptionCart('plan-take');
+
+        $view = $service->view();
+
+        self::assertSame(['g-1mg', 'g-2mg'], array_column($view->plans['options'] ?? [], 'id'), 'the dose picker is still there');
+        self::assertSame([true, false], array_column($view->plans['options'] ?? [], 'subscription'));
+        self::assertCount(1, $view->subscriptionChoices);
+        self::assertSame('glp-care', $view->subscriptionChoices[0]['slug']);
+        self::assertSame('1mg', $view->subscriptionChoices[0]['variant_name']);
+        self::assertSame('plan-take', $view->subscriptionChoices[0]['chosen']);
+        self::assertSame(['plan-hold', 'plan-take'], array_column($view->subscriptionChoices[0]['options'], 'id'));
+        self::assertSame('Held until approved', $view->subscriptionChoices[0]['options'][0]['description']);
+    }
+
+    public function testThePaymentNoticeFollowsTheSubscriptionsPlan(): void
+    {
+        $service = $this->serviceThatPlaces();
+
+        $this->subscriptionCart('plan-take');
+        self::assertSame(CheckoutViewModel::NOTICE_CHARGE, $service->view()->paymentNotice);
+
+        $this->subscriptionCart('plan-hold');
+        self::assertSame(CheckoutViewModel::NOTICE_HOLD, $service->view()->paymentNotice);
+    }
+
+    public function testTheViewCarriesTheSettlementTheCardFormMustBeSetUpFor(): void
+    {
+        $service = $this->serviceThatPlaces();
+
+        $this->subscriptionCart('plan-hold');
+        self::assertSame('authorize', $service->view()->settlement);
+
+        $this->subscriptionCart('plan-take');
+        self::assertSame('capture', $service->view()->settlement);
+    }
+
+    public function testAHoldTheProviderWouldChargeInsteadIsShownAsACharge(): void
+    {
+        // A plan that holds, on a provider that will not: the page has to be
+        // set up for -- and tell the buyer about -- what the provider will do.
+        $adapter = new ChallengingAdapter();
+        $adapter->settlesAs = SettlementMode::Capture;
+        $service = $this->service(null, adapter: new RedeclaredAdapter($adapter, null, false, supportsAuthorizeCapture: true));
+        $this->subscriptionCart('plan-hold');
+
+        $view = $service->view();
+
+        self::assertSame('capture', $view->settlement);
+        self::assertSame(CheckoutViewModel::NOTICE_CHARGE, $view->paymentNotice);
+    }
+
+    public function testACartWithNoSubscriptionKeepsTheHoldNoticeEvenWhenItCharges(): void
+    {
+        // Unchanged on purpose: only a cart holding a subscription is told
+        // anything new about its payment.
+        $view = $this->serviceThatPlaces()->view();
+
+        self::assertSame([], $view->subscriptionChoices);
+        self::assertSame(CheckoutViewModel::NOTICE_HOLD, $view->paymentNotice);
     }
 
     public function testASuccessfulPlacementDropsThePromotionSoItCannotReachTheUpsellFlow(): void
@@ -878,6 +1001,9 @@ final class CheckoutServiceTest extends TestCase
         $adapter = new ChallengingAdapter();
         $service = $this->service(null, adapter: $adapter);
         $service->submit($this->buyer(), $this->card(), ['terms' => 'on']);
+        // Derived while the cart is still full: the key hashes the cart, and a
+        // placed order empties it, so asking afterwards names a different row.
+        $key = $this->keyForSubmit();
         $adapter->willResumeAs(PlacementOutcome::placed(ChallengingAdapter::REFERENCE, 'succeeded'));
 
         $result = $service->resume();
@@ -890,7 +1016,7 @@ final class CheckoutServiceTest extends TestCase
         self::assertSame(1, $adapter->placements);
 
         // A duplicate of the original submit is now replayed the placement.
-        $row = $this->attempts()->outcomeFor($this->keyForSubmit());
+        $row = $this->attempts()->outcomeFor($key);
         self::assertSame(PlacementOutcome::PLACED, $row['outcome']['state'] ?? null);
     }
 
@@ -918,6 +1044,11 @@ final class CheckoutServiceTest extends TestCase
         $service->submit($this->buyer(), $this->card(), ['terms' => 'on']);
 
         self::assertFalse($service->choosePlan('tirzepatide', 't-1m')->accepted);
+        self::assertFalse($service->chooseSubscription('tirzepatide', 'any-plan')->accepted);
+        self::assertSame(
+            CheckoutService::PAYMENT_PENDING_NOTICE,
+            $service->chooseSubscription('tirzepatide', 'any-plan')->notice,
+        );
         self::assertFalse($service->toggleBump('anything')->accepted);
 
         $again = $service->submit($this->buyer(), $this->card(), ['terms' => 'on']);
@@ -937,6 +1068,140 @@ final class CheckoutServiceTest extends TestCase
         self::assertSame(RepricingAdapter::NOTICE, $result->notice);
         self::assertNull($this->journeys->state()?->promotion);
         self::assertFalse($this->cartStore->cart()->isEmpty());
+    }
+
+    public function testTheCodeIsPricedForTheJourneysShopperWhenAppliedAndAgainAtPayment(): void
+    {
+        // A coupon limited to a patient is checked against whoever the EMR can
+        // tell is buying. Before an email is typed, the opportunity the
+        // journey opened is the only name it has, and the check at payment
+        // has to see the same shopper the apply did.
+        $this->journey->opportunityId = '6a0f1e2d3c4b5a6978877665';
+        $this->journey->storeBuyer(['email' => 'ada@example.com']);
+        $adapter = new RequotingAdapter(PromotionQuote::accepted('SAVE10', 1000));
+        $service = $this->service(null, adapter: $adapter);
+
+        $service->applyPromotion('SAVE10');
+        $service->submit($this->buyer(), $this->card(), ['terms' => 'on']);
+
+        self::assertCount(2, $adapter->quoted, 'once when applied, once as the buyer paid');
+        self::assertCount(1, $adapter->placed);
+        foreach ([...$adapter->quoted, ...$adapter->placed] as $envelope) {
+            self::assertSame('6a0f1e2d3c4b5a6978877665', $envelope->opportunityId);
+            self::assertSame('ada@example.com', $envelope->buyer->email);
+        }
+    }
+
+    public function testTheCodeIsQuotedAgainAsTheBuyerPaysAndAnUnchangedDiscountIsCharged(): void
+    {
+        $adapter = new RequotingAdapter(PromotionQuote::accepted('SAVE10', 1000));
+        $service = $this->service(null, adapter: $adapter);
+        $service->applyPromotion('SAVE10');
+
+        $result = $service->submit($this->buyer(), $this->card(), ['terms' => 'on']);
+
+        self::assertTrue($result->outcome->isPlaced());
+        self::assertCount(2, $adapter->quoted, 'once when applied, once as the buyer paid');
+        self::assertSame(1000, $adapter->placed[0]->discountCents);
+        self::assertSame(11000, $adapter->placed[0]->totalCents);
+    }
+
+    public function testADiscountThatMovedSinceItWasAppliedIsChargedAtTheNewFigure(): void
+    {
+        // The buyer was shown $10 off and the coupon is now worth $6. The new
+        // figure is the one the EMR honours when it reads the order back, so
+        // it is what the payment takes and what the order records, rather
+        // than the payment being stopped to show it first.
+        $adapter = new RequotingAdapter(
+            PromotionQuote::accepted('SAVE10', 1000, '6a01b2c3d4e5f6a7b8c9d0f9'),
+            PromotionQuote::accepted('SAVE10', 600, '6a01b2c3d4e5f6a7b8c9d0f9'),
+        );
+        $service = $this->service(null, adapter: $adapter);
+        $service->applyPromotion('SAVE10');
+        self::assertSame(11000, $service->view()->totals->totalCents, 'the buyer was shown $10 off');
+
+        $result = $service->submit($this->buyer(), $this->card(), ['terms' => 'on']);
+
+        self::assertTrue($result->outcome->isPlaced());
+        self::assertCount(1, $adapter->placed);
+        self::assertSame(600, $adapter->placed[0]->discountCents);
+        self::assertSame(11400, $adapter->placed[0]->totalCents);
+        self::assertSame('6a01b2c3d4e5f6a7b8c9d0f9', $adapter->placed[0]->promotionReference);
+        self::assertSame(11400, $result->totals->totalCents, 'what the receipt shows is what was charged');
+
+        $requoted = array_values(array_filter(
+            $this->log->lines(),
+            static fn (array $line): bool => $line['event'] === 'checkout.promotion_requoted',
+        ));
+        self::assertCount(1, $requoted);
+        self::assertSame(1000, $requoted[0]['context']['was_discount_cents']);
+        self::assertSame(600, $requoted[0]['context']['now_discount_cents']);
+    }
+
+    public function testACodeThatNoLongerAppliesAsTheBuyerPaysIsDroppedAndNothingIsCharged(): void
+    {
+        // Charging the full price instead would take a total the buyer has
+        // never seen from someone who applied a code.
+        $adapter = new RequotingAdapter(
+            PromotionQuote::accepted('SAVE10', 1000),
+            PromotionQuote::rejected('SAVE10', 'denied', 'The coupon has expired'),
+        );
+        $service = $this->service(null, adapter: $adapter);
+        $service->applyPromotion('SAVE10');
+
+        $result = $service->submit($this->buyer(), $this->card(), ['terms' => 'on']);
+
+        self::assertFalse($result->outcome->isPlaced());
+        self::assertSame([], $adapter->placed);
+        self::assertSame('The coupon has expired', $result->notice);
+        self::assertSame(12000, $result->totals->totalCents);
+        self::assertNull($this->journeys->state()?->promotion);
+        self::assertFalse($this->cartStore->cart()->isEmpty());
+    }
+
+    public function testACouponServiceThatCannotAnswerAsTheBuyerPaysChargesTheFigureTheyWereShown(): void
+    {
+        $adapter = new RequotingAdapter(
+            PromotionQuote::accepted('SAVE10', 1000),
+            PromotionQuote::rejected('SAVE10', 'unavailable'),
+        );
+        $service = $this->service(null, adapter: $adapter);
+        $service->applyPromotion('SAVE10');
+
+        $result = $service->submit($this->buyer(), $this->card(), ['terms' => 'on']);
+
+        self::assertTrue($result->outcome->isPlaced());
+        self::assertSame(1000, $adapter->placed[0]->discountCents);
+        self::assertSame(11000, $adapter->placed[0]->totalCents);
+    }
+
+    public function testTheCodeIsQuotedAtPaymentForTheEmailThatIsPaying(): void
+    {
+        // A coupon limited to a patient is checked against whoever is paying,
+        // not whatever had been typed when the code was applied.
+        $this->journey->storeBuyer(['email' => 'old@example.com']);
+        $adapter = new RequotingAdapter(PromotionQuote::accepted('SAVE10', 1000));
+        $service = $this->service(null, adapter: $adapter);
+        $service->applyPromotion('SAVE10');
+
+        $service->submit($this->buyer(email: 'ada@example.com'), $this->card(), ['terms' => 'on']);
+
+        self::assertSame(
+            ['old@example.com', 'ada@example.com'],
+            array_map(static fn (OrderEnvelope $envelope): string => $envelope->buyer->email, $adapter->quoted),
+        );
+    }
+
+    public function testAProviderThatPricesTheCodeItselfIsNotAskedAgainAsTheBuyerPays(): void
+    {
+        $adapter = new RepricingAdapter();
+        $service = $this->service(null, adapter: $adapter);
+        $service->applyPromotion('SAVE10');
+
+        $service->submit($this->buyer(), $this->card(), ['terms' => 'on']);
+
+        self::assertCount(1, $adapter->placed, 'the submit reached the provider');
+        self::assertCount(1, $adapter->quoted, 'only the apply asked about the code');
     }
 
     public function testTheConfirmStepWithNothingPendingSendsTheBuyerBackToCheckout(): void
@@ -1887,6 +2152,34 @@ final class CheckoutServiceTest extends TestCase
                 'price_cents' => 4900,
                 'variants' => [['id' => 'u-1', 'name' => 'One', 'price_cents' => 4900, 'provider' => null]],
             ],
+            // A prescription whose 1mg dose is sold on two subscription plans,
+            // one holding its first payment and one taking it, both priced to
+            // the approved fixture's 120.00; its 2mg dose is sold one-off.
+            'glp-care' => [
+                'slug' => 'glp-care',
+                'name' => 'GLP Care',
+                'kind' => 'rx',
+                'variants' => [
+                    [
+                        'id' => 'g-1mg', 'name' => '1mg', 'price_cents' => 12000, 'provider' => ['offer_id' => '337', 'product_id' => '3416'],
+                        'plan' => self::PLAN_HOLD,
+                        'plans' => [self::PLAN_HOLD, self::PLAN_TAKE],
+                    ],
+                    ['id' => 'g-2mg', 'name' => '2mg', 'price_cents' => 15000, 'provider' => ['offer_id' => '337', 'product_id' => '3417']],
+                ],
+            ],
         ]);
+    }
+
+    private const array PLAN_HOLD = ['id' => 'plan-hold', 'name' => 'Monthly', 'description' => 'Held until approved', 'first_payment_cents' => 12000, 'settlement' => 'authorize'];
+
+    private const array PLAN_TAKE = ['id' => 'plan-take', 'name' => 'Monthly, paid now', 'description' => '', 'first_payment_cents' => 12000, 'settlement' => 'capture'];
+
+    /** Replaces the booted cart with one subscription line on the 1mg dose and the given plan. */
+    private function subscriptionCart(?string $planId): void
+    {
+        $cart = new Cart();
+        $cart->put(new CartLine('glp-care', 'GLP Care', 'rx', null, null, 1, 12000, 'g-1mg', $planId));
+        $this->cartStore->save($cart);
     }
 }
