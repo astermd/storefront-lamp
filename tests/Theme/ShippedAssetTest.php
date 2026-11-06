@@ -49,16 +49,36 @@ final class ShippedAssetTest extends TestCase
         return $scripts;
     }
 
-    /** @return list<string> the `asset()` arguments naming a script, across every reachable template */
+    /**
+     * @return list<string> the `asset()` arguments naming a script, across every reachable template
+     *
+     * Besides the literal names, one computed form is read: `asset('payment-' ~ provider ~ '.js')`,
+     * which the checkout uses for the payment provider's glue script. The name
+     * is only known at render time, so a template that builds one from a prefix
+     * loads every shipped script with that prefix.
+     */
     private static function scriptsReachableTemplatesLoad(): array
     {
         $loaded = [];
+        $shipped = self::shippedScripts();
 
         foreach (self::reachableTemplates() as $template) {
-            preg_match_all('/asset\(\s*[\'"]([^\'"]+\.js)[\'"]/', self::templateSource($template), $matches);
+            $source = self::templateSource($template);
+
+            preg_match_all('/asset\(\s*[\'"]([^\'"]+\.js)[\'"]/', $source, $matches);
 
             foreach ($matches[1] as $name) {
                 $loaded[basename($name)] = true;
+            }
+
+            preg_match_all('/asset\(\s*[\'"]([^\'"]+)[\'"]\s*~[^()]*~\s*[\'"]\.js[\'"]\s*\)/', $source, $computed);
+
+            foreach ($computed[1] as $prefix) {
+                foreach ($shipped as $script) {
+                    if (str_starts_with($script, $prefix)) {
+                        $loaded[$script] = true;
+                    }
+                }
             }
         }
 

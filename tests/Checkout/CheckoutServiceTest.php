@@ -1001,6 +1001,9 @@ final class CheckoutServiceTest extends TestCase
         $adapter = new ChallengingAdapter();
         $service = $this->service(null, adapter: $adapter);
         $service->submit($this->buyer(), $this->card(), ['terms' => 'on']);
+        // Derived while the cart is still full: the key hashes the cart, and a
+        // placed order empties it, so asking afterwards names a different row.
+        $key = $this->keyForSubmit();
         $adapter->willResumeAs(PlacementOutcome::placed(ChallengingAdapter::REFERENCE, 'succeeded'));
 
         $result = $service->resume();
@@ -1013,7 +1016,7 @@ final class CheckoutServiceTest extends TestCase
         self::assertSame(1, $adapter->placements);
 
         // A duplicate of the original submit is now replayed the placement.
-        $row = $this->attempts()->outcomeFor($this->keyForSubmit());
+        $row = $this->attempts()->outcomeFor($key);
         self::assertSame(PlacementOutcome::PLACED, $row['outcome']['state'] ?? null);
     }
 
