@@ -365,3 +365,42 @@
   // leaving it busy for the full timeout.
   form.addEventListener('checkout:release', release);
 })();
+
+// The billing name starts as the delivery name and follows it while the buyer
+// types, because for most buyers the two are the same person. The moment the
+// buyer edits a billing name themselves it stops following, so what they typed
+// is never overwritten. A billing name that already differs on load (a
+// re-rendered page after a validation error) is theirs and is left alone.
+(function () {
+  'use strict';
+
+  [['checkout-first-name', 'checkout-billing-first-name'], ['checkout-last-name', 'checkout-billing-last-name']].forEach(function (ids) {
+    var source = document.getElementById(ids[0]);
+    var target = document.getElementById(ids[1]);
+    if (!source || !target) return;
+
+    var following = target.value === '' || target.value === source.value;
+
+    target.addEventListener('input', function () {
+      following = false;
+    });
+
+    source.addEventListener('input', function () {
+      if (following) target.value = source.value;
+    });
+
+    // Ticking the box reveals the fields already holding the delivery name.
+    var toggle = document.getElementById('checkout-billing-different');
+    if (toggle) {
+      toggle.addEventListener('change', function () {
+        if (toggle.checked && following) target.value = source.value;
+      });
+    }
+
+    // Typing the billing name back to match the delivery name hands control
+    // back, so the two stay in step again.
+    target.addEventListener('blur', function () {
+      if (target.value === source.value) following = true;
+    });
+  });
+})();

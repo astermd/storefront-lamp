@@ -179,7 +179,11 @@
           <div>
             <p class="text-sm font-medium text-heading">Billing address</p>
             <p class="mt-3 text-sm leading-6 text-body">
-             .
+              {% if billing.name %}{{ billing.name }}<br />{% endif %}
+              {% if billing.address_line %}{{ billing.address_line }}<br />{% endif %}
+              {% if billing.city %}{{ billing.city }}<br />{% endif %}
+              {% if billing_region %}{{ billing_region }}<br />{% endif %}
+              {% if billing.country %}{{ billing.country }}{% endif %}
             </p>
           </div>
           {% endif %}

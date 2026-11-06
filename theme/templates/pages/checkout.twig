@@ -218,13 +218,13 @@
         <div id="checkout-billing-fields" class="mt-4 hidden flex-col gap-4 group-has-[#checkout-billing-different:checked]:flex">
           <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div class="relative">
-              <input type="text" id="checkout-billing-first-name" name="billing_first_name" value="{{ checkout.prefill.billing_first_name|default('') }}" autocomplete="billing given-name" placeholder=" " class="field-input w-full rounded-sm border border-border bg-background px-4 text-sm text-heading"
+              <input readonly type="text" id="checkout-billing-first-name" name="billing_first_name" value="{{ checkout.prefill.billing_first_name|default('') }}" autocomplete="billing given-name" placeholder=" " class="field-input w-full rounded-sm border border-border bg-background px-4 text-sm text-heading"
                 {% if checkout.errors.billing_first_name|default(null) %}aria-invalid="true" aria-describedby="checkout-error-billing_first_name"{% endif %} />
               <label for="checkout-billing-first-name" class="field-label">Billing first name</label>
               {% include 'partials/checkout/field-error.twig' with { field: 'billing_first_name' } %}
             </div>
             <div class="relative">
-              <input type="text" id="checkout-billing-last-name" name="billing_last_name" value="{{ checkout.prefill.billing_last_name|default('') }}" autocomplete="billing family-name" placeholder=" " class="field-input w-full rounded-sm border border-border bg-background px-4 text-sm text-heading"
+              <input readonly type="text" id="checkout-billing-last-name" name="billing_last_name" value="{{ checkout.prefill.billing_last_name|default('') }}" autocomplete="billing family-name" placeholder=" " class="field-input w-full rounded-sm border border-border bg-background px-4 text-sm text-heading"
                 {% if checkout.errors.billing_last_name|default(null) %}aria-invalid="true" aria-describedby="checkout-error-billing_last_name"{% endif %} />
               <label for="checkout-billing-last-name" class="field-label">Billing last name</label>
               {% include 'partials/checkout/field-error.twig' with { field: 'billing_last_name' } %}
