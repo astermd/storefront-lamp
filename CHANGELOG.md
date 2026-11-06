@@ -8,6 +8,15 @@ names exactly which ones changed.
 
 ## [Unreleased]
 
+### Long names and addresses wrap on the thank-you page
+
+A first name or an address line typed as one long unbroken string pushed past
+its column: the greeting ran under the order summary and the shipping address
+ran into the billing one. Both now wrap inside their own column. Then
+`npm run build`.
+
+- `theme/templates/pages/thank-you.twig`, `public/assets/build/`
+
 ### The card's last four replaces its bin
 
 Takes `astermd/sdk` 0.0.4, whose `treatments()->sync()` payment `card`
