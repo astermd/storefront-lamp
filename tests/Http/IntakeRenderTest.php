@@ -339,6 +339,65 @@ final class IntakeRenderTest extends TestCase
         self::assertMatchesRegularExpression('/<div data-datepicker-panel class="hidden /', $html);
     }
 
+    /**
+     * One button field can be a Back-beside-Next row: the builder stores the
+     * second button as `secondaryButton*` behind `buttonCount: 2`. Any authored
+     * button suppresses the form's own Back / Continue row, so dropping the
+     * second one leaves a page with Back and no way forward.
+     */
+    public function testATwoButtonGroupDrawsBothButtonsInTheAuthoredOrder(): void
+    {
+        $html = self::render([
+            'fieldId' => 'nav', 'name' => 'nav', 'type' => 'button', 'label' => 'Back',
+            'properties' => [
+                'buttonCount' => 2,
+                'buttonAction' => 'previous_page',
+                'secondaryButtonLabel' => 'Next',
+                'secondaryButtonAction' => 'next_page',
+            ],
+        ]);
+
+        preg_match_all('/<button\b[^>]*data-intake-action="([^"]+)"[^>]*>\s*([^<]*?)\s*<\/button>/', $html, $m);
+
+        self::assertSame(['previous_page', 'next_page'], $m[1]);
+        self::assertSame(['Back', 'Next'], $m[2]);
+    }
+
+    /**
+     * The builder keeps the secondary keys after the count goes back to one,
+     * so the count is the switch: a button the author removed stays removed.
+     */
+    public function testASingleButtonIgnoresSecondaryKeysTheBuilderLeftBehind(): void
+    {
+        $html = self::render([
+            'fieldId' => 'nav', 'name' => 'nav', 'type' => 'button', 'label' => 'Next',
+            'properties' => [
+                'buttonCount' => 1,
+                'buttonAction' => 'next_page',
+                'secondaryButtonLabel' => 'Back',
+                'secondaryButtonAction' => 'previous_page',
+            ],
+        ]);
+
+        self::assertSame(1, substr_count($html, '<button'));
+        self::assertStringNotContainsString('previous_page', $html);
+    }
+
+    /** A second button with no label of its own is named for what it does, not drawn empty. */
+    public function testAnUnlabelledSecondButtonIsNamedForItsAction(): void
+    {
+        $html = self::render([
+            'fieldId' => 'nav', 'name' => 'nav', 'type' => 'button', 'label' => 'Back',
+            'properties' => [
+                'buttonCount' => 2,
+                'buttonAction' => 'previous_page',
+                'secondaryButtonAction' => 'submit',
+            ],
+        ]);
+
+        self::assertMatchesRegularExpression('/data-intake-action="submit"[^>]*>\s*Submit\s*<\/button>/', $html);
+    }
+
     /** And it is still on the wrapper, so hiding a field still takes its label with it. */
     public function testTheAuthoredClassIsStillOnTheWrapperSoHidingTakesTheWholeField(): void
     {
