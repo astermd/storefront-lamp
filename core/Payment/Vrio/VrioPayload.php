@@ -72,6 +72,7 @@ final class VrioPayload
         int $shippingProfileId,
     ): array {
         [$slots] = VrioAttribution::map($order->attribution);
+        $billing = $order->buyer->billing;
 
         $body = [
             'campaign_id' => $credentials->campaignId,
@@ -92,17 +93,18 @@ final class VrioPayload
             'ship_zipcode' => $order->buyer->postalCode,
             'ship_country' => $order->buyer->country,
 
-            // Billing is the shipping address (`[13.2]`). The flag and the
-            // full set are both sent because the payload known to work sends
-            // both, and the provider is silent about which it honours.
-            'shipping_same' => true,
+            // Billing is the shipping address unless the buyer gave a different
+            // one (`[13.2]`). The flag and the full set are both sent because
+            // the payload known to work sends both, and the provider is silent
+            // about which it honours, so the flag must agree with the fields.
+            'shipping_same' => $billing === null,
             'bill_fname' => $order->buyer->firstName,
             'bill_lname' => $order->buyer->lastName,
-            'bill_address1' => $order->buyer->addressLine,
-            'bill_city' => $order->buyer->city,
-            'bill_state' => $order->buyer->territory,
-            'bill_zipcode' => $order->buyer->postalCode,
-            'bill_country' => $order->buyer->country,
+            'bill_address1' => $billing->addressLine ?? $order->buyer->addressLine,
+            'bill_city' => $billing->city ?? $order->buyer->city,
+            'bill_state' => $billing->territory ?? $order->buyer->territory,
+            'bill_zipcode' => $billing->postalCode ?? $order->buyer->postalCode,
+            'bill_country' => $billing->country ?? $order->buyer->country,
 
             'offers' => VrioOffers::forCharge($order),
 

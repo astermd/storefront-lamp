@@ -81,6 +81,9 @@ final class CheckoutChampPayload
     {
         $buyer = $order->buyer;
 
+        $buyer = $order->buyer;
+        $billing = $buyer->billing;
+
         $body = self::shipping($order) + [
             'campaignId' => (string) self::campaignFor($order),
             'firstName' => $buyer->firstName,
@@ -88,22 +91,11 @@ final class CheckoutChampPayload
             'emailAddress' => $buyer->email,
             'phoneNumber' => $buyer->phone,
 
-            'address1' => $buyer->addressLine,
-            'city' => $buyer->city,
-            'state' => $buyer->territory,
-            'postalCode' => $buyer->postalCode,
-            'country' => $buyer->country,
-
-            // Billing is the shipping address (`[13.2]`), sent in full rather
-            // than as a flag: the provider documents no "same as shipping"
-            // switch, and a half-populated billing address is refused.
-            'billFirstName' => $buyer->firstName,
-            'billLastName' => $buyer->lastName,
-            'billAddress1' => $buyer->addressLine,
-            'billCity' => $buyer->city,
-            'billState' => $buyer->territory,
-            'billPostalCode' => $buyer->postalCode,
-            'billCountry' => $buyer->country,
+            'address1' => $billing->addressLine ?? $buyer->addressLine,
+            'city' => $billing->city ?? $buyer->city,
+            'state' => $billing->territory ?? $buyer->territory,
+            'postalCode' => $billing->postalCode ?? $buyer->postalCode,
+            'country' => $billing->country ?? $buyer->country,
 
             'ipAddress' => $order->clientIp ?? '',
         ];

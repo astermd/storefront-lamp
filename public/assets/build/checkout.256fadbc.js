@@ -1,0 +1,406 @@
+/**
+ * Checkout page. Powers /checkout/ (loaded there as the page's only script).
+ *
+ * Everything on this page works with this file absent: the page is one plain
+ * HTML form, and each sub-action (bump, promo, plan) is a submit button that
+ * redirects it with `formaction`, so every one of them posts what is typed in
+ * the boxes right now with no script involved ([8.7], [27.10]). What this
+ * script adds on top is three things:
+ *
+ * - the credit-card fields show and hide with the selected payment method,
+ *   which is the mockup's own behaviour kept verbatim;
+ * - a discount code is applied or removed without a reload: the same post,
+ *   sent with `fetch`, answered with the re-priced lines and totals as JSON
+ *   ([13.11]);
+ * - a submitted button goes busy and stops answering a second click, which is
+ *   the content-loader state cart.js already establishes as this theme's
+ *   pattern.
+ *
+ * The busy state is comfort, not correctness. It removes the "did that click
+ * register?" second click and nothing else: a reload, a browser-level retry,
+ * a second tab, or two requests minutes apart all still reach the server
+ * without any click at all, and the server is the only place that can refuse
+ * the duplicate. Nothing here is load-bearing for money.
+ */
+(function () {
+  'use strict';
+
+  // Only the "Credit card" payment method has expanded fields to show/hide;
+  // PayPal/Afterpay are single-line rows with no extra inputs. Absent entirely
+  // when the active adapter hosts its own card surface, which is why this
+  // returns rather than assuming the group is there.
+  var group = document.getElementById('payment-method-group');
+  if (group) {
+    var options = Array.prototype.slice.call(group.querySelectorAll('[data-select-option]'));
+    var panel = group.querySelector('[data-payment-panel="card"]');
+
+    var sync = function () {
+      var selected = options.filter(function (o) { return o.getAttribute('aria-pressed') === 'true'; })[0];
+      panel.classList.toggle('hidden', !selected || selected.getAttribute('data-payment') !== 'card');
+    };
+
+    options.forEach(function (option) {
+      option.addEventListener('click', sync);
+    });
+    sync();
+  }
+
+  // The card box used to accept an unbounded string, so a buyer could type
+  // their number twice and only find out at the provider. This caps what can
+  // be typed and groups the digits the way a card is printed; the enforced
+  // rule is the server's ({@see AsterMD\Storefront\Checkout\CardNumber}),
+  // because a script that never runs must not be what stands between a
+  // malformed number and a charge attempt.
+  //
+  // No Luhn check here either, for the reason the server does not do one:
+  // providers issue sandbox numbers that fail it on purpose.
+  var cardNumber = document.getElementById('checkout-card-number');
+  if (cardNumber) {
+    // American Express prints 15 digits as 4-6-5 and everything else groups in
+    // fours. 34 and 37 are Amex's issuer identifiers -- the only two.
+    var AMEX = /^3[47]/;
+
+    cardNumber.addEventListener('input', function () {
+      var digits = cardNumber.value.replace(/\D/g, '').slice(0, 19);
+      var groups = AMEX.test(digits)
+        ? [digits.slice(0, 4), digits.slice(4, 10), digits.slice(10, 15)]
+        : digits.match(/.{1,4}/g) || [];
+      var formatted = groups.filter(Boolean).join(' ');
+
+      if (formatted === cardNumber.value) return;
+
+      // Typing in the middle of a number would otherwise throw the caret to
+      // the end on every keystroke. Counting the digits before the caret and
+      // putting it back after the same digit survives the regrouping.
+      var before = cardNumber.value.slice(0, cardNumber.selectionStart || 0).replace(/\D/g, '').length;
+      cardNumber.value = formatted;
+
+      var caret = 0;
+      for (var seen = 0; caret < formatted.length && seen < before; caret++) {
+        if (/\d/.test(formatted[caret])) seen++;
+      }
+      cardNumber.setSelectionRange(caret, caret);
+    });
+  }
+
+  var form = document.querySelector('form[data-checkout-form]');
+  if (!form) return;
+
+  // The one button that places the order, told apart from the sub-actions by
+  // its own hook attribute rather than by position or class — the template
+  // owns which button that is, and tests/Http/CheckoutControllerTest.php pins
+  // the contract so an edit there cannot quietly switch this off.
+  var pay = form.querySelector('[data-checkout-submit]');
+  var idleLabel = pay ? (pay.textContent || '').trim() : '';
+  var busyLabel = (pay && pay.getAttribute('data-busy-label')) || idleLabel;
+  var placing = false;
+
+  /**
+   * Hand every control back to the buyer.
+   *
+   * A permanently dead Pay Now is a worse failure than the double click this
+   * guards against: it strands someone in front of a payment that never
+   * happened, with no way to retry. So the busy state is treated as temporary
+   * in every direction — see the listeners at the bottom of this file.
+   */
+  function release() {
+    placing = false;
+    form.removeAttribute('aria-busy');
+
+    if (pay) {
+      pay.removeAttribute('aria-busy');
+      pay.removeAttribute('aria-disabled');
+      pay.textContent = idleLabel;
+    }
+
+    form.querySelectorAll('button[type="submit"]').forEach(function (button) {
+      button.disabled = false;
+    });
+  }
+
+  // How long the placement button stays busy with nothing having happened
+  // before it is handed back. A submit that never navigates leaves no event to
+  // listen for — the buyer pressed Stop, or the connection dropped in a way
+  // the browser did not turn into its own error page — so the only honest
+  // answer is to give up waiting. Long enough that a slow card authorization
+  // finishes first; short enough to be under the point where someone starts
+  // hunting for a way to retry.
+  var RELEASE_AFTER_MS = 30000;
+
+  // ---- Discount code without a reload ------------------------------------
+  // Apply and Remove post the form exactly as the native button would, asking
+  // for JSON: /checkout/promo/ then answers with every line's price after the
+  // code and the totals, already formatted, instead of a 303. This puts that
+  // text in place and does no arithmetic, so what is shown is the server's;
+  // Pay Now prices the code again on the server whatever is shown here.
+  //
+  // While it waits, the button pressed goes busy the way Pay Now does and the
+  // figures about to change are dimmed. What the code came back with is shown
+  // under the box: the theme's circle-check line when it applied, the
+  // checkout's inline field error when it did not.
+  //
+  // Anything unexpected -- a network error, a status that is not 200, an
+  // answer that is not the summary -- falls back to the native post, which is
+  // what the page did before this existed.
+  var promoBusy = false;
+  var native = false;
+  var canPromo = typeof window.fetch === 'function' && typeof form.requestSubmit === 'function';
+
+  function text(selector, value, scope) {
+    var node = (scope || form).querySelector(selector);
+    if (node) node.textContent = value;
+  }
+
+  function show(selector, visible) {
+    var node = form.querySelector(selector);
+    if (node) node.hidden = !visible;
+  }
+
+  /**
+   * One message under the code box, or none: `kind` is 'success' or 'error'.
+   * The error is tied to the box as the checkout's other field errors are.
+   */
+  function message(kind, value) {
+    var box = document.getElementById('checkout-discount');
+    var error = kind === 'error' && !!value;
+
+    text('[data-promo-message-text]', kind === 'success' ? value : '');
+    show('[data-promo-message="success"]', kind === 'success' && !!value);
+    text('[data-promo-message="error"]', error ? value : '');
+    show('[data-promo-message="error"]', error);
+
+    if (!box) return;
+    if (error) {
+      box.setAttribute('aria-invalid', 'true');
+      box.setAttribute('aria-describedby', 'checkout-error-discount_code');
+    } else {
+      box.removeAttribute('aria-invalid');
+      box.removeAttribute('aria-describedby');
+    }
+  }
+
+  /** The Apply or Remove button and the figures it changes, busy or not. */
+  function busy(button, on) {
+    var label = button && button.querySelector('[data-busy-text]');
+    if (button && label) {
+      if (on) {
+        button.setAttribute('data-idle-label', label.textContent);
+        label.textContent = button.getAttribute('data-busy-label') || label.textContent;
+        button.setAttribute('aria-busy', 'true');
+        button.setAttribute('aria-disabled', 'true');
+      } else {
+        label.textContent = button.getAttribute('data-idle-label') || label.textContent;
+        button.removeAttribute('aria-busy');
+        button.removeAttribute('aria-disabled');
+      }
+    }
+
+    form.querySelectorAll('[data-promo-busy]').forEach(function (node) {
+      if (on) node.setAttribute('aria-busy', 'true');
+      else node.removeAttribute('aria-busy');
+    });
+  }
+
+  function render(pricing) {
+    pricing.lines.forEach(function (line) {
+      var row = form.querySelector('[data-line="' + CSS.escape(line.slug) + '"]');
+      if (!row) return;
+      text('[data-line-total]', line.total, row);
+      text('[data-line-original]', line.line_total, row);
+      row.querySelector('[data-line-original]').hidden = line.discount_cents === 0;
+    });
+
+    var code = pricing.promotion ? pricing.promotion.code : '';
+    text('[data-promo-code]', code);
+    show('[data-promo-applied]', pricing.applied);
+    show('[data-promo-entry]', !pricing.applied);
+
+    text('[data-total-subtotal]', pricing.totals.subtotal);
+    text('[data-total-discount]', '\u2212' + pricing.totals.discount);
+    text('[data-total-discount-code]', code ? ' \u2022 ' + code : '');
+    show('[data-total-discount-row]', pricing.totals.discount_cents > 0);
+    text('[data-total]', pricing.totals.total);
+
+    message(pricing.accepted ? 'success' : 'error', pricing.notice || '');
+
+    // The provider's card form is told the new amount (payment-<provider>.js).
+    var surface = document.getElementById('payment-provider-surface');
+    if (surface) surface.setAttribute('data-amount', String(pricing.totals.total_cents));
+    form.dispatchEvent(new CustomEvent('checkout:totals', { detail: { amountCents: pricing.totals.total_cents } }));
+  }
+
+  function promo(submitter) {
+    var url = submitter.formAction;
+    var box = document.getElementById('checkout-discount');
+    // Enter in the box arrives through the hidden default button, so the
+    // spinner goes on the visible button for the same action.
+    var button = /\/remove\/?$/.test(url)
+      ? form.querySelector('[data-promo-applied] button[type="submit"]')
+      : form.querySelector('[data-promo-entry] button[type="submit"]');
+
+    promoBusy = true;
+    message(null, '');
+    busy(button, true);
+
+    function settle() {
+      promoBusy = false;
+      busy(button, false);
+    }
+
+    fetch(url, {
+      method: 'POST',
+      body: new FormData(form),
+      headers: { 'Accept': 'application/json', 'X-Requested-With': 'fetch' },
+      credentials: 'same-origin'
+    }).then(function (response) {
+      if (!response.ok) return Promise.reject(response.status);
+      return response.json();
+    }).then(function (pricing) {
+      if (!pricing || !pricing.totals || !Array.isArray(pricing.lines)) {
+        return Promise.reject('not the summary');
+      }
+
+      settle();
+      render(pricing);
+
+      // An applied code moves the buyer to its Remove button and empties the
+      // box behind it. A refused one keeps what was typed, so a typo is one
+      // edit away; a removed one brings the empty box back. Either way the box
+      // takes the focus.
+      if (pricing.applied) {
+        if (box) box.value = '';
+        var remove = form.querySelector('[data-promo-applied] button[type="submit"]');
+        if (remove) remove.focus();
+      } else if (box) {
+        box.focus();
+      }
+    }).catch(function () {
+      settle();
+      native = true;
+      form.requestSubmit(submitter);
+    });
+  }
+
+  form.addEventListener('submit', function (event) {
+    // Which button was pressed is the whole question here, and `submitter` is
+    // the only thing that answers it. Where it is missing the guard sits out
+    // entirely rather than guessing: no enhancement is the correct degradation,
+    // and guessing wrong would either dead-end a sub-action or let a keystroke
+    // trip the placement state.
+    var submitter = event.submitter;
+    if (!submitter) return;
+
+    // Applying an empty discount box has nothing to send. That is the Apply
+    // button with the box empty, and also Enter in any other field, which
+    // lands on the page's first submit button -- the promo one. Staying put
+    // keeps the buyer where they were instead of reloading the page.
+    var discount = document.getElementById('checkout-discount');
+    var formAction = submitter.getAttribute('formaction') || '';
+    if (/\/checkout\/promo\/?$/.test(formAction) && (!discount || discount.value.trim() === '')) {
+      event.preventDefault();
+      if (discount && submitter.getAttribute('aria-hidden') !== 'true') discount.focus();
+      return;
+    }
+
+    if (/\/checkout\/promo(\/remove)?\/?$/.test(formAction) && canPromo && !native) {
+      event.preventDefault();
+      if (!promoBusy) promo(submitter);
+      return;
+    }
+    native = false;
+
+    if (submitter === pay) {
+      // Second click on an already-busy Pay Now: swallowed here rather than by
+      // a `disabled` attribute, because disabling the button moves focus off
+      // it and takes the announcement of its new label with it.
+      if (placing) {
+        event.preventDefault();
+        return;
+      }
+
+      placing = true;
+      form.setAttribute('aria-busy', 'true');
+      pay.setAttribute('aria-busy', 'true');
+
+      // `aria-disabled`, not `disabled`: the button keeps focus and keeps a
+      // real accessible name, so the swapped-in label is what a screen reader
+      // reads out, and `aria-busy` styles the same state visually from the
+      // same attribute. The refusal above is what actually blocks the click.
+      pay.setAttribute('aria-disabled', 'true');
+      pay.textContent = busyLabel;
+
+      window.setTimeout(release, RELEASE_AFTER_MS);
+      return;
+    }
+
+    // A sub-action. Only the button actually pressed goes dead — Pay Now and
+    // the other sub-actions stay live, because a buyer waiting on a promo
+    // round-trip may well want to change plan instead, and the old blanket
+    // version of this took the whole page with it.
+    //
+    // Deferred by one tick, and it has to be. A sub-action names its target on
+    // the button itself (which bump, which variant), and the browser builds
+    // the request body *after* this handler returns, skipping any control that
+    // is disabled by then — disabling here and now would post the form with no
+    // idea which button was pressed. A double click is still swallowed: the
+    // timeout runs long before a second click can land. It matters most for
+    // the bump, which toggles: posted twice, it adds and then removes itself.
+    form.setAttribute('aria-busy', 'true');
+    window.setTimeout(function () {
+      submitter.disabled = true;
+    }, 0);
+  });
+
+  // Restoring this page from the back/forward cache replays the DOM exactly as
+  // it was left — mid-submit, busy, refusing clicks — while the buyer is
+  // looking at a live page and expecting to be able to act on it. The same
+  // goes for a history move that never rebuilds the document. Both hand
+  // everything back; on a first, ordinary load this is a no-op.
+  window.addEventListener('pageshow', release);
+  window.addEventListener('popstate', release);
+
+  // A provider-hosted card form (payment-<provider>.js) holds the submit while
+  // its own script tokenizes the card, and hands Pay Now back through this
+  // event when it refuses -- an incomplete card number, say -- rather than
+  // leaving it busy for the full timeout.
+  form.addEventListener('checkout:release', release);
+})();
+
+// The billing name starts as the delivery name and follows it while the buyer
+// types, because for most buyers the two are the same person. The moment the
+// buyer edits a billing name themselves it stops following, so what they typed
+// is never overwritten. A billing name that already differs on load (a
+// re-rendered page after a validation error) is theirs and is left alone.
+(function () {
+  'use strict';
+
+  [['checkout-first-name', 'checkout-billing-first-name'], ['checkout-last-name', 'checkout-billing-last-name']].forEach(function (ids) {
+    var source = document.getElementById(ids[0]);
+    var target = document.getElementById(ids[1]);
+    if (!source || !target) return;
+
+    var following = target.value === '' || target.value === source.value;
+
+    target.addEventListener('input', function () {
+      following = false;
+    });
+
+    source.addEventListener('input', function () {
+      if (following) target.value = source.value;
+    });
+
+    // Ticking the box reveals the fields already holding the delivery name.
+    var toggle = document.getElementById('checkout-billing-different');
+    if (toggle) {
+      toggle.addEventListener('change', function () {
+        if (toggle.checked && following) target.value = source.value;
+      });
+    }
+
+    // Typing the billing name back to match the delivery name hands control
+    // back, so the two stay in step again.
+    target.addEventListener('blur', function () {
+      if (target.value === source.value) following = true;
+    });
+  });
+})();
