@@ -98,8 +98,8 @@ final class VrioPayload
             // the payload known to work sends both, and the provider is silent
             // about which it honours, so the flag must agree with the fields.
             'shipping_same' => $billing === null,
-            'bill_fname' => $order->buyer->firstName,
-            'bill_lname' => $order->buyer->lastName,
+            'bill_fname' => $billing->firstName ?? $order->buyer->firstName,
+            'bill_lname' => $billing->lastName ?? $order->buyer->lastName,
             'bill_address1' => $billing->addressLine ?? $order->buyer->addressLine,
             'bill_city' => $billing->city ?? $order->buyer->city,
             'bill_state' => $billing->territory ?? $order->buyer->territory,

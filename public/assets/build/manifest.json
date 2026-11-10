@@ -1,15 +1,8 @@
 {
-<<<<<<< HEAD
   "app.css": "app.86cc50e3.css",
   "address-autocomplete.js": "address-autocomplete.9ecc5ff3.js",
   "cart.js": "cart.0ad4c830.js",
   "checkout.js": "checkout.256fadbc.js",
-=======
-  "app.css": "app.47c3f3da.css",
-  "address-autocomplete.js": "address-autocomplete.9ecc5ff3.js",
-  "cart.js": "cart.0ad4c830.js",
-  "checkout.js": "checkout.0ba147d1.js",
->>>>>>> ef52e4cbcc3986a4352597bc5155db58b8fd2d89
   "datepicker.js": "datepicker.48f343b1.js",
   "intake-engine.js": "intake-engine.7e7242c1.js",
   "intake-files.js": "intake-files.798283fc.js",

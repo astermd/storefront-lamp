@@ -233,6 +233,8 @@ final class VrioPayloadTest extends TestCase
         self::assertSame('NY', $body['ship_state']);
         self::assertSame('NY', $body['bill_state']);
         self::assertSame('US', $body['ship_country']);
+        self::assertSame('Patient', $body['bill_fname'], 'with no billing address the cardholder is the buyer');
+        self::assertSame('Aaad', $body['bill_lname']);
     }
 
     public function testADifferentBillingAddressClearsTheSameFlagAndIsSent(): void
