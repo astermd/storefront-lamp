@@ -498,7 +498,7 @@ final class StripeAdapterTest extends TestCase
         self::assertTrue($quote->valid);
         self::assertSame(1000, $quote->discountCents);
         self::assertSame(self::COUPON, $quote->reference);
-        self::assertSame('ada@example.com', $coupons->lastEmail, 'the buyer is named so a patient-only coupon can match');
+        self::assertSame('ada@example.com', $coupons->asked[0]['email'] ?? null, 'the buyer is named so a patient-only coupon can match');
     }
 
     public function testACouponIsCheckedForTheShopperBuying(): void

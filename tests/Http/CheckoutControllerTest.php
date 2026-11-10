@@ -132,6 +132,22 @@ final class CheckoutControllerTest extends TestCase
         self::assertStringContainsString('content="noindex', $body, '[24.6]: a funnel step is never indexed');
     }
 
+    public function testTheBillingNameCanBeTypedIntoRatherThanOnlyCopied(): void
+    {
+        // The billing name is copied from the delivery name as a starting
+        // point, but the cardholder is often someone else. Without script the
+        // copy never happens, so a locked field could never be filled at all
+        // and the required billing name would refuse every order.
+        $this->seedCart();
+
+        $body = (string) $this->app()->handle($this->get('/checkout/'))->getBody();
+
+        foreach (['billing_first_name', 'billing_last_name'] as $name) {
+            self::assertSame(1, preg_match('/<input[^>]*name="' . $name . '"[^>]*>/', $body, $input), "{$name} is not rendered");
+            self::assertDoesNotMatchRegularExpression('/\s(readonly|disabled)[\s=>]/', $input[0], "{$name} must be editable");
+        }
+    }
+
     public function testTheConsentCheckboxesRenderUnchecked(): void
     {
         // `[26.2]`: consent is an explicit affirmative action. The mockup
