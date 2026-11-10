@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace AsterMD\Storefront\Tests\Payment\CheckoutChamp;
 
+use AsterMD\Storefront\Payment\BillingAddress;
 use AsterMD\Storefront\Payment\Buyer;
 use AsterMD\Storefront\Payment\CaptureOutcome;
 use AsterMD\Storefront\Payment\CaptureRequest;
@@ -49,13 +50,14 @@ final class CheckoutChampAdapterTest extends TestCase
         ?array $lines = null,
         SettlementMode $settlement = SettlementMode::Capture,
         ?string $promotionCode = null,
+        ?BillingAddress $billing = null,
     ): OrderEnvelope {
         $lines ??= [new OrderLine('nad-500', 'NAD+ (500mg)', '459', '15271', 12000, 1)];
         $subtotal = array_sum(array_map(static fn (OrderLine $l): int => $l->lineTotalCents(), $lines));
 
         return new OrderEnvelope(
             lines: $lines,
-            buyer: new Buyer('Patient', 'Aaad', 'buyer@example.com', '2125551234', '350 5th Avenue', 'New York', 'NY', '10118'),
+            buyer: new Buyer('Patient', 'Aaad', 'buyer@example.com', '2125551234', '350 5th Avenue', 'New York', 'NY', '10118', billing: $billing),
             subtotalCents: $subtotal,
             discountCents: 0,
             totalCents: $subtotal,
@@ -131,6 +133,32 @@ final class CheckoutChampAdapterTest extends TestCase
         foreach (['shipAddress1', 'shipCity', 'shipState', 'shipPostalCode', 'shipCountry'] as $field) {
             self::assertArrayHasKey($field, $transport->params(1));
         }
+    }
+
+    public function testTheLeadIsBilledUnderTheBuyersNameWhenBillingIsShipping(): void
+    {
+        $transport = $this->transportThatPlaces();
+
+        $this->adapter($transport)->place($this->envelope(), $this->card());
+
+        self::assertSame('Patient', $transport->params(0)['firstName'] ?? null);
+        self::assertSame('Aaad', $transport->params(0)['lastName'] ?? null);
+        self::assertSame('350 5th Avenue', $transport->params(0)['address1'] ?? null);
+    }
+
+    public function testADifferentBillingAddressBillsUnderItsOwnNameAndShipsUnderTheBuyers(): void
+    {
+        $transport = $this->transportThatPlaces();
+        $billing = new BillingAddress('Ada', 'Lovelace', '1 Main St', 'Austin', 'TX', '73301');
+
+        $this->adapter($transport)->place($this->envelope(billing: $billing), $this->card());
+
+        $lead = $transport->params(0);
+        self::assertSame('Ada', $lead['firstName'] ?? null);
+        self::assertSame('Lovelace', $lead['lastName'] ?? null);
+        self::assertSame('1 Main St', $lead['address1'] ?? null);
+        self::assertSame('Patient', $lead['shipFirstName'] ?? null, 'the parcel still goes to the buyer');
+        self::assertSame('Aaad', $lead['shipLastName'] ?? null);
     }
 
     public function testARefusedChargeStillReportsTheReferenceTheLeadCallCreated(): void

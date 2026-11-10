@@ -80,14 +80,15 @@ final class CheckoutChampPayload
     public static function forLead(OrderEnvelope $order, string $salesUrl = ''): array
     {
         $buyer = $order->buyer;
-
-        $buyer = $order->buyer;
         $billing = $buyer->billing;
 
+        // The unprefixed name and address are the billing contact; the
+        // delivery name travels as `shipFirstName`/`shipLastName`. So a buyer
+        // who gave a separate billing address is billed under its name too.
         $body = self::shipping($order) + [
             'campaignId' => (string) self::campaignFor($order),
-            'firstName' => $buyer->firstName,
-            'lastName' => $buyer->lastName,
+            'firstName' => $billing->firstName ?? $buyer->firstName,
+            'lastName' => $billing->lastName ?? $buyer->lastName,
             'emailAddress' => $buyer->email,
             'phoneNumber' => $buyer->phone,
 
