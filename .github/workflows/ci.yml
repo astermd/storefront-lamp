@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: PHPUnit (PHP ${{ matrix.php }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.4', '8.5']
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: mbstring, pdo_sqlite, sqlite3, curl, intl
+          coverage: none
+          tools: composer:v2
+
+      - name: Cache Composer downloads
+        uses: actions/cache@v4
+        with:
+          path: ~/.composer/cache/files
+          key: composer-${{ matrix.php }}-${{ hashFiles('composer.lock') }}
+          restore-keys: composer-${{ matrix.php }}-
+
+      - run: composer install --no-interaction --no-progress --prefer-dist
+
+      # Runs against the committed example catalog, as a fresh clone does.
+      - run: vendor/bin/phpunit
+
+      # Exits 2 on error; run bare so the step fails on it.
+      - run: php bin/console config:validate
+
+  assets:
+    # The committed build must be exactly what the committed sources produce.
+    # Catches a stylesheet built before the last template edit, and any
+    # hand-merged manifest, which PHPUnit cannot rebuild to compare against.
+    name: Built assets match sources
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build
+
+      - name: Fail if the build differs from what was committed
+        run: |
+          if [ -n "$(git status --porcelain -- public/assets/build)" ]; then
+            echo "::error::public/assets/build is out of date. Run 'npm run build' and commit the result."
+            git status --short -- public/assets/build
+            exit 1
+          fi
