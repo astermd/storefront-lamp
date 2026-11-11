@@ -55,14 +55,20 @@ final class EmrCouponGatewayTest extends TestCase
         $_ENV['ASTERMD_CLIENT_ID'] = 'test-client-id';
         $_ENV['ASTERMD_CLIENT_SECRET'] = 'test-client-secret';
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
+=======
+>>>>>>> main
 
         $this->dir = sys_get_temp_dir() . '/emr-coupon-gateway-' . uniqid();
         mkdir($this->dir);
         $this->rootDir = sys_get_temp_dir() . '/emr-coupon-gateway-root-' . uniqid();
         mkdir($this->rootDir);
         $this->log = new CapturedLog();
+<<<<<<< HEAD
 >>>>>>> 23e616f7cd6f48d8158f7e0ac9ca9c8cc4fd648d
+=======
+>>>>>>> main
     }
 
     protected function tearDown(): void
@@ -76,6 +82,7 @@ final class EmrCouponGatewayTest extends TestCase
         }
     }
 
+<<<<<<< HEAD
 <<<<<<< HEAD
     public function testTheBuyersEmailNamesThemSoAPatientOnlyCouponCanMatch(): void
     {
@@ -112,31 +119,40 @@ final class EmrCouponGatewayTest extends TestCase
         );
     }
 
+=======
+>>>>>>> main
     private function gateway(FakeEmrHttpClient $http): EmrCouponGateway
     {
-        $dir = sys_get_temp_dir() . '/emr-coupon-gateway-' . uniqid();
-        mkdir($dir);
-        file_put_contents($dir . '/app.php', '<?php return ["emr" => ["base_host" => "sales.example.test", "channel_id" => "channel-123"]];');
-        $root = sys_get_temp_dir() . '/emr-coupon-gateway-root-' . uniqid();
-        mkdir($root);
+        file_put_contents(
+            $this->dir . '/app.php',
+            '<?php return ["emr" => ["base_host" => "sales.example.test", "channel_id" => "channel-123"]];',
+        );
 
-        return new EmrCouponGateway(new ClientFactory(Config::load($dir), $root), (new CapturedLog())->log, $http);
+        return new EmrCouponGateway(new ClientFactory(Config::load($this->dir), $this->rootDir), $this->log->log, $http);
     }
 
-    private static function line(): OrderLine
+    /** @param array<string, mixed>|string $body */
+    private static function answering(int $status, array|string $body): FakeEmrHttpClient
     {
-        return new OrderLine('semaglutide', 'Semaglutide', null, null, 5000, 1, emrProductId: 'emr-p1', emrVariantId: 'emr-v1');
+        return new FakeEmrHttpClient(self::TOKEN_ROUTE + ['/coupons/validate' => [$status, $body]]);
     }
 
     /** @return array<string, mixed> */
-    private function validateBody(FakeEmrHttpClient $http): array
+    private static function accepted(): array
     {
-        foreach ($http->requests as $request) {
-            if (str_contains($request->getUri()->getPath(), '/coupons/validate')) {
-                return json_decode((string) $request->getBody(), true, flags: JSON_THROW_ON_ERROR);
-            }
-        }
+        return ['success' => true, 'data' => [
+            'coupon_id' => self::COUPON,
+            'name' => 'Welcome 20% off',
+            'discount_type' => 'percent',
+            'value' => 20,
+            'gross_amount_cents' => 9900,
+            'discount_cents' => 1980,
+            'amount_cents' => 7920,
+            'currency' => 'usd',
+        ]];
+    }
 
+<<<<<<< HEAD
         self::fail('no coupon check reached the EMR');
 =======
     private function gateway(FakeEmrHttpClient $http): EmrCouponGateway
@@ -170,6 +186,8 @@ final class EmrCouponGatewayTest extends TestCase
         ]];
     }
 
+=======
+>>>>>>> main
     /** @return list<OrderLine> a plan line and a one-off line, as the checkout sends them */
     private static function lines(): array
     {
@@ -217,11 +235,27 @@ final class EmrCouponGatewayTest extends TestCase
         ], self::sent($http));
     }
 
+<<<<<<< HEAD
+=======
+    public function testTheBuyersEmailIsSentWithoutTheSpaceAroundIt(): void
+    {
+        $http = self::answering(200, self::accepted());
+
+        $this->gateway($http)->quote('WELCOME20', self::lines(), ' ada@example.com ');
+
+        self::assertSame('ada@example.com', self::sent($http)['email'] ?? null);
+    }
+
+>>>>>>> main
     /** @return iterable<string, array{?string, ?string}> */
     public static function unreadableShoppers(): iterable
     {
         yield 'nothing known yet' => [null, null];
         yield 'an empty email box' => ['', null];
+<<<<<<< HEAD
+=======
+        yield 'a blank email box' => ['   ', null];
+>>>>>>> main
         yield 'an email still being typed' => ['ada@', null];
         yield 'an email with no domain' => ['ada@localhost', null];
         yield 'an opportunity that is not an EMR id' => [null, 'opp-123'];
@@ -374,6 +408,9 @@ final class EmrCouponGatewayTest extends TestCase
         self::assertFalse($quote->valid);
         self::assertSame('unsupported', $quote->reason);
         self::assertSame([], $http->requests);
+<<<<<<< HEAD
 >>>>>>> 23e616f7cd6f48d8158f7e0ac9ca9c8cc4fd648d
+=======
+>>>>>>> main
     }
 }

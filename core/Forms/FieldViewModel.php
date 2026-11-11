@@ -69,6 +69,13 @@ final class FieldViewModel
      */
     private const array FALSE_TEXTS = ['', '0', 'false'];
 
+    /** What a second button with no label of its own is called, by what it does. */
+    private const array BUTTON_LABELS = [
+        'previous_page' => 'Back',
+        'next_page' => 'Next',
+        'submit' => 'Submit',
+    ];
+
     /**
      * Builds the array a partial renders.
      *
@@ -125,9 +132,7 @@ final class FieldViewModel
                 ? self::optionalText($composite[$field->name . '_category'] ?? null)
                 : null,
             'image_url' => $field->type === 'image' ? self::imageUrl($field) : null,
-            'button_action' => $field->type === 'button'
-                ? (self::optionalText($field->properties['buttonAction'] ?? null) ?? 'next_page')
-                : null,
+            'buttons' => $field->type === 'button' ? self::buttons($field) : [],
             'max_length' => self::constraint($field, 'maxLength'),
             'min_value' => self::constraint($field, 'minValue'),
             'max_value' => self::constraint($field, 'maxValue'),
@@ -365,6 +370,44 @@ final class FieldViewModel
             'width' => is_numeric($width) ? max(160, min(800, (int) $width)) : 320,
             'height' => is_numeric($height) ? max(80, min(400, (int) $height)) : 220,
         ];
+    }
+
+    /**
+     * A button field is a group of one or two buttons, not one button
+     * (`[10.10]`). The builder stores the first as `label` + `buttonAction`
+     * and the second as `secondaryButtonLabel` + `secondaryButtonAction`,
+     * switched on by `buttonCount: 2`, so the usual Back-beside-Next row is a
+     * single field. Any authored button suppresses the form's own Back /
+     * Continue row, so a dropped second button is a page with no way forward.
+     *
+     * `buttonCount` is the switch, not the presence of the secondary keys: the
+     * builder keeps them after the count goes back to one, and a button the
+     * author removed must not come back.
+     *
+     * @return list<array{label: string, action: string}>
+     */
+    private static function buttons(Field $field): array
+    {
+        $properties = $field->properties;
+        $buttons = [[
+            'label' => $field->label,
+            'action' => self::optionalText($properties['buttonAction'] ?? null) ?? 'next_page',
+        ]];
+
+        $count = $properties['buttonCount'] ?? 1;
+        if (!is_numeric($count) || (int) $count < 2) {
+            return $buttons;
+        }
+
+        $action = self::optionalText($properties['secondaryButtonAction'] ?? null) ?? 'next_page';
+        $buttons[] = [
+            'label' => self::optionalText($properties['secondaryButtonLabel'] ?? null)
+                ?? self::BUTTON_LABELS[$action]
+                ?? 'Next',
+            'action' => $action,
+        ];
+
+        return $buttons;
     }
 
     /** An unauthored notice falls back to the one treatment that cannot overstate itself. */

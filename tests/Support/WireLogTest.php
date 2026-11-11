@@ -182,7 +182,27 @@ final class WireLogTest extends TestCase
     /** @param array<string, string> $env */
     private function emrHttpClient(array $env): object
     {
-        $client = $this->containerFor($env)->get(\AsterMD\Storefront\Emr\ClientFactory::class)->create();
+        // Stated credentials, not the machine's: a checkout with no `.env`
+        // (CI, a fresh clone) has none, and building the client refuses
+        // without them before any transport is chosen.
+        $restore = [];
+        foreach (['ASTERMD_CLIENT_ID' => 'test-client-id', 'ASTERMD_CLIENT_SECRET' => 'test-client-secret'] as $key => $value) {
+            $restore[$key] = $_ENV[$key] ?? null;
+            $_ENV[$key] = $value;
+        }
+
+        try {
+            $client = $this->containerFor($env)->get(\AsterMD\Storefront\Emr\ClientFactory::class)->create();
+        } finally {
+            foreach ($restore as $key => $value) {
+                if ($value === null) {
+                    unset($_ENV[$key]);
+                } else {
+                    $_ENV[$key] = $value;
+                }
+            }
+        }
+
         $transport = (new \ReflectionProperty($client, 'transport'))->getValue($client);
 
         return (new \ReflectionProperty($transport, 'httpClient'))->getValue($transport);

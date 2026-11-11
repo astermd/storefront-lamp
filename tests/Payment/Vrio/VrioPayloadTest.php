@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace AsterMD\Storefront\Tests\Payment\Vrio;
 
+use AsterMD\Storefront\Payment\BillingAddress;
 use AsterMD\Storefront\Payment\Buyer;
 use AsterMD\Storefront\Payment\OrderEnvelope;
 use AsterMD\Storefront\Payment\OrderLine;
@@ -29,13 +30,14 @@ final class VrioPayloadTest extends TestCase
         ?string $code = null,
         ?string $session = 'sess-uuid-1',
         SettlementMode $settlement = SettlementMode::Capture,
+        ?BillingAddress $billing = null,
     ): OrderEnvelope {
         $lines ??= [new OrderLine('tirzepatide-5mg', 'Tirzepatide (5mg/mL)', '337', '3414', 12000, 1)];
         $subtotal = array_sum(array_map(static fn (OrderLine $l): int => $l->lineTotalCents(), $lines));
 
         return new OrderEnvelope(
             lines: $lines,
-            buyer: new Buyer('Patient', 'Aaad', 'buyer@example.com', '2125551234', '350 5th Avenue', 'New York', 'NY', '10118'),
+            buyer: new Buyer('Patient', 'Aaad', 'buyer@example.com', '2125551234', '350 5th Avenue', 'New York', 'NY', '10118', billing: $billing),
             subtotalCents: $subtotal,
             discountCents: $discountCents,
             totalCents: $subtotal - $discountCents,
@@ -231,6 +233,23 @@ final class VrioPayloadTest extends TestCase
         self::assertSame('NY', $body['ship_state']);
         self::assertSame('NY', $body['bill_state']);
         self::assertSame('US', $body['ship_country']);
+        self::assertSame('Patient', $body['bill_fname'], 'with no billing address the cardholder is the buyer');
+        self::assertSame('Aaad', $body['bill_lname']);
+    }
+
+    public function testADifferentBillingAddressClearsTheSameFlagAndIsSent(): void
+    {
+        $billing = new BillingAddress('Ada', 'Lovelace', '1 Main St', 'Austin', 'TX', '73301');
+        $body = VrioPayload::forOrder($this->envelope(billing: $billing), $this->card(), $this->credentials(), 1);
+
+        self::assertFalse($body['shipping_same']);
+        self::assertSame('Ada', $body['bill_fname']);
+        self::assertSame('Lovelace', $body['bill_lname']);
+        self::assertSame('1 Main St', $body['bill_address1']);
+        self::assertSame('Austin', $body['bill_city']);
+        self::assertSame('TX', $body['bill_state']);
+        self::assertSame('73301', $body['bill_zipcode']);
+        self::assertSame('350 5th Avenue', $body['ship_address1'], 'shipping is untouched');
     }
 
     public function testTheRequestContextTravelsWithTheOrder(): void

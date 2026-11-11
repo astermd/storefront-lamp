@@ -80,30 +80,23 @@ final class CheckoutChampPayload
     public static function forLead(OrderEnvelope $order, string $salesUrl = ''): array
     {
         $buyer = $order->buyer;
+        $billing = $buyer->billing;
 
+        // The unprefixed name and address are the billing contact; the
+        // delivery name travels as `shipFirstName`/`shipLastName`. So a buyer
+        // who gave a separate billing address is billed under its name too.
         $body = self::shipping($order) + [
             'campaignId' => (string) self::campaignFor($order),
-            'firstName' => $buyer->firstName,
-            'lastName' => $buyer->lastName,
+            'firstName' => $billing->firstName ?? $buyer->firstName,
+            'lastName' => $billing->lastName ?? $buyer->lastName,
             'emailAddress' => $buyer->email,
             'phoneNumber' => $buyer->phone,
 
-            'address1' => $buyer->addressLine,
-            'city' => $buyer->city,
-            'state' => $buyer->territory,
-            'postalCode' => $buyer->postalCode,
-            'country' => $buyer->country,
-
-            // Billing is the shipping address (`[13.2]`), sent in full rather
-            // than as a flag: the provider documents no "same as shipping"
-            // switch, and a half-populated billing address is refused.
-            'billFirstName' => $buyer->firstName,
-            'billLastName' => $buyer->lastName,
-            'billAddress1' => $buyer->addressLine,
-            'billCity' => $buyer->city,
-            'billState' => $buyer->territory,
-            'billPostalCode' => $buyer->postalCode,
-            'billCountry' => $buyer->country,
+            'address1' => $billing->addressLine ?? $buyer->addressLine,
+            'city' => $billing->city ?? $buyer->city,
+            'state' => $billing->territory ?? $buyer->territory,
+            'postalCode' => $billing->postalCode ?? $buyer->postalCode,
+            'country' => $billing->country ?? $buyer->country,
 
             'ipAddress' => $order->clientIp ?? '',
         ];

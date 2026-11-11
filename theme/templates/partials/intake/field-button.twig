@@ -1,9 +1,15 @@
 {# Navigation comes from the definition, not the template ([10.10]): the form
-   author decides whether a page carries Back, Next or Submit. #}
-{% set action = field.button_action %}
-<button
-  type="{{ action == 'submit' ? 'submit' : 'button' }}"
-  data-intake-action="{{ action }}"
-  {% if action == 'submit' %}name="intake_submit" value="1"{% endif %}
-  class="{% if action == 'previous_page' %}inline-flex w-full items-center justify-center gap-2 rounded-sm border-2 border-border bg-background h-[41px] px-5 text-base font-medium sm:h-auto sm:py-4 text-heading transition-colors hover:border-primary hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary{% else %}inline-flex w-full items-center justify-center gap-2 rounded-sm bg-primary h-[41px] px-5 text-base font-medium sm:h-auto sm:py-4 text-primary-foreground transition-colors hover:bg-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-hover disabled:cursor-not-allowed disabled:opacity-60{% endif %}{% if field.runtime_class %} {{ field.runtime_class }}{% endif %}"
->{{ field.label }}</button>
+   author decides whether a page carries Back, Next or Submit. One field may
+   hold two buttons -- the builder's Back-beside-Next row -- and they share a
+   row in the order authored. #}
+<div class="grid gap-4{% if field.buttons|length > 1 %} grid-cols-2{% endif %}">
+{% for button in field.buttons %}
+  {% set action = button.action %}
+  <button
+    type="{{ action == 'submit' ? 'submit' : 'button' }}"
+    data-intake-action="{{ action }}"
+    {% if action == 'submit' %}name="intake_submit" value="1"{% endif %}
+    class="{% if action == 'previous_page' %}inline-flex w-full items-center justify-center gap-2 rounded-sm border-2 border-border bg-background h-[41px] px-5 text-base font-medium sm:h-auto sm:py-4 text-heading transition-colors hover:border-primary hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary{% else %}inline-flex w-full items-center justify-center gap-2 rounded-sm bg-primary h-[41px] px-5 text-base font-medium sm:h-auto sm:py-4 text-primary-foreground transition-colors hover:bg-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-hover disabled:cursor-not-allowed disabled:opacity-60{% endif %}{% if field.runtime_class %} {{ field.runtime_class }}{% endif %}"
+  >{{ button.label }}</button>
+{% endfor %}
+</div>
