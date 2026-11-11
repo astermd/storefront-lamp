@@ -531,37 +531,6 @@ final class StripeAdapterTest extends TestCase
         self::assertSame(11400, $this->transport->params(2)['amount']);
         self::assertSame(600, $this->transport->params(2)['amount_details']['discount_amount']);
     }
-
-    public function testACouponIsCheckedForTheShopperBuying(): void
-    {
-        // A coupon limited to a patient is the EMR's to check against whoever
-        // it can tell is buying.
-        $coupons = new FixedCoupons();
-
-        $this->adapter(coupons: $coupons)->quotePromotion($this->envelope(opportunityId: self::OPPORTUNITY), 'foobar');
-
-        self::assertSame([['email' => 'ada@example.com', 'opportunity' => self::OPPORTUNITY]], $coupons->asked);
-    }
-
-    public function testThePaymentChargesTheTotalItIsHandedWithoutPricingTheCodeAgain(): void
-    {
-        // The checkout quotes the code as the buyer pays and hands over the
-        // total that quote gave (requotesPromotionAtPayment). A second check
-        // here would ask the EMR the same question again on every payment.
-        $coupons = new FixedCoupons(PromotionQuote::rejected('foobar', 'denied', 'The coupon has expired'));
-        $this->queueNoCustomer();
-        $this->transport->queue(200, self::paymentIntent('succeeded', 11400));
-
-        $outcome = $this->adapter(coupons: $coupons)->place(
-            $this->envelope(code: 'foobar', couponId: self::COUPON, discountCents: 600),
-            PaymentCredential::token('ctoken_1Abc'),
-        );
-
-        self::assertTrue($outcome->isPlaced());
-        self::assertSame([], $coupons->asked);
-        self::assertSame(11400, $this->transport->params(2)['amount']);
-        self::assertSame(600, $this->transport->params(2)['amount_details']['discount_amount']);
-    }
 }
 
 /** A coupon gateway that prices every code at $10 off, or answers what it is given, and records who it was asked for. */
