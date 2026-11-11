@@ -8,6 +8,19 @@ names exactly which ones changed.
 
 ## [Unreleased]
 
+### Medical conditions no longer sink the whole lead update
+
+An intake question mapped to `opportunity.clinical.medical_conditions` was sent
+to the EMR as a bare string — a free-text answer always, and a multi-select
+whenever the visitor picked just one option. The EMR refuses that path as
+anything but a list, and refuses it with a 400 that discards the entire
+update, so the lead lost its name, date of birth, allergies and medications
+along with the conditions. Conditions are now always sent as a list, the same
+way medications and allergies already were.
+
+- `core/Forms/RecordMapper.php`, `tests/Forms/RecordMapperTest.php`,
+  `docs/INTEGRATION-NOTES.md`
+
 ### Long names and addresses wrap on the thank-you page
 
 A first name or an address line typed as one long unbroken string pushed past

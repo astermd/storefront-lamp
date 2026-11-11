@@ -164,6 +164,34 @@ final class RecordMapperTest extends TestCase
         );
     }
 
+    /**
+     * `clinical.medical_conditions` is refused as a bare string exactly like
+     * medications and allergies, and the refusal discards the whole lead
+     * update — so a free-text answer and a single-pick multi-select (which
+     * `build()` flattens to its one value) both have to reach it as a list.
+     */
+    public function testMedicalConditionsReachTheRecordAsAListFromFreeTextOrASinglePick(): void
+    {
+        $definition = Definition::fromArray(['pages' => [['pageId' => 'p1', 'order' => 0, 'fields' => [
+            ['fieldId' => 'conditions_text', 'name' => 'medical_conditions', 'type' => 'textarea', 'label' => 'Conditions'],
+            ['fieldId' => 'conditions_pick', 'name' => 'past_history', 'type' => 'choice-multi', 'label' => 'History'],
+        ]]]]);
+
+        $freeText = $this->mapper()->build(
+            self::metadata(['conditions_text' => 'opportunity.clinical.medical_conditions']),
+            AnswerSet::fromArray(['medical_conditions' => 'IBS']),
+            $definition,
+        );
+        $singlePick = $this->mapper()->build(
+            self::metadata(['conditions_pick' => 'opportunity.clinical.medical_conditions']),
+            AnswerSet::fromArray(['past_history' => ['Hypothyroidism']]),
+            $definition,
+        );
+
+        self::assertSame(['clinical' => ['medical_conditions' => ['IBS']]], $freeText);
+        self::assertSame(['clinical' => ['medical_conditions' => ['Hypothyroidism']]], $singlePick);
+    }
+
     public function testOmitsFieldsWithNoAnswerOrAnEmptyAnswer(): void
     {
         $payload = $this->mapper()->build(

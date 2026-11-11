@@ -219,6 +219,12 @@ it holds, logging `intake.multi_value_flattened` so a flatten that is ever
 wrong stays traceable rather than invisible. **A genuine multi-selection — two
 or more values — stays a list.**
 
+The mirror image holds for three paths: `clinical.medications`,
+`clinical.allergies` and `clinical.medical_conditions` are refused as anything
+*but* a list, with the same whole-update 400. The mapper wraps a bare answer —
+free text, or a single pick it has just flattened — back into a list of one for
+those paths (`RecordMapper::LIST_TARGET`).
+
 ### 8. `phone` is accepted as a plain string; the documented structured shape returns 400
 
 The SDK documents phone as `array{code, number}`. **That shape is what fails.**
