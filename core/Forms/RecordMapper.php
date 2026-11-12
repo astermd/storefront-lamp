@@ -25,9 +25,9 @@ use AsterMD\Storefront\Support\OperatorLog;
  * Passing a delta would make the second save look like an instruction to clear
  * everything the first one had filled in.
  *
- * `clinical.medications` and `clinical.allergies` write as a one-element list
- * however the form collected them, because the EMR refuses those two paths
- * written as a bare string — see {@see self::LIST_TARGET}.
+ * `clinical.medications`, `clinical.allergies` and `clinical.medical_conditions`
+ * write as a one-element list however the form collected them, because the EMR
+ * refuses those paths written as a bare string — see {@see self::LIST_TARGET}.
  *
  * Only the `opportunity` root is written (`[11.3]`, `[11.11]`). Another root is
  * a target this storefront has no call to write, so it is skipped — but skipped
@@ -56,14 +56,19 @@ final class RecordMapper
 
     /**
      * Targets the record stores as a list even though the form collects them
-     * as one free-text answer. The EMR rejects `clinical.medications` and
-     * `clinical.allergies` written as a bare string; wrapping the whole
-     * answer in a single-element list is the safe conversion, because
-     * splitting it on commas would guess at a delimiter the visitor never
-     * agreed to and could turn "please call before refilling, I travel a
-     * lot" into two medications.
+     * as one free-text answer. The EMR rejects `clinical.medications`,
+     * `clinical.allergies` and `clinical.medical_conditions` written as a bare
+     * string — and the rejection is a 400 that discards the whole lead update,
+     * not just that field. Wrapping the whole answer in a single-element list
+     * is the safe conversion, because splitting it on commas would guess at a
+     * delimiter the visitor never agreed to and could turn "please call before
+     * refilling, I travel a lot" into two medications.
+     *
+     * A multi-select with a single pick reaches this point already flattened
+     * to its one value by {@see self::build()}, so it is wrapped back into a
+     * list here like any free-text answer.
      */
-    private const string LIST_TARGET = '/(^|\.)(medications|allergies)$/';
+    private const string LIST_TARGET = '/(^|\.)(medications|allergies|medical_conditions)$/';
 
     private const float INCHES_TO_CENTIMETRES = 2.54;
 
