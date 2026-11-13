@@ -598,7 +598,7 @@ other and with the release tag. This is **0.0.1**; `CHANGELOG.md` names the file
 release changed, because an update is applied by copying files rather than by a package
 manager.
 
-MIT licensed — see `LICENSE`.
+[MIT](LICENSE) © 2026 CodeClouds™ DBA AsterMD
 
 ## Trademarks
 
