@@ -1,6 +1,10 @@
-# AsterMD Storefront
+<p align="center">
+  <a href="https://www.astermd.com/"><img src="https://raw.githubusercontent.com/astermd/storefront-lamp/main/.github/assets/astermd-logo.svg" alt="AsterMD" height="48"></a>
+</p>
 
-A server-rendered storefront theme for telehealth. It carries a visitor from a product
+# AsterMD Storefront (PHP)
+
+A server-rendered storefront theme for the [AsterMD](https://www.astermd.com/) telehealth API: catalog, intake forms and orders. AsterMD is a white-label, API-first telehealth platform. The theme carries a visitor from a product
 page to a paid, clinically-reviewable order: catalog and cart, a definition-driven intake
 questionnaire, an optional identity check, checkout against a payment aggregator,
 post-purchase upsells, and a receipt.
@@ -12,13 +16,13 @@ table is the whole deployment.
 
 It talks to two external systems:
 
-- **the EMR**, through `astermd/sdk` — the product catalog, analytics sessions, teleform
+- **the AsterMD platform**, through `astermd/sdk` — the product catalog, analytics sessions, teleform
   (questionnaire) definitions, intake submissions, and checkout-funnel events;
 - **a payment aggregator**, through `astermd/vrio-client` — the charge itself, promotions,
   and the reference-order handle that later upsell charges reuse.
 
 The two are kept apart on purpose. **Card data reaches the payment adapter and nothing
-else.** No card number, expiry or security code is ever sent to the EMR, and none is ever
+else.** No card number, expiry or security code is ever sent to the AsterMD platform, and none is ever
 written to this application's own database — `core/Payment/PaymentCredential.php` makes
 that structural rather than conventional, since the only credential shape that can be
 persisted is one with no card in it.
@@ -142,7 +146,7 @@ Every file in `config/` becomes a top-level key. `config/app.php` is `app.*`,
 | `upsells.php` | post-purchase upsells — charged *separately* after the first order settles |
 | `abandonment.php` | when a stopped journey counts as abandoned, and how far back a sweep looks |
 | `retention.php` | how long each category of data is kept, and what a deletion request can actually reach |
-| `products.generated.php` | **machine-written, gitignored.** The catalog, as synced from the EMR channel — one deployment's products, prices and provider identifiers. `products.generated.example.php` is the committed shape reference; a clone renders that placeholder catalog until you sync. |
+| `products.generated.php` | **machine-written, gitignored.** The catalog, as synced from the sales channel on the AsterMD platform — one deployment's products, prices and provider identifiers. `products.generated.example.php` is the committed shape reference; a clone renders that placeholder catalog until you sync. |
 | `products.overrides.php` | **yours.** Merged over the generated catalog at runtime. |
 | `channel.generated.php` | **machine-written, gitignored.** Payment-processor config including live provider credentials. `channel.generated.example.php` is the committed shape reference. |
 
@@ -151,19 +155,19 @@ Every file in `config/` becomes a top-level key. `config/app.php` is `app.*`,
 This is the part worth understanding before you edit anything in `config/`.
 
 `bin/console theme:sync --apply` **regenerates `products.generated.php` wholesale** from
-the EMR channel response. It is a full replace, not a patch. Anything you hand-edit in
+the sales channel on the AsterMD platform. It is a full replace, not a patch. Anything you hand-edit in
 that file is gone at the next sync.
 
 `products.overrides.php` is never touched by sync. It is merged *over* the generated
 catalog at runtime by `CatalogProvider`, so every customisation survives every re-sync.
-Pricing tweaks, provider identifiers for variants the EMR does not carry them for, copy
+Pricing tweaks, provider identifiers for variants the AsterMD platform does not carry them for, copy
 fixes, territory blocks, pre-qualification flags — all of it belongs there.
 
 Two rules that are easy to get wrong, and both are documented at length at the top of
 `products.overrides.php`:
 
 - **Key overrides by `emr_product_id`, never by slug or name.** Slugs and names can change
-  on a re-sync; the EMR's id does not.
+  on a re-sync; the AsterMD platform's id does not.
 - **Any field you set replaces the generated field wholesale** — overriding `categories`
   replaces the whole list rather than adding to it. `variants` is the one exception: key
   it by variant id and only the fields you name are merged into that one variant.
@@ -178,7 +182,7 @@ edits to it are yours.
 ### Environment
 
 `.env.example` is the starting point and covers the required set: app URL and environment,
-database, EMR credentials and channel id, and the `_amd` affiliate-tracking key (with its
+database, AsterMD API credentials and channel id, and the `_amd` affiliate-tracking key (with its
 rotation slot, `AMD_TRACKING_KEY_PREVIOUS` — both keys are tried on every payload, so
 already-sent links keep working across a rotation).
 
@@ -188,7 +192,7 @@ The one value in `.env` that decides whether the store can be indexed at all. Th
 enumeration of it in code: `production` and `test` mean something specific, and every other
 value behaves as a development environment.
 
-| `APP_ENV` | Indexability | Twig cache | Error details in the response | EMR analytics sessions |
+| `APP_ENV` | Indexability | Twig cache | Error details in the response | AsterMD analytics sessions |
 |---|---|---|---|---|
 | absent, or `production` | per-route rules only: `robots.txt` disallows the funnel prefixes, `sitemap.xml` lists the marketing paths, no page-level `noindex` | compiled to `storage/cache/twig`, `auto_reload` off | hidden | on |
 | any other value (`dev`, `staging`, …) | **sitewide `noindex`**: `robots.txt` is a blanket `Disallow: /`, `sitemap.xml` is an empty `<urlset>`, every page emits `noindex, nofollow` | off, recompiled every request | shown | on |
@@ -215,7 +219,7 @@ fail loudly when they are wrong. The fourth does not, which is why it is worth r
 |---|---|---|
 | `ASTERMD_CLIENT_ID` | issued with the API credential pair | an opaque identifier, `@`, and the API host it was issued for |
 | `ASTERMD_CLIENT_SECRET` | issued alongside it | opaque; a blank pair throws at client construction |
-| `ASTERMD_CHANNEL_ID` | the EMR's record for the sales channel this storefront sells | 24 hexadecimal characters |
+| `ASTERMD_CHANNEL_ID` | the AsterMD platform's record for the sales channel this storefront sells | 24 hexadecimal characters |
 | `AMD_TRACKING_KEY` | **issued** — the key the affiliate-link service encrypts with | exactly 32 hexadecimal characters (a 16-byte AES-128 key) |
 
 `AMD_TRACKING_KEY` is the one worth spelling out. A self-generated 32 hex characters is a
@@ -229,15 +233,15 @@ with no affiliate links yet. `deploy/README.md` covers rotation once you have a 
 #### `GOOGLE_MAPS_API_KEY`
 
 Optional, blank by default, and blank is handled — the receipt renders no map, and checkout's
-address suggestions come from the EMR. Filling it in buys two things: checkout's address
+address suggestions come from the AsterMD platform. Filling it in buys two things: checkout's address
 suggestions come from Google Places instead, and `/thank-you/` shows a delivery map. Both cost
 something worth deciding on rather than discovering: what the buyer types into the address
 field, and the receipt's shipping address, **go to Google**, so this belongs in the privacy
 copy; and the key is a template global, so it is delivered as plain text in page source and
 needs an HTTP-referrer restriction to your own domain plus an API restriction to the **Maps
 JavaScript API, the Places API (New) and the Maps Embed API** before it goes anywhere real. A
-key Google refuses for Places is not fatal: the address field falls back to the EMR's
-suggestions on its own.
+key Google refuses for Places is not fatal: the address field falls back to the AsterMD
+platform's suggestions on its own.
 
 #### Switches with no line in `.env.example`
 
@@ -246,10 +250,10 @@ worth knowing:
 
 | Variable | Effect | Default |
 |---|---|---|
-| `WIRE_LOG` | writes every EMR and provider call to `storage/logs/` verbatim. **See Security.** | off |
+| `WIRE_LOG` | writes every AsterMD API and provider call to `storage/logs/` verbatim. **See Security.** | off |
 | `IDENTITY_VERIFICATION` | master switch for the identity-check step | off |
 | `EMR_VERIFY_EMAIL` | email-deliverability check at checkout | off |
-| `EMR_VERIFY_ADDRESS` | address check against the EMR | off |
+| `EMR_VERIFY_ADDRESS` | address check against the AsterMD platform | off |
 | `EMR_VERIFICATION` | sets both of the above when neither is given (the older single switch) | off |
 | `INTAKE_RENDERER` | `server` or `js-engine` | `server` |
 | `PAYMENT_SHIPPING_PROFILE_ID` | the provider refuses any payment order without one | `1` |
@@ -266,7 +270,8 @@ bin/console help <cmd>    # options for one command
 
 The commands that write or spend money are dry-run by default and need `--apply` (or, for
 `media:prune`, `--force`) to act. The exception is `forms:cache-purge`, which deletes
-immediately — harmless, since the cache refills from the EMR on the next request.
+immediately — harmless, since the cache refills from the AsterMD platform on the next
+request.
 
 **Setup and catalog**
 
@@ -277,7 +282,7 @@ bin/console provider:ping         # resolve the payment adapter and check it ans
 bin/console theme:sync            # dry run — prints the diff, writes nothing
 bin/console theme:sync --apply    # writes products.generated.php and channel.generated.php
 bin/console config:validate       # structural validation of the merged catalog
-bin/console config:validate --live   # also resolves every rx/otc product against the EMR
+bin/console config:validate --live   # also resolves every rx/otc product against the AsterMD platform
 bin/console payment:capture <ref> # settle an order that was authorized rather than charged
 bin/console cache:clear           # wipe storage/cache (do this after deploying template changes)
 bin/console media:prune           # orphaned files under public/assets/media (--force to delete)
@@ -291,8 +296,8 @@ bin/console forms:record --teleform=<id>   # capture a definition and its metada
 ```
 
 The definition cache is keyed on the teleform's `form_json_identifier`, which carries the
-form's version and publish time — so republishing a form in the EMR is already a cache
-miss and a purge is rarely needed.
+form's version and publish time — so republishing a form in the AsterMD platform is already a
+cache miss and a purge is rarely needed.
 
 `theme:sync`'s dry-run diff includes `channel.generated.php`, which carries the live
 provider credential. Do not pipe it into CI console output or a shared log.
@@ -300,7 +305,7 @@ provider credential. Do not pipe it into CI console output or a shared log.
 **Scheduled jobs**
 
 ```bash
-bin/console emr:reconcile         # orders the EMR was never told about
+bin/console emr:reconcile         # orders the AsterMD platform was never told about
 bin/console provider:reconcile    # charges the provider took that are not recorded locally
 bin/console abandonment:signals   # abandoned-journey signals as JSON  ← see Security
 bin/console db:prune              # operational data past its retention period
@@ -387,7 +392,7 @@ second place.
 
 The operator log stamps the analytics session identifier on every line written inside a
 journey. That is deliberate and it is `[20.13]`: one correlation identifier is what joins a
-storefront log line to the EMR record and to the provider order, and without it a
+storefront log line to the AsterMD platform record and to the provider order, and without it a
 "this exists at the provider but nowhere in our own records" investigation has nothing to
 join on.
 
@@ -408,7 +413,7 @@ enforced by `bin/console db:prune` rather than by intent.
 
 ### Never enable `WIRE_LOG` anywhere real
 
-`WIRE_LOG=true` writes every EMR and payment-provider call — request and response — to
+`WIRE_LOG=true` writes every AsterMD API and payment-provider call — request and response — to
 `storage/logs/`, **verbatim and unredacted**. That is the entire point of it: a redacted
 transcript cannot be replayed by hand, and replaying the exact bytes is how a disagreement
 with a provider gets settled.
@@ -470,7 +475,7 @@ a silent downgrade.
 
 - **Forwarding headers are stripped from client requests** by both sample web-server
   configs. The application trusts `X-Forwarded-Proto` (it decides whether the session
-  cookie gets `Secure`) and the real-client-IP headers (they are what the EMR is told).
+  cookie gets `Secure`) and the real-client-IP headers (they are what the AsterMD platform is told).
   Left un-stripped, a visitor can hand you either one. If you front the app with something
   that legitimately sets them, un-strip only that header — `deploy/README.md` has the two
   conditions that must hold first.
@@ -494,7 +499,7 @@ A short list, so none of these reads as an oversight. Each is explained in the c
 that holds it.
 
 - **Identity verification** — see above.
-- **`app.features.emr_verify_email` / `emr_verify_address`** — whether the EMR answers them
+- **`app.features.emr_verify_email` / `emr_verify_address`** — whether the AsterMD platform answers them
   depends on the organisation's grant, and a check that always fails is worse than none.
 - **`config/cross-sells.php` is empty** — every product in the current channel is a
   prescription, and an order carries at most one prescription, so nothing in the catalog is
@@ -524,11 +529,11 @@ assert something about *the shipped catalog* fall back to
 assertion count is lower only because the example catalog is smaller than a real channel.
 
 **No test makes an outbound network call.** That is enforced rather than hoped for: the
-suite runs with `APP_ENV=test` (set in `phpunit.xml`), which turns EMR analytics sessions
-off at the config level, and every gateway — EMR sessions, cart, teleforms, leads, identity
+suite runs with `APP_ENV=test` (set in `phpunit.xml`), which turns AsterMD analytics
+sessions off at the config level, and every gateway — AsterMD sessions, cart, teleforms, leads, identity
 checks, the payment transport — has a fake that tests inject. Provider behaviour is pinned
 against recorded response fixtures rather than re-fetched. `forms:record`, which always
-reaches the real EMR when an operator runs it, is exercised in tests through its gateway
+reaches the real AsterMD platform when an operator runs it, is exercised in tests through its gateway
 seam instead.
 
 The suite also checks its own documentation: `tests/Docs/SpecReferenceTest.php` scans the
@@ -541,9 +546,9 @@ source for `[n.n]` citations and fails if any of them resolves to nothing in
 
 | | |
 |---|---|
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | how the pieces fit — the funnel, the journey store, the catalog merge, the payment and EMR seams |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | how the pieces fit — the funnel, the journey store, the catalog merge, the payment and AsterMD platform seams |
 | [`docs/OPERATIONS.md`](docs/OPERATIONS.md) | the operator runbook: schedules for the four jobs, what `ops:status` counts mean, what to do when one is non-zero |
-| [`docs/INTEGRATION-NOTES.md`](docs/INTEGRATION-NOTES.md) | what the EMR and the payment provider really do, as measured — including where each disagrees with its own documentation |
+| [`docs/INTEGRATION-NOTES.md`](docs/INTEGRATION-NOTES.md) | what the AsterMD platform and the payment provider really do, as measured — including where each disagrees with its own documentation |
 | [`docs/SPEC-REFERENCE.md`](docs/SPEC-REFERENCE.md) | what the `[n.n]` citations mean |
 | [`deploy/README.md`](deploy/README.md) | web-server configs, the Docker image, permissions, catalog-sync procedure, session and attribution behaviour, key rotation |
 
@@ -593,10 +598,20 @@ other and with the release tag. This is **0.0.1**; `CHANGELOG.md` names the file
 release changed, because an update is applied by copying files rather than by a package
 manager.
 
-MIT licensed — see `LICENSE`.
+[MIT](LICENSE) © 2026 CodeClouds™ DBA AsterMD
+
+## Trademarks
+
+The AsterMD name and logo are proprietary to AsterMD. The MIT license covers the source code in
+this repository only and does not grant rights to use the AsterMD brand.
 
 ---
 
 `core/` is the application; `theme/` is what you restyle. Core files carry a header saying
 local edits are lost when core is updated — customisation belongs in `theme/`,
 `config/*.overrides.php`, and the non-generated config files.
+
+## About AsterMD
+
+AsterMD is a telehealth platform that helps healthcare brands launch and grow virtual care services. It includes intake builders, patient portals and your choice of providers and pharmacy, with no vendor lock-in.
+[astermd.com](https://www.astermd.com/) · hello@astermd.com

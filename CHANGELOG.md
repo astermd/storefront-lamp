@@ -8,6 +8,17 @@ names exactly which ones changed.
 
 ## [Unreleased]
 
+### README, contact email and package metadata
+
+Documentation and package metadata only; no code or behaviour change. The
+README gains the AsterMD logo, a trademarks note and an About section, and
+refers to the AsterMD platform by name. The contact address is now
+hello@astermd.com, and `composer.json` and `package.json` carry the homepage,
+repository and issue-tracker links.
+
+- `README.md`, `deploy/README.md`, `.github/assets/astermd-logo.svg`,
+  `composer.json`, `package.json`, `CHANGELOG.md`
+
 ### Medical conditions no longer sink the whole lead update
 
 An intake question mapped to `opportunity.clinical.medical_conditions` was sent

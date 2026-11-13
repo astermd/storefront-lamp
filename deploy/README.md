@@ -15,7 +15,7 @@ This directory contains sample configurations for deploying the AsterMD storefro
    ```bash
    cp .env.example .env
    ```
-   Then **delete the `APP_ENV` line from the copy** — or change it to `APP_ENV=production` — before you configure anything else, and fill in the database and EMR values described under [The environment file](#the-environment-file) below.
+   Then **delete the `APP_ENV` line from the copy** — or change it to `APP_ENV=production` — before you configure anything else, and fill in the database and AsterMD API values described under [The environment file](#the-environment-file) below.
 
    Deleting that line is not housekeeping. **Any `APP_ENV` value other than `production` puts a sitewide `noindex` over the whole storefront**, and it overrides every per-route rule (`[24.7]`). Left wrong on a live store, that store is invisible to every search engine and nothing on the page says so. An absent `APP_ENV` defaults to `production`, so removing the line is a safer edit than trusting whatever value the copy came with.
 
@@ -42,7 +42,7 @@ There is no enumeration of this value in code: `production` and `test` each mean
 | any other value (`dev`, `staging`, …) | blanket `Disallow: /` | empty `<urlset>` | `noindex, nofollow` | off, recompiled every request | shown |
 | `test` | as above | as above | as above | off | shown |
 
-`test` additionally turns EMR analytics sessions off (`app.session.analytics`), so nothing is minted, no visitor gets an `amd_session` cookie, and a resume link has nothing to resume. It is the value the automated suite runs under, and it is never a value to deploy.
+`test` additionally turns AsterMD analytics sessions off (`app.session.analytics`), so nothing is minted, no visitor gets an `amd_session` cookie, and a resume link has nothing to resume. It is the value the automated suite runs under, and it is never a value to deploy.
 
 Two consequences worth stating outright:
 
@@ -64,19 +64,19 @@ Four of the values in `.env` are issued to your deployment and cannot be generat
 |---|---|---|
 | `ASTERMD_CLIENT_ID` | issued with the API credential pair, per organisation | an opaque identifier, an `@`, and the API host it was issued for — e.g. `<id>@health.api.example.net`, the host half being the same value as `ASTERMD_BASE_HOST` |
 | `ASTERMD_CLIENT_SECRET` | issued alongside the client id | opaque |
-| `ASTERMD_CHANNEL_ID` | the EMR's own record for the sales channel this storefront sells | a 24-character hexadecimal id |
+| `ASTERMD_CHANNEL_ID` | the AsterMD platform's own record for the sales channel this storefront sells | a 24-character hexadecimal id |
 | `AMD_TRACKING_KEY` | **issued** — it is the key the affiliate-link service encrypts with, not a key you choose | exactly 32 hexadecimal characters (a 16-byte AES-128 key) |
 
 `AMD_TRACKING_KEY` is the one that punishes a guess. A locally generated 32 hex characters is a perfectly valid key that simply is not *the* key: every `_amd` payload fails to decrypt, the storefront falls back silently to whatever plain query parameters are present (`[5.3]`), the page renders normally, and the only trace is an `amd_decrypt_failed` line in `storage/logs/app.log`. Affiliate traffic is then attributed to nothing and nobody is told. The key must come from whoever issues the links; see [Rotating `AMD_TRACKING_KEY`](#sessions--attribution) below for changing it once you have it.
 
-Leaving `AMD_TRACKING_KEY` empty is a legitimate configuration — encrypted payloads are then never read and plain parameters are used — and it is the right state for a deployment that has no affiliate links yet. `ASTERMD_CLIENT_ID` and `ASTERMD_CLIENT_SECRET` are not optional: a blank pair makes every EMR call throw at client construction. `ASTERMD_CHANNEL_ID` is what `theme:sync` and `emr:ping` read; without it they refuse to run rather than guess a channel.
+Leaving `AMD_TRACKING_KEY` empty is a legitimate configuration — encrypted payloads are then never read and plain parameters are used — and it is the right state for a deployment that has no affiliate links yet. `ASTERMD_CLIENT_ID` and `ASTERMD_CLIENT_SECRET` are not optional: a blank pair makes every AsterMD API call throw at client construction. `ASTERMD_CHANNEL_ID` is what `theme:sync` and `emr:ping` read; without it they refuse to run rather than guess a channel.
 
 ### `GOOGLE_MAPS_API_KEY` costs something to fill in
 
-Blank is the shipped default, blank is safe, and blank is handled: the receipt simply renders no map, and checkout's address suggestions come from the EMR through the storefront. Filling it in moves those suggestions to Google Places in the buyer's browser and adds a delivery map to the receipt. That has two consequences that are not obvious from the variable's name.
+Blank is the shipped default, blank is safe, and blank is handled: the receipt simply renders no map, and checkout's address suggestions come from the AsterMD platform through the storefront. Filling it in moves those suggestions to Google Places in the buyer's browser and adds a delivery map to the receipt. That has two consequences that are not obvious from the variable's name.
 
 - **It sends the buyer's address to Google.** What the buyer types into checkout's address field goes to Google Places as they type, and the receipt page embeds a Google Maps iframe whose query parameter *is* the delivery address. That is a data-sharing decision, not a styling one, and it is one to make deliberately and to reflect in the privacy copy at `/privacy/`.
-- **The key is rendered into page source.** It is a template global, so it is delivered as plain text in the HTML of every page that uses it and is readable by anyone who can view that page — there is no server-side proxying of the request. Restrict it before you use it, by HTTP referrer to your own domain and by API to the Maps JavaScript API, the Places API (New) and the Maps Embed API; an unrestricted key in page source is billable by anyone who reads it. A key restricted to the Embed API alone still works: the address field finds Places refused and falls back to the EMR's suggestions.
+- **The key is rendered into page source.** It is a template global, so it is delivered as plain text in the HTML of every page that uses it and is readable by anyone who can view that page — there is no server-side proxying of the request. Restrict it before you use it, by HTTP referrer to your own domain and by API to the Maps JavaScript API, the Places API (New) and the Maps Embed API; an unrestricted key in page source is billable by anyone who reads it. A key restricted to the Embed API alone still works: the address field finds Places refused and falls back to the AsterMD platform's suggestions.
 
 ## Theme Assets
 
@@ -96,19 +96,19 @@ The generated output is **committed to the repository**, so **production servers
 
 ## Catalog Sync
 
-The product catalog and payment-processor channel config are pulled from the configured EMR channel via three CLI commands, all run as the trusted operator/deploy user (never by a web request — see the permissions note above):
+The product catalog and payment-processor channel config are pulled from the configured sales channel on the AsterMD platform via three CLI commands, all run as the trusted operator/deploy user (never by a web request — see the permissions note above):
 
 ```bash
 bin/console emr:ping             # connectivity check: channel name, product count, provider
 bin/console theme:sync           # dry run (default) — prints the diff, writes nothing
 bin/console theme:sync --apply   # writes config/products.generated.php and config/channel.generated.php
 bin/console config:validate          # structural validation of the merged catalog
-bin/console config:validate --live   # also resolves every rx/otc product against the live EMR
+bin/console config:validate --live   # also resolves every rx/otc product against the live AsterMD platform
 bin/console media:prune              # lists orphaned files under public/assets/media
 bin/console media:prune --force      # deletes them
 ```
 
-**Dry-run by default.** `theme:sync` only prints its diff unless you pass `--apply`. This is deliberate: it's a full-replace sync (the generated files are regenerated from the EMR response, not patched), so the diff is worth reading before committing to it — check the product/variant counts and the media and provider-identifier warnings at the end of the output before re-running with `--apply`.
+**Dry-run by default.** `theme:sync` only prints its diff unless you pass `--apply`. This is deliberate: it's a full-replace sync (the generated files are regenerated from the AsterMD platform's response, not patched), so the diff is worth reading before committing to it — check the product/variant counts and the media and provider-identifier warnings at the end of the output before re-running with `--apply`.
 
 **Caution — the printed diff includes the provider credential block.** `theme:sync`'s dry-run diff covers `config/channel.generated.php`, which carries the payment processor's live credentials (e.g. the Vrio API key), so don't pipe `theme:sync` output into shared logs or CI console output — treat it the same as you would a secret.
 
@@ -121,17 +121,17 @@ sync before it has products to sell.
 
 **`config/channel.generated.php` is the one that also holds credentials.** It holds the payment-processor config for the synced channel, including live provider credentials (e.g. the Vrio API key), so it must never be committed. `bin/console theme:sync --apply` is the only thing that writes it. `config/channel.generated.example.php` is the committed reference for its shape — copy its structure, never its placeholder values, when you need to reason about the file without a live sync.
 
-**`config/products.overrides.php` survives every sync.** `theme:sync` regenerates `config/products.generated.php` wholesale, but the override layer is merged in afterward and is never touched by the sync itself. Any hand customisation — pricing tweaks, provider identifiers for variants the EMR doesn't carry them for, copy fixes — belongs in `products.overrides.php`, not in the generated file.
+**`config/products.overrides.php` survives every sync.** `theme:sync` regenerates `config/products.generated.php` wholesale, but the override layer is merged in afterward and is never touched by the sync itself. Any hand customisation — pricing tweaks, provider identifiers for variants the AsterMD platform doesn't carry them for, copy fixes — belongs in `products.overrides.php`, not in the generated file.
 
 **`media:prune`** cleans up `public/assets/media` (gitignored, populated by `theme:sync --apply` localising product images) once products are removed or re-synced under new IDs. Run without `--force` first to see what would be deleted.
 
 ## Sessions & Attribution
 
-Every storefront visit is tied to an analytics session minted with the EMR the moment a visitor lands. The session identifier is the correlation key across three systems for one visitor — the storefront, the EMR, and the payment provider — which is what lets an order, an intake answer and a lead all be traced back to the same journey later.
+Every storefront visit is tied to an analytics session minted with the AsterMD platform the moment a visitor lands. The session identifier is the correlation key across three systems for one visitor — the storefront, the AsterMD platform, and the payment provider — which is what lets an order, an intake answer and a lead all be traced back to the same journey later.
 
 **The `amd_session` cookie.** Set on first landing, valid for 30 days, `HttpOnly` so client-side scripts cannot read or tamper with it, `SameSite=Lax`, and marked `Secure` automatically whenever the site is served over TLS. Because it is `HttpOnly`, the only way to restore a session the browser has lost the cookie for is the resume parameter below — there is no client-side storage fallback.
 
-**Resuming a session.** The single canonical resume parameter is `?amd_session=<id>`, accepted on any path, not just the homepage. When present it is authoritative: it overrides whatever the current cookie holds. A value that is malformed (wrong shape, contains a path separator, etc.) or names a session the EMR has never heard of is ignored silently — the visitor simply lands at the funnel entry point with no error shown and a fresh session minted underneath them. A resume link restores intake answers along with journey and attribution state, so treat it as a bearer credential for health information: the parameter is the bare session identifier by deliberate choice, it carries no expiry, and completing a journey does not revoke it. The cost of that choice is that a resume link can sit in an inbox indefinitely and still work, so anyone holding the URL holds indefinite access to that person's intake answers. It is not a gap awaiting a signed-token fix — the compensating control is the audit trail, which records every use of a resume link and every sweep that emits one as an access to health information. What that asks of you as an operator is to keep resume links out of anywhere they would outlive their purpose (ticket threads, CI artefacts, shell history, shared inboxes) and to retain the event log long enough to answer "who resumed this journey, and when".
+**Resuming a session.** The single canonical resume parameter is `?amd_session=<id>`, accepted on any path, not just the homepage. When present it is authoritative: it overrides whatever the current cookie holds. A value that is malformed (wrong shape, contains a path separator, etc.) or names a session the AsterMD platform has never heard of is ignored silently — the visitor simply lands at the funnel entry point with no error shown and a fresh session minted underneath them. A resume link restores intake answers along with journey and attribution state, so treat it as a bearer credential for health information: the parameter is the bare session identifier by deliberate choice, it carries no expiry, and completing a journey does not revoke it. The cost of that choice is that a resume link can sit in an inbox indefinitely and still work, so anyone holding the URL holds indefinite access to that person's intake answers. It is not a gap awaiting a signed-token fix — the compensating control is the audit trail, which records every use of a resume link and every sweep that emits one as an access to health information. What that asks of you as an operator is to keep resume links out of anywhere they would outlive their purpose (ticket threads, CI artefacts, shell history, shared inboxes) and to retain the event log long enough to answer "who resumed this journey, and when".
 
 **Rotating `AMD_TRACKING_KEY`.** Affiliate and campaign links carry their tracking parameters encrypted in the `_amd` query parameter, and those links live on in already-sent emails and already-bought ads — they cannot be recalled or reissued on demand. To rotate the key without breaking them:
 
@@ -142,19 +142,19 @@ Every storefront visit is tied to an analytics session minted with the EMR the m
 
 A payload that cannot be decrypted by either key never breaks the page — it falls back silently to plain query parameters, and the failure is recorded as `amd_decrypt_failed` in `storage/logs/app.log` for operators to notice a rotation that ran long or a malformed link.
 
-**Turning sessions off.** Setting `app.session.analytics` to `false` (see `config/app.php`) stops the storefront talking to the EMR about sessions: nothing is minted, no new visitor gets a cookie, and the resume parameter has nothing to resume — a resume link is rejected because the EMR is never asked whether the session exists. What it does *not* do is disable the local session machinery for a browser that already holds an `amd_session` cookie from before the switch: that cookie is still honoured, so the row is still there and first-touch attribution is still recorded against it locally. Clear the cookie (or wait out its 30 days) if you need visits genuinely untracked. This is the right setting for an environment that has no EMR credentials configured yet, or for any environment where you deliberately don't want visits correlated back to the EMR. It is already off for the automated test suite so no test run reaches the network.
+**Turning sessions off.** Setting `app.session.analytics` to `false` (see `config/app.php`) stops the storefront talking to the AsterMD platform about sessions: nothing is minted, no new visitor gets a cookie, and the resume parameter has nothing to resume — a resume link is rejected because the AsterMD platform is never asked whether the session exists. What it does *not* do is disable the local session machinery for a browser that already holds an `amd_session` cookie from before the switch: that cookie is still honoured, so the row is still there and first-touch attribution is still recorded against it locally. Clear the cookie (or wait out its 30 days) if you need visits genuinely untracked. This is the right setting for an environment that has no AsterMD API credentials configured yet, or for any environment where you deliberately don't want visits correlated back to the AsterMD platform. It is already off for the automated test suite so no test run reaches the network.
 
-**Forwarding headers are stripped from client requests.** Both sample configs blank `X-Forwarded-Proto`, `X-Forwarded-For`, `CF-Connecting-IP` and `True-Client-IP` on the way in (nginx via `fastcgi_param HTTP_… ""`, Apache via `RequestHeader unset`). The app trusts those headers: `X-Forwarded-Proto` decides whether the session cookie is marked `Secure`, and the real-client IP headers are what tell the EMR where a visitor came from. Left un-stripped, a visitor could send `X-Forwarded-Proto: http` to a TLS site and get a cookie without `Secure`, or name any IP address they liked and have it stored as theirs.
+**Forwarding headers are stripped from client requests.** Both sample configs blank `X-Forwarded-Proto`, `X-Forwarded-For`, `CF-Connecting-IP` and `True-Client-IP` on the way in (nginx via `fastcgi_param HTTP_… ""`, Apache via `RequestHeader unset`). The app trusts those headers: `X-Forwarded-Proto` decides whether the session cookie is marked `Secure`, and the real-client IP headers are what tell the AsterMD platform where a visitor came from. Left un-stripped, a visitor could send `X-Forwarded-Proto: http` to a TLS site and get a cookie without `Secure`, or name any IP address they liked and have it stored as theirs.
 
 If you front the app with something that legitimately sets these — Cloudflare sets `CF-Connecting-IP`, an AWS ALB or any nginx/HAProxy reverse proxy sets `X-Forwarded-Proto` and `X-Forwarded-For` — remove **only** the line for the header that hop sets, keeping the rest. Two things must be true before you do: the proxy has to overwrite the header rather than append to whatever the client sent, and nothing on the network may be able to reach the origin except through that proxy. If a request can arrive directly, relaxing the directive hands the spoof straight back.
 
-**`sessions` and `events` tables.** `sessions` holds one row per analytics session: the EMR-assigned session id, the opportunity id once one exists, the durable journey state, and the captured attribution. `events` is the storefront's own append-only audit trail of what happened in a journey — session creation, resume, and later journey milestones — independent of what the EMR itself recorded, which is what makes a "this exists at the provider but nowhere in our own records" investigation possible. Event payloads are redacted the same way the operator log is: nothing health-, identity-, or credential-shaped is ever written to either. Both tables are operational data, not clinical records — treat them as subject to your deployment's own data-retention policy, and retain and purge them on that schedule rather than indefinitely.
+**`sessions` and `events` tables.** `sessions` holds one row per analytics session: the session id assigned by the AsterMD platform, the opportunity id once one exists, the durable journey state, and the captured attribution. `events` is the storefront's own append-only audit trail of what happened in a journey — session creation, resume, and later journey milestones — independent of what the AsterMD platform itself recorded, which is what makes a "this exists at the provider but nowhere in our own records" investigation possible. Event payloads are redacted the same way the operator log is: nothing health-, identity-, or credential-shaped is ever written to either. Both tables are operational data, not clinical records — treat them as subject to your deployment's own data-retention policy, and retain and purge them on that schedule rather than indefinitely.
 
 The health endpoint (`/health/`) reports whether analytics sessions are enabled and whether `AMD_TRACKING_KEY` / `AMD_TRACKING_KEY_PREVIOUS` are configured, under its `info` block — presence only, never the key values themselves.
 
 ## Request size: intake file uploads
 
-A file-upload question sends each file to the EMR as soon as it is picked, relayed through this server one request at a time: a whole document or image up to 10 MB, or a video or larger file in parts of up to 10 MB. Every layer between the browser and PHP has to let a request of that size through:
+A file-upload question sends each file to the AsterMD platform as soon as it is picked, relayed through this server one request at a time: a whole document or image up to 10 MB, or a video or larger file in parts of up to 10 MB. Every layer between the browser and PHP has to let a request of that size through:
 
 | Layer | Setting | Shipped value | Where |
 |---|---|---|---|
@@ -164,7 +164,7 @@ A file-upload question sends each file to the EMR as soon as it is picked, relay
 
 `public/.user.ini` is read by php-fpm and other CGI/FastCGI setups, and is not served (both samples deny dot-files). **mod_php ignores it**: under mod_php, set the two values with `php_value` in the vhost instead. A CDN or load balancer in front has a body limit of its own.
 
-Lower PHP limits do not break the form. The page reads what PHP will accept and sends nothing larger, so a file between that and 10 MB goes up in parts instead of whole. Below 5 MB, though, a file larger than the limit cannot go up at all, because the EMR needs every part but the last to be at least 5 MB, and the page says so.
+Lower PHP limits do not break the form. The page reads what PHP will accept and sends nothing larger, so a file between that and 10 MB goes up in parts instead of whole. Below 5 MB, though, a file larger than the limit cannot go up at all, because the AsterMD platform needs every part but the last to be at least 5 MB, and the page says so.
 
 ## Apache Deployment
 

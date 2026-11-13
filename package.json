@@ -4,7 +4,15 @@
   "description": "Build-time asset pipeline for the AsterMD storefront theme. Not needed at runtime — public/assets/build/ is committed.",
   "private": true,
   "license": "MIT",
-  "author": "AsterMD Team <admin@astermd.com> (https://astermd.com)",
+  "author": "AsterMD Team <hello@astermd.com> (https://www.astermd.com/)",
+  "homepage": "https://www.astermd.com/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/astermd/storefront-lamp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/astermd/storefront-lamp/issues"
+  },
   "type": "commonjs",
   "scripts": {
     "build": "node build/build-assets.mjs",

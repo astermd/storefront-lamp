@@ -1,16 +1,22 @@
 {
     "name": "astermd/storefront-lamp",
     "description": "AsterMD telehealth storefront theme — PHP, Slim and Twig on a LAMP stack",
+    "homepage": "https://www.astermd.com/",
     "type": "project",
     "version": "0.0.6",
     "license": "MIT",
     "authors": [
         {
             "name": "AsterMD Team",
-            "homepage": "https://astermd.com",
-            "email": "admin@astermd.com"
+            "homepage": "https://www.astermd.com/",
+            "email": "hello@astermd.com"
         }
     ],
+    "support": {
+        "email": "hello@astermd.com",
+        "issues": "https://github.com/astermd/storefront-lamp/issues",
+        "source": "https://github.com/astermd/storefront-lamp"
+    },
     "require": {
         "php": ">=8.4",
         "astermd/checkoutchamp-client": "^0.0.2",
