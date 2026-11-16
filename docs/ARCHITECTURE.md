@@ -1015,7 +1015,10 @@ paired by index with `astermd_line_items` (the EMR's own product and variant ids
 line is sold on), `astermd_order_type`, `astermd_session_id`, the coupon id — and the customer
 and card it saves are what the EMR charges renewals to. The ids come down on `OrderLine`
 (`emrProductId`, `emrVariantId`, `planId`), which is why those fields exist; the other two
-adapters ignore them.
+adapters ignore them. For reading the payment in Stripe, each `astermd_line_items` entry also
+carries the line's product name (`name`, which the EMR ignores and which is cut short before an
+order would outgrow Stripe's 500-character metadata limit), and the PaymentIntent's
+`description` lists every line's product name.
 
 Three things the other providers do here, Stripe hands to the EMR:
 

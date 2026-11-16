@@ -48,6 +48,16 @@ final class StripePayload
     /** Stripe's limit on a line item's name. */
     private const int LINE_ITEM_NAME_MAX_LENGTH = 1024;
 
+    /** Stripe's limit on a PaymentIntent's description. */
+    private const int DESCRIPTION_MAX_LENGTH = 1000;
+
+    /**
+     * How `astermd_line_items` is encoded. Unescaped unicode keeps a name
+     * readable on the payment and within the limit; an invalid byte in a
+     * catalog name is substituted rather than failing the whole value.
+     */
+    private const int JSON_FLAGS = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE;
+
     /** The kind the catalog gives a prescription line. */
     private const string PRESCRIPTION = 'rx';
 
@@ -123,10 +133,18 @@ final class StripePayload
      * The `astermd_line_items` value, or null when a line cannot be named the
      * way the EMR names it -- an order the EMR cannot map is refused rather
      * than sent with a gap in it.
+     *
+     * Each entry also carries the line's product name beside its ids, so the
+     * payment reads for itself in Stripe. The EMR maps by the ids alone and
+     * ignores the name, so a name never costs an order its payment: names are
+     * cut short as far as Stripe's metadata limit needs, and dropped if even
+     * that is not enough. Ids that do not fit on their own are returned as
+     * they are, for the adapter to refuse.
      */
     public static function lineItemsMetadata(OrderEnvelope $order): ?string
     {
         $entries = [];
+        $names = [];
 
         foreach ($order->lines as $line) {
             $entry = self::lineEntry($line);
@@ -135,9 +153,55 @@ final class StripePayload
             }
 
             $entries[] = $entry;
+            $names[] = trim($line->name);
         }
 
-        return $entries === [] ? null : (string) json_encode($entries, JSON_UNESCAPED_SLASHES);
+        if ($entries === []) {
+            return null;
+        }
+
+        $longest = max(array_map('mb_strlen', $names));
+        $full = self::encodeEntries($entries, $names, $longest);
+        if (strlen($full) <= self::METADATA_VALUE_MAX_LENGTH) {
+            return $full;
+        }
+
+        // The longest per-name cut that fits. A shorter cut never makes the
+        // value longer, so a binary search finds it; 0 drops the names.
+        $fits = self::encodeEntries($entries, $names, 0);
+        $low = 1;
+        $high = $longest - 1;
+        while ($low <= $high) {
+            $cut = intdiv($low + $high, 2);
+            $encoded = self::encodeEntries($entries, $names, $cut);
+
+            if (strlen($encoded) <= self::METADATA_VALUE_MAX_LENGTH) {
+                $fits = $encoded;
+                $low = $cut + 1;
+            } else {
+                $high = $cut - 1;
+            }
+        }
+
+        return $fits;
+    }
+
+    /**
+     * The PaymentIntent's description: every line's product name, in order,
+     * so the payment says what was bought wherever Stripe shows it.
+     */
+    public static function description(OrderEnvelope $order): string
+    {
+        $names = [];
+
+        foreach ($order->lines as $line) {
+            $name = trim($line->name);
+            if ($name !== '') {
+                $names[] = $name;
+            }
+        }
+
+        return mb_substr(implode(', ', $names), 0, self::DESCRIPTION_MAX_LENGTH);
     }
 
     /** Whether any line is sold on a plan, which is what makes the order renew. */
@@ -189,6 +253,11 @@ final class StripePayload
             'metadata' => self::metadata($order, $lineItems, $settlement, $channelId),
             'expand' => ['payment_method'],
         ] + $payment;
+
+        $description = self::description($order);
+        if ($description !== '') {
+            $body['description'] = $description;
+        }
 
         if (!$offSession) {
             // The card is saved for the renewals the EMR charges and for an
@@ -270,6 +339,25 @@ final class StripePayload
         }
 
         return ['product_id' => $line->emrProductId, 'variant_id' => $line->emrVariantId];
+    }
+
+    /**
+     * The entries with each line's name cut to at most `$cut` characters; a
+     * line with no name, or a cut of 0, leaves the entry as its ids alone.
+     *
+     * @param list<array<string, string>> $entries
+     * @param list<string> $names index-aligned with `$entries`
+     */
+    private static function encodeEntries(array $entries, array $names, int $cut): string
+    {
+        $named = [];
+
+        foreach ($entries as $i => $entry) {
+            $name = $cut > 0 ? mb_substr($names[$i], 0, $cut) : '';
+            $named[] = $name !== '' ? $entry + ['name' => $name] : $entry;
+        }
+
+        return (string) json_encode($named, self::JSON_FLAGS);
     }
 
     /**

@@ -20,6 +20,7 @@ use AsterMD\Storefront\Payment\SettlementMode;
 use AsterMD\Storefront\Payment\Stripe\StripeAdapter;
 use AsterMD\Storefront\Payment\Stripe\StripeApiFactory;
 use AsterMD\Storefront\Payment\Stripe\StripeCredentials;
+use AsterMD\Storefront\Payment\Stripe\StripePayload;
 use AsterMD\Storefront\Tests\Support\CapturedLog;
 use AsterMD\Storefront\Tests\Support\FakeStripeTransport;
 use PHPUnit\Framework\TestCase;
@@ -245,8 +246,13 @@ final class StripeAdapterTest extends TestCase
             $body['amount_details']['line_items'],
         );
 
+        self::assertSame('Tirzepatide (5mg/mL)', $body['description']);
+
         $metadata = $body['metadata'];
-        self::assertSame(json_encode([['product_id' => self::PRODUCT, 'variant_id' => self::VARIANT]]), $metadata['astermd_line_items']);
+        self::assertSame(
+            '[{"product_id":"' . self::PRODUCT . '","variant_id":"' . self::VARIANT . '","name":"Tirzepatide (5mg/mL)"}]',
+            $metadata['astermd_line_items'],
+        );
         self::assertSame('straight_sale', $metadata['astermd_order_type']);
         self::assertSame('automatic', $metadata['capture_method']);
         self::assertSame('123e4567-e89b-12d3-a456-426614174000', $metadata['astermd_session_id']);
@@ -270,13 +276,48 @@ final class StripeAdapterTest extends TestCase
         );
 
         $body = $this->transport->params(2);
-        self::assertSame('[{"plan_id":"' . self::PLAN . '"}]', $body['metadata']['astermd_line_items']);
+        self::assertSame('[{"plan_id":"' . self::PLAN . '","name":"Tirzepatide (5mg/mL)"}]', $body['metadata']['astermd_line_items']);
         self::assertSame('cycle', $body['metadata']['astermd_order_type']);
         self::assertSame('automatic', $body['metadata']['capture_method']);
         self::assertSame('foobar', $body['metadata']['coupon']);
         self::assertSame(self::COUPON, $body['metadata']['astermd_coupon_id']);
         self::assertSame(9900, $body['amount']);
         self::assertSame(1000, $body['amount_details']['discount_amount']);
+    }
+
+    public function testLongNamesAreCutToFitTheMetadataLimitButTheDescriptionKeepsThemWhole(): void
+    {
+        // Two lines whose full names would take astermd_line_items past
+        // Stripe's 500-character limit: the ids still go whole, the names are
+        // cut to the longest length that fits, and the order is not refused.
+        $first = str_repeat('a', 400);
+        $second = str_repeat('b', 400);
+        $lines = [
+            new OrderLine('first', $first, 'price_1A', 'prod_a', 1000, 1, 'otc', emrProductId: self::PRODUCT, emrVariantId: self::VARIANT),
+            new OrderLine('second', $second, 'price_1B', 'prod_b', 1000, 1, 'otc', emrProductId: self::PRODUCT, emrVariantId: self::VARIANT),
+        ];
+
+        $this->queueNoCustomer();
+        $this->transport->queue(200, self::paymentIntent('succeeded', 2000));
+
+        $outcome = $this->adapter()->place($this->envelope($lines), PaymentCredential::token('ctoken_1Abc'));
+        self::assertTrue($outcome->isPlaced());
+
+        $body = $this->transport->params(2);
+        self::assertSame($first . ', ' . $second, $body['description']);
+
+        $value = $body['metadata']['astermd_line_items'];
+        self::assertLessThanOrEqual(StripePayload::METADATA_VALUE_MAX_LENGTH, strlen($value));
+
+        // Two id pairs and two name keys leave 315 characters: 157 for each name.
+        $cut = 157;
+        self::assertSame(
+            [
+                ['product_id' => self::PRODUCT, 'variant_id' => self::VARIANT, 'name' => substr($first, 0, $cut)],
+                ['product_id' => self::PRODUCT, 'variant_id' => self::VARIANT, 'name' => substr($second, 0, $cut)],
+            ],
+            json_decode($value, true),
+        );
     }
 
     public function testAnAuthorizeOrderWithAPrescriptionIsHeldForTheEmrToCapture(): void
