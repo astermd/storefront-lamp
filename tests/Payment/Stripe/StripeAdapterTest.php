@@ -340,11 +340,11 @@ final class StripeAdapterTest extends TestCase
 
     public function testAHoldNobodyWouldCaptureIsChargedAtOnceInstead(): void
     {
-        // No prescription: the EMR opens no case, so nothing would capture it.
+        // A plan line with no prescription: the EMR opens no case, so nothing would capture it.
         $this->queueNoCustomer();
         $this->transport->queue(200, self::paymentIntent('succeeded'));
         $this->adapter()->place(
-            $this->envelope([self::line(kind: 'otc')], SettlementMode::Authorize),
+            $this->envelope([self::line(kind: 'otc', plan: self::PLAN)], SettlementMode::Authorize),
             PaymentCredential::token('ctoken_1Abc'),
         );
         self::assertSame('automatic', $this->transport->params(2)['capture_method']);
@@ -367,7 +367,8 @@ final class StripeAdapterTest extends TestCase
 
         self::assertSame(SettlementMode::Authorize, $adapter->settlementFor($this->envelope(settlement: SettlementMode::Authorize)));
         self::assertSame(SettlementMode::Capture, $adapter->settlementFor($this->envelope()));
-        self::assertSame(SettlementMode::Capture, $adapter->settlementFor($this->envelope([self::line(kind: 'otc')], SettlementMode::Authorize)));
+        self::assertSame(SettlementMode::Authorize, $adapter->settlementFor($this->envelope([self::line(kind: 'otc')], SettlementMode::Authorize)));
+        self::assertSame(SettlementMode::Capture, $adapter->settlementFor($this->envelope([self::line(kind: 'otc', plan: self::PLAN)], SettlementMode::Authorize)));
         self::assertSame(SettlementMode::Capture, $adapter->settlementFor($this->envelope(settlement: SettlementMode::Authorize, followOn: true)));
         self::assertSame([], $this->transport->requests, 'asking calls nothing');
     }
