@@ -91,7 +91,9 @@ final class StripePayload
         }
 
         foreach ($order->lines as $line) {
-            if ($line->kind === self::PRESCRIPTION) {
+            // A prescription, or any one-time line (no plan): `PAYMENT_SETTLEMENT`
+            // decides for those, so an `authorize` deployment holds them.
+            if ($line->kind === self::PRESCRIPTION || $line->planId === null) {
                 return SettlementMode::Authorize;
             }
         }
