@@ -89,7 +89,10 @@
           {% endif %}
 
           <div class="grid grid-cols-1 items-start gap-x-5 gap-y-6 sm:grid-cols-2">
-            {% for field in fields[loop.index0] %}
+            {# An authored `form-progress` field is drawn once, as the stepper
+               above, which is built from it. Drawing it here as well put a
+               second bar under the stepper reporting the same position. #}
+            {% for field in fields[loop.index0] | filter(f => f.type != 'form-progress') %}
               {% include 'partials/intake/field.twig' with { field: field } only %}
             {% endfor %}
           </div>

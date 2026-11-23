@@ -128,6 +128,11 @@ final class FieldViewModel
             'error_id' => $error === null ? null : 'intake-error-' . $field->name,
             'alert_type' => self::alertType($field),
             'alert_text' => self::optionalText($field->properties['alertText'] ?? null),
+            // A paragraph's text lives here, not in its label: the builder
+            // labels every paragraph "Information" by default.
+            'paragraph_text' => $field->type === 'paragraph'
+                ? self::optionalText($field->properties['paragraphContent'] ?? null)
+                : null,
             'category' => $field->type === 'bmi'
                 ? self::optionalText($composite[$field->name . '_category'] ?? null)
                 : null,

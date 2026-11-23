@@ -167,6 +167,31 @@ final class IntakeControllerTest extends TestCase
     }
 
     /**
+     * An authored `form-progress` field is what the stepper is built from
+     * ({@see \AsterMD\Storefront\Forms\ProgressSteps}), so drawing the field
+     * as well puts a second "Question 1 of 5" bar under the stepper reporting
+     * the same position.
+     *
+     * The stepper is asserted present first: a page that dropped both would
+     * otherwise satisfy the absence checks.
+     */
+    public function testAnAuthoredProgressFieldIsDrawnOnlyAsTheStepper(): void
+    {
+        $form = self::recordedForm();
+        array_unshift($form['pages'][0]['fields'], [
+            'fieldId' => 'form-progress-1', 'name' => 'progress_1', 'type' => 'form-progress',
+            'label' => 'Form Progress', 'properties' => ['progressDisplayMode' => 'page'],
+        ]);
+
+        $this->seedCart();
+        $body = (string) $this->app($form)->handle($this->get('/intake/medical/'))->getBody();
+
+        self::assertCount(5, self::stepperLabels($body), 'the stepper still draws one step per page');
+        self::assertStringNotContainsString('data-intake-field="progress_1"', $body);
+        self::assertStringNotContainsString('data-intake-progress', $body);
+    }
+
+    /**
      * The labels the stepper is actually drawing, in order.
      *
      * @return list<string>

@@ -57,6 +57,22 @@ final class IntakeRenderTest extends TestCase
         self::assertStringContainsString('data-intake-required="1"', $html);
     }
 
+    /**
+     * The builder stores a paragraph's text in `properties.paragraphContent`
+     * and gives every paragraph the same default label, "Information". Drawing
+     * the label prints that placeholder where the authored text belongs.
+     */
+    public function testAParagraphDrawsItsAuthoredContentRatherThanItsLabel(): void
+    {
+        $html = self::render([
+            'fieldId' => 'intro', 'name' => 'intro', 'type' => 'paragraph', 'label' => 'Information',
+            'properties' => ['paragraphContent' => 'Call 911 now if you have a sudden headache.'],
+        ]);
+
+        self::assertStringContainsString('Call 911 now if you have a sudden headache.', $html);
+        self::assertStringNotContainsString('Information', $html);
+    }
+
     public function testAConditionallyHiddenFieldIsConcealedAndNotMarkedRequired(): void
     {
         $html = self::render([
