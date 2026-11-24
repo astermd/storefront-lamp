@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace AsterMD\Storefront\Tests\Forms;
 
+use AsterMD\Storefront\Attribution\Attribution;
 use AsterMD\Storefront\Forms\LeadWriter;
 use AsterMD\Storefront\Journey\JourneyState;
 use AsterMD\Storefront\Support\OperatorLog;
@@ -61,6 +62,43 @@ final class LeadWriterTest extends TestCase
         $this->writer($gateway)->capture('sess-1', new JourneyState(), ['first_name' => 'Dana', 'email' => 'dana@example.test']);
 
         self::assertSame(['sess-1'], $gateway->creates[0]['sessions']);
+    }
+
+    public function testTheAffiliateLinkRidesInTheCreateAttributionBlock(): void
+    {
+        $gateway = new FakeLeadGateway();
+        $state = new JourneyState();
+        $state->attribution = Attribution::capture(['affid' => '6a906a42a002ad6ea5037d8e'], [], null, null);
+
+        $this->writer($gateway)->capture('sess-1', $state, ['first_name' => 'Dana', 'email' => 'dana@example.test']);
+
+        self::assertSame(['affiliate_link_id' => '6a906a42a002ad6ea5037d8e'], $gateway->creates[0]['attribution']);
+    }
+
+    public function testNoAffiliateLinkMeansNoAttributionBlockAtAll(): void
+    {
+        $gateway = new FakeLeadGateway();
+        $state = new JourneyState();
+        $state->attribution = Attribution::capture(['utm_source' => 'newsletter'], [], null, null);
+
+        $this->writer($gateway)->capture('sess-1', $state, ['first_name' => 'Dana', 'email' => 'dana@example.test']);
+
+        self::assertArrayHasKey('sessions', $gateway->creates[0], 'the create under test was sent');
+        self::assertArrayNotHasKey('attribution', $gateway->creates[0]);
+    }
+
+    public function testTheAffiliateLinkIsNeverResentOnAnUpdate(): void
+    {
+        $gateway = new FakeLeadGateway();
+        $state = new JourneyState();
+        $state->opportunityId = 'opp-9';
+        $state->attribution = Attribution::capture(['affid' => '6a906a42a002ad6ea5037d8e'], [], null, null);
+
+        $this->writer($gateway)->capture('sess-1', $state, ['first_name' => 'Dana', 'email' => 'dana@example.test']);
+
+        self::assertCount(1, $gateway->updates, 'the update under test was sent');
+        self::assertArrayHasKey('email', $gateway->updates[0][1], 'the update carries the answers');
+        self::assertArrayNotHasKey('attribution', $gateway->updates[0][1], '[11.9]: attribution is attached on create only');
     }
 
     public function testUpdatesRatherThanCreatingOnceAnOpportunityIsKnown(): void

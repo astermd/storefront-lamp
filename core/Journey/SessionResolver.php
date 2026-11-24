@@ -336,7 +336,14 @@ final class SessionResolver
             }
         }
 
-        return Attribution::capture($query, $encrypted, $referrer === '' ? null : $referrer, $userAgent, $selfHost);
+        return Attribution::capture(
+            $query,
+            $encrypted,
+            $referrer === '' ? null : $referrer,
+            $userAgent,
+            $selfHost,
+            $token === '' ? null : $token,
+        );
     }
 
     /**

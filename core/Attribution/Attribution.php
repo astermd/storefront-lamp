@@ -24,6 +24,16 @@ namespace AsterMD\Storefront\Attribution;
  * so precedence (`[5.11]` — encrypted wins per key, plain fills the gaps)
  * is decided here on already-normalised keys and holds even when the two
  * sides spell the same parameter differently.
+ *
+ * The affiliate link is the one value that is not decrypted here. The sales
+ * service resolves a link to its owning affiliate itself, and accepts either
+ * the plain link id or the raw `_amd` token, so the storefront forwards the
+ * token as it arrived rather than its own reading of it. A marketing token
+ * decrypts to an object carrying the link id beside a `data` list, and
+ * {@see AmdPayload} reads only a bare list, so the link id is not something
+ * the storefront can recover from the token itself. It is kept apart from
+ * `$params` because it is not a tracking parameter, and keeping the token
+ * out of the normalised bag is what `[5.4]` asks for.
  */
 final class Attribution
 {
@@ -35,6 +45,7 @@ final class Attribution
         public readonly array $params,
         public readonly ?string $referrer,
         public readonly array $derived,
+        public readonly ?string $affiliateLinkId = null,
     ) {
     }
 
@@ -43,6 +54,7 @@ final class Attribution
      * @param array<array-key, mixed> $encryptedParams the decoded `_amd` payload, or `[]`
      * @param ?string                 $selfHost        this storefront's own host, so a referrer naming it is not
      *                                                 recorded as a traffic source referring the site to itself
+     * @param ?string                 $amdToken        the raw `_amd` value exactly as it arrived, still encrypted
      */
     public static function capture(
         array $plainQuery,
@@ -50,6 +62,7 @@ final class Attribution
         ?string $referrer,
         ?string $userAgent,
         ?string $selfHost = null,
+        ?string $amdToken = null,
     ): self {
         $plain = AttributionNormalizer::normalize($plainQuery);
         $encrypted = AttributionNormalizer::normalize($encryptedParams);
@@ -61,7 +74,32 @@ final class Attribution
 
         $referrer = $referrer === null ? null : trim($referrer);
 
-        return new self($params, $referrer, DerivedAttribution::from($params, $referrer, $userAgent, $selfHost));
+        return new self(
+            $params,
+            $referrer,
+            DerivedAttribution::from($params, $referrer, $userAgent, $selfHost),
+            self::affiliateLinkId($amdToken, $plainQuery),
+        );
+    }
+
+    /**
+     * The token beats a plain `affid` beside it: the token is the form an
+     * affiliate link is issued in, and the one the sales service resolves
+     * the owning affiliate from. Only `affid` names a link:
+     * the other affiliate aliases carry a network's own affiliate identifier,
+     * which is not a link id and stays in `$params` as `affiliate_id`.
+     *
+     * @param array<array-key, mixed> $plainQuery
+     */
+    private static function affiliateLinkId(?string $amdToken, array $plainQuery): ?string
+    {
+        foreach ([$amdToken, $plainQuery['affid'] ?? null] as $candidate) {
+            if (is_string($candidate) && trim($candidate) !== '') {
+                return trim($candidate);
+            }
+        }
+
+        return null;
     }
 
     /** Whatever was captured first stands (`[5.12]`, `[5.13]`). */
@@ -77,13 +115,20 @@ final class Attribution
 
     public function isEmpty(): bool
     {
-        return $this->params === [] && ($this->referrer === null || $this->referrer === '');
+        return $this->params === []
+            && $this->affiliateLinkId === null
+            && ($this->referrer === null || $this->referrer === '');
     }
 
-    /** @return array{params: array<string, string>, referrer: ?string, derived: array<string, ?string>} */
+    /** @return array{params: array<string, string>, referrer: ?string, derived: array<string, ?string>, affiliate_link_id: ?string} */
     public function toArray(): array
     {
-        return ['params' => $this->params, 'referrer' => $this->referrer, 'derived' => $this->derived];
+        return [
+            'params' => $this->params,
+            'referrer' => $this->referrer,
+            'derived' => $this->derived,
+            'affiliate_link_id' => $this->affiliateLinkId,
+        ];
     }
 
     /** @param array<string, mixed> $data as produced by {@see self::toArray()} */
@@ -94,6 +139,8 @@ final class Attribution
         /** @var array<string, ?string> $derived */
         $derived = is_array($data['derived'] ?? null) ? $data['derived'] : [];
         $referrer = isset($data['referrer']) && is_string($data['referrer']) ? $data['referrer'] : null;
+        $affiliateLinkId = isset($data['affiliate_link_id']) && is_string($data['affiliate_link_id'])
+            && $data['affiliate_link_id'] !== '' ? $data['affiliate_link_id'] : null;
 
         return new self($params, $referrer, $derived + [
             'source_category' => null,
@@ -101,15 +148,15 @@ final class Attribution
             'device_type' => null,
             'browser' => null,
             'os' => null,
-        ]);
+        ], $affiliateLinkId);
     }
 
     /**
      * The attribution the EMR session-creation call carries (`[4.4]`): the
-     * landing referrer, the UTM triple, and the first five custom
-     * sub-identifiers. Channel binding and geo are derived server-side by the
-     * EMR and are deliberately not sent, and empty sections are omitted
-     * rather than sent blank (`[14.6]`).
+     * landing referrer, the UTM triple, the first five custom
+     * sub-identifiers and the affiliate link. Channel binding and geo are
+     * derived server-side by the EMR and are deliberately not sent, and empty
+     * sections are omitted rather than sent blank (`[14.6]`).
      *
      * @return array<string, mixed>
      */
@@ -139,6 +186,10 @@ final class Attribution
         }
         if ($custom !== []) {
             $payload['custom_params'] = $custom;
+        }
+
+        if ($this->affiliateLinkId !== null) {
+            $payload['affiliate_link_id'] = $this->affiliateLinkId;
         }
 
         return $payload;

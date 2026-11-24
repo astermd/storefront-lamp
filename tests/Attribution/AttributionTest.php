@@ -87,6 +87,70 @@ final class AttributionTest extends TestCase
         self::assertArrayNotHasKey('geo', $payload);
     }
 
+    public function testThePlainAffidIsTheAffiliateLinkAndTheSessionPayloadCarriesItTopLevel(): void
+    {
+        $attribution = Attribution::capture(
+            ['affid' => '6a906a42a002ad6ea5037d8e', 'sub1' => '123', 'sub2' => '34'],
+            [],
+            null,
+            null,
+        );
+
+        self::assertSame('6a906a42a002ad6ea5037d8e', $attribution->affiliateLinkId);
+        self::assertSame([
+            'custom_params' => ['c1' => '123', 'c2' => '34'],
+            'affiliate_link_id' => '6a906a42a002ad6ea5037d8e',
+        ], $attribution->emrSessionPayload());
+    }
+
+    public function testTheRawAmdTokenBeatsAPlainAffidAndIsForwardedStillEncrypted(): void
+    {
+        $attribution = Attribution::capture(
+            ['affid' => '6a906a42a002ad6ea5037d8e'],
+            [],
+            null,
+            null,
+            null,
+            'q2EYh8sCg_P4t5-raw-token',
+        );
+
+        self::assertSame('q2EYh8sCg_P4t5-raw-token', $attribution->affiliateLinkId);
+        self::assertSame('q2EYh8sCg_P4t5-raw-token', $attribution->emrSessionPayload()['affiliate_link_id']);
+    }
+
+    public function testTheTokenNeverEntersTheNormalisedParameters(): void
+    {
+        $attribution = Attribution::capture([], [], null, null, null, 'q2EYh8sCg_P4t5-raw-token');
+
+        self::assertSame([], $attribution->params, '[5.4]: the wrapper stays out of the tracking parameters');
+        self::assertFalse($attribution->isEmpty(), 'a captured link is a capture');
+    }
+
+    public function testOtherAffiliateAliasesAreNotALinkId(): void
+    {
+        $attribution = Attribution::capture(['aff_id' => '4412', 'affiliate_id' => '99'], [], null, null);
+
+        self::assertSame('99', $attribution->get('affiliate_id'), 'the alias was captured');
+        self::assertNull($attribution->affiliateLinkId);
+        self::assertArrayNotHasKey('affiliate_link_id', $attribution->emrSessionPayload());
+    }
+
+    public function testABlankAffidOrTokenIsNoLink(): void
+    {
+        self::assertNull(Attribution::capture(['affid' => '  '], [], null, null, null, '')->affiliateLinkId);
+    }
+
+    public function testTheAffiliateLinkSurvivesTheStoredArrayFormAndAnOlderRowReadsAsNone(): void
+    {
+        $attribution = Attribution::capture(['affid' => '6a906a42a002ad6ea5037d8e'], [], null, null);
+
+        self::assertSame('6a906a42a002ad6ea5037d8e', Attribution::fromArray($attribution->toArray())->affiliateLinkId);
+        self::assertNull(
+            Attribution::fromArray(['params' => [], 'referrer' => null, 'derived' => []])->affiliateLinkId,
+            'a row stored before the field existed has no link',
+        );
+    }
+
     public function testDerivationSeesPlainParametersAndEncryptedWinsPerKey(): void
     {
         // The common case: an affiliate link with no encrypted payload at all.
