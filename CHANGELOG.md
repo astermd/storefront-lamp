@@ -8,6 +8,27 @@ names exactly which ones changed.
 
 ## [Unreleased]
 
+### Affiliate links reach the session and the opportunity
+
+An affiliate landing was attributed only once an order was placed: the
+session-create call and the opportunity carried no affiliate at all. The
+affiliate link now goes to the sales API as `affiliate_link_id`, top-level on
+session create and inside `attribution` on opportunity create, and the sales
+service resolves the owning affiliate from it. The value is the `_amd` token
+exactly as it arrived when the link carried one, and the plain `affid` id
+otherwise; the token is forwarded rather than decrypted, because the
+storefront's own reading of `_amd` does not recover the link id from it. The
+plain UTM and `c1`–`c5` parameters are sent as before. Like the rest of
+first-touch attribution, a later affiliate link on the same session never
+replaces the first.
+
+Takes `astermd/sdk` 0.0.7. Run `composer install`.
+
+- `core/Attribution/Attribution.php`, `core/Journey/SessionResolver.php`,
+  `core/Forms/LeadWriter.php`, `tests/Attribution/AttributionTest.php`,
+  `tests/Journey/SessionResolverTest.php`, `tests/Forms/LeadWriterTest.php`,
+  `docs/SPEC-REFERENCE.md`, `composer.json`, `composer.lock`, `CHANGELOG.md`
+
 ### README, contact email and package metadata
 
 Documentation and package metadata only; no code or behaviour change. The

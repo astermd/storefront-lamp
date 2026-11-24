@@ -787,6 +787,47 @@ final class SessionResolverTest extends TestCase
         self::assertStringNotContainsString('_amd', (string) json_encode($attribution?->toArray()));
     }
 
+    public function testALandingAffidIsSentToTheSessionCreateAsTheAffiliateLink(): void
+    {
+        $gateway = new FakeSessionGateway(mintUuid: self::UUID);
+        [$resolver, $store] = $this->resolver($gateway);
+
+        $resolver->resolve($this->request('/?affid=6a906a42a002ad6ea5037d8e&utm_source=partner'), mayCreate: true);
+
+        self::assertSame('6a906a42a002ad6ea5037d8e', $gateway->createCalls[0]['data']['affiliate_link_id']);
+        self::assertSame(['source' => 'partner'], $gateway->createCalls[0]['data']['utm'], 'the plain parameters still go');
+        self::assertSame('6a906a42a002ad6ea5037d8e', $store->state()?->attribution?->affiliateLinkId, 'kept for the opportunity');
+    }
+
+    public function testTheRawAmdTokenIsSentInsteadOfAPlainAffidEvenWhenTheStorefrontCannotReadIt(): void
+    {
+        $gateway = new FakeSessionGateway(mintUuid: self::UUID);
+        [$resolver] = $this->resolver($gateway);
+
+        $resolver->resolve(
+            $this->request('/?affid=6a906a42a002ad6ea5037d8e&_amd=q2EYh8sCg_P4t5-unreadable-here'),
+            mayCreate: true,
+        );
+
+        self::assertSame('q2EYh8sCg_P4t5-unreadable-here', $gateway->createCalls[0]['data']['affiliate_link_id']);
+    }
+
+    public function testALaterAffiliateLinkNeverReplacesTheFirstTouch(): void
+    {
+        $gateway = new FakeSessionGateway([self::UUID => ['opportunity_id' => null, 'events' => []]]);
+        [$resolver, $store, , $pdo] = $this->resolver($gateway);
+
+        $resolver->resolve($this->request('/?affid=6a906a42a002ad6ea5037d8e')->withCookieParams(['amd_session' => self::UUID]), mayCreate: true);
+        $store->flush();
+
+        [$nextResolver, $nextStore] = $this->resolver($gateway, $pdo);
+        $nextResolver->resolve($this->request('/?affid=6a906a42a002ad6ea5037d8f')->withCookieParams(['amd_session' => self::UUID]), mayCreate: true);
+        $nextStore->flush();
+
+        self::assertSame([], $gateway->createCalls, 'the cookie was reused, nothing was minted');
+        self::assertSame('6a906a42a002ad6ea5037d8e', $nextStore->state()?->attribution?->affiliateLinkId, '[5.12]: and it survived storage');
+    }
+
     public function testAnUndecryptablePayloadFallsBackToPlainParametersAndLogsForOperators(): void
     {
         $gateway = new FakeSessionGateway(mintUuid: self::UUID);

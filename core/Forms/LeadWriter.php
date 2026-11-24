@@ -123,6 +123,12 @@ final class LeadWriter
      * `source` the caller has already decided is left alone, and an attribution
      * that derived no category contributes nothing rather than a blank.
      *
+     * The affiliate link rides in `attribution` for the same first-touch
+     * reason. It is the same value the session was created with, sent again
+     * because an opportunity's `attribution` block is its own record, separate
+     * from the sessions it links, and the sales service resolves the owning
+     * affiliate into it from this field (`[11.9]`).
+     *
      * @param array<string, mixed> $payload
      *
      * @return array<string, mixed>
@@ -137,6 +143,14 @@ final class LeadWriter
 
         if (!isset($payload['source']) && is_string($source) && trim($source) !== '') {
             $payload['source'] = $source;
+        }
+
+        $link = $state->attribution?->affiliateLinkId;
+
+        if ($link !== null) {
+            $attribution = is_array($payload['attribution'] ?? null) ? $payload['attribution'] : [];
+            $attribution += ['affiliate_link_id' => $link];
+            $payload['attribution'] = $attribution;
         }
 
         return $payload;

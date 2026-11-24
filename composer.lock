@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "963c6630e128bec86eeaa862c6596274",
+    "content-hash": "cb26c3e18d7e1a45eaef177862472abe",
     "packages": [
         {
             "name": "astermd/checkoutchamp-client",
@@ -66,16 +66,16 @@
         },
         {
             "name": "astermd/sdk",
-            "version": "v0.0.4",
+            "version": "v0.0.7",
             "source": {
                 "type": "git",
-                "url": "https://github.com/astermd/sdk.git",
-                "reference": "8f5e81ab928bb10b6089cb1a7fa4eaef05ebf6db"
+                "url": "https://github.com/astermd/php-sdk.git",
+                "reference": "a8e61d5f4ec371b62d62042a6da0c8789bec367d"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/astermd/sdk/zipball/8f5e81ab928bb10b6089cb1a7fa4eaef05ebf6db",
-                "reference": "8f5e81ab928bb10b6089cb1a7fa4eaef05ebf6db",
+                "url": "https://api.github.com/repos/astermd/php-sdk/zipball/a8e61d5f4ec371b62d62042a6da0c8789bec367d",
+                "reference": "a8e61d5f4ec371b62d62042a6da0c8789bec367d",
                 "shasum": ""
             },
             "require": {
@@ -107,10 +107,11 @@
             "authors": [
                 {
                     "name": "AsterMD",
-                    "email": "info@astermd.com"
+                    "email": "hello@astermd.com"
                 }
             ],
-            "description": "Official PHP SDK for the AsterMD order-flow API.",
+            "description": "Official PHP SDK for the AsterMD telehealth API: sessions, intake forms and orders.",
+            "homepage": "https://www.astermd.com/",
             "keywords": [
                 "API-Client",
                 "astermd",
@@ -121,11 +122,11 @@
                 "telehealth"
             ],
             "support": {
-                "email": "info@astermd.com",
-                "issues": "https://github.com/astermd/sdk/issues",
-                "source": "https://github.com/astermd/sdk/tree/v0.0.4"
+                "email": "hello@astermd.com",
+                "issues": "https://github.com/astermd/php-sdk/issues",
+                "source": "https://github.com/astermd/php-sdk"
             },
-            "time": "2026-11-03T07:04:12+00:00"
+            "time": "2026-11-24T11:01:03+00:00"
         },
         {
             "name": "astermd/vrio-client",

@@ -83,7 +83,7 @@ A few things worth knowing before reading:
 - **`[4.1]`** — An analytics session is created **lazily, on first need**, and in practice that means on the landing page — as soon as the visitor arrives, not deferred to the first cart action.
 - **`[4.2]`** — Session creation is **idempotent**: if a session identifier already exists for this browser, it is reused and no new session is minted.
 - **`[4.3]`** — Session creation must **forward the visitor's own IP address and user agent**, so the EMR attributes the session to the end user's device and location, not to the storefront server.
-- **`[4.4]`** — The session-creation payload carries whatever first-touch attribution is already known: the landing referrer, the UTM triple (source/medium/campaign), and the first five custom sub-identifiers.
+- **`[4.4]`** — The session-creation payload carries whatever first-touch attribution is already known: the landing referrer, the UTM triple (source/medium/campaign), the first five custom sub-identifiers, and the affiliate link — the raw encrypted payload when one arrived, otherwise the plain link id.
 - **`[4.5]`** — If the EMR does not return a session identifier, that is a hard error at the point of creation — but every caller wraps it so that a failure degrades to "no session" rather than a broken page (see §19).
 - **`[4.6]`** — The session identifier is stored in a cookie: 30-day lifetime, HTTP-only, same-site lax, secure when served over TLS.
 - **`[4.10]`** — The adopted identifier must be **shape-validated** before it is trusted; a malformed value is ignored silently.
