@@ -6,4 +6,9 @@ declare(strict_types=1);
 
 require dirname(__DIR__) . '/vendor/autoload.php';
 
-\AsterMD\Storefront\Bootstrap\AppFactory::create(dirname(__DIR__))->run();
+$app = \AsterMD\Storefront\Bootstrap\AppFactory::create(dirname(__DIR__));
+$app->run();
+
+// Tracking the visitor has no reason to wait for, sent once the response is
+// out ({@see \AsterMD\Storefront\Support\AfterResponse}).
+$app->getContainer()?->get(\AsterMD\Storefront\Support\AfterResponse::class)->run();

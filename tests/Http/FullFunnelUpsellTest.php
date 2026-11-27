@@ -401,6 +401,10 @@ final class FullFunnelUpsellTest extends TestCase
                 'intake.intake_completed',
                 // Once per journey however many times the page is opened.
                 'checkout.visited',
+                // Both halves of the form, reported by the submit before the
+                // charge — this walk posts the form without the page's script.
+                'checkout.shipping_added',
+                'checkout.payment_added',
                 // The placement, and the sync it triggers from inside itself —
                 // which is why the sync can never precede it.
                 'checkout.order_placed',

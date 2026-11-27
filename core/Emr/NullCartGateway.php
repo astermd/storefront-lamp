@@ -19,12 +19,12 @@ namespace AsterMD\Storefront\Emr;
  */
 final class NullCartGateway implements CartGateway
 {
-    public function create(string $session, array $items): CartMirrorResult
+    public function create(string $session, array $items, int $totalCents): CartMirrorResult
     {
         return CartMirrorResult::Ok;
     }
 
-    public function update(string $session, array $items): CartMirrorResult
+    public function update(string $session, array $items, int $totalCents): CartMirrorResult
     {
         return CartMirrorResult::Ok;
     }

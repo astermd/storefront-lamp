@@ -25,6 +25,10 @@ use AsterMD\Storefront\Emr\EmrSessionGateway;
 use AsterMD\Storefront\Emr\NullAddressAutofill;
 use AsterMD\Storefront\Emr\NullCartGateway;
 use AsterMD\Storefront\Emr\NullSessionGateway;
+use AsterMD\Storefront\Emr\DeferredSessionEventGateway;
+use AsterMD\Storefront\Emr\EmrSessionEventGateway;
+use AsterMD\Storefront\Emr\NullSessionEventGateway;
+use AsterMD\Storefront\Emr\SessionEventGateway;
 use AsterMD\Storefront\Emr\SessionGateway;
 use AsterMD\Storefront\Funnel\FlowDefinition;
 use AsterMD\Storefront\Funnel\StepPreconditions;
@@ -49,6 +53,7 @@ use AsterMD\Storefront\Http\Middleware\SeoMiddleware;
 use AsterMD\Storefront\Http\Middleware\CsrfMiddleware;
 use AsterMD\Storefront\Http\Middleware\JourneyStateMiddleware;
 use AsterMD\Storefront\Http\Middleware\LazyMiddleware;
+use AsterMD\Storefront\Http\Middleware\PageViewMiddleware;
 use AsterMD\Storefront\Http\Middleware\SessionMiddleware;
 use AsterMD\Storefront\Http\Middleware\StepGuardMiddleware;
 use AsterMD\Storefront\Http\Middleware\TemplateGlobalsMiddleware;
@@ -136,6 +141,7 @@ use AsterMD\Storefront\Support\AssetManifest;
 use AsterMD\Storefront\Retention\RetentionPolicy;
 use AsterMD\Storefront\Seo\MetaResolver;
 use AsterMD\Storefront\Seo\RobotsPolicy;
+use AsterMD\Storefront\Support\AfterResponse;
 use AsterMD\Storefront\Support\Config;
 use AsterMD\Storefront\Support\DatabaseRateLimiter;
 use AsterMD\Storefront\Support\OperatorLog;
@@ -188,6 +194,11 @@ final class AppFactory
         // being cleared into a mint loop.
         RetiredSessionMiddleware::class,
         AttributionMiddleware::class,
+        // Inside attribution, which is what puts the analytics session on the
+        // request, and outside everything that can redirect: it reports the
+        // page the visitor was actually shown, so it has to see the final
+        // response, including the step guard's redirects it then ignores.
+        PageViewMiddleware::class,
         CsrfMiddleware::class,
         JourneyStateMiddleware::class,
         StepGuardMiddleware::class,
@@ -267,13 +278,34 @@ final class AppFactory
                 new EmrSessionGateway($c->get(EmrClientFactory::class), $c->get(OperatorLog::class)),
             );
         });
+        // One queue per request, drained by `public/index.php` once the
+        // response has gone out.
+        $container->set(AfterResponse::class, static fn (Container $c): AfterResponse => new AfterResponse($c->get(OperatorLog::class)));
+        $container->set(SessionEventGateway::class, static function (Container $c) use ($config): SessionEventGateway {
+            if ($config->get('app.session.analytics') !== true) {
+                return new NullSessionEventGateway();
+            }
+
+            // Deferred outside the timer, so what is timed is the EMR call
+            // itself when it runs rather than the cost of queueing it.
+            return new DeferredSessionEventGateway(
+                $c->get(Instrumentation::class)->sessionEventGateway(
+                    new EmrSessionEventGateway($c->get(EmrClientFactory::class), $c->get(OperatorLog::class)),
+                ),
+                $c->get(AfterResponse::class),
+            );
+        });
         $container->set(CartGateway::class, static function (Container $c) use ($config): CartGateway {
             if ($config->get('app.session.analytics') !== true) {
                 return new NullCartGateway();
             }
 
             return $c->get(Instrumentation::class)->cartGateway(
-                new EmrCartGateway($c->get(EmrClientFactory::class), $c->get(OperatorLog::class)),
+                new EmrCartGateway(
+                    $c->get(EmrClientFactory::class),
+                    $c->get(OperatorLog::class),
+                    currency: (string) $config->get('payment.currency', 'USD'),
+                ),
             );
         });
         $container->set(CartMirror::class, static fn (Container $c): CartMirror => new CartMirror(
@@ -568,6 +600,13 @@ final class AppFactory
             // declared in does not matter.
             $c->has(self::ROUTE_EXISTS) ? $c->get(self::ROUTE_EXISTS) : null,
         ));
+        $container->set(PageViewMiddleware::class, static fn (Container $c): PageViewMiddleware => new PageViewMiddleware(
+            $c->get(SessionEventGateway::class),
+            $c->get(ProductCatalog::class),
+            $c->get(OperatorLog::class),
+            (array) $config->get('app.session.page_types', []),
+            $trace,
+        ));
         $container->set(JourneyStateMiddleware::class, static fn (Container $c): JourneyStateMiddleware => new JourneyStateMiddleware(
             static fn (): JourneyStore => $c->get(JourneyStore::class),
             $c->get(OperatorLog::class),
@@ -624,6 +663,7 @@ final class AppFactory
             $c->get(FunnelRouter::class),
             $c->get(StepPreconditions::class),
             $c->get(OperatorLog::class),
+            $c->get(SessionEventGateway::class),
         ));
         $container->set(
             StepPreconditions::class,

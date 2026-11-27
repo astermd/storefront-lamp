@@ -8,6 +8,7 @@ namespace AsterMD\Storefront\Http\Controller;
 
 use AsterMD\Storefront\Domain\Cart;
 use AsterMD\Storefront\Domain\FunnelRouter;
+use AsterMD\Storefront\Emr\SessionEventGateway;
 use AsterMD\Storefront\Funnel\FlowDefinition;
 use AsterMD\Storefront\Funnel\FurthestStep;
 use AsterMD\Storefront\Funnel\StepPreconditions;
@@ -122,6 +123,9 @@ final class VerifyController
      *
      * @var array<string, string>
      */
+    /** The EMR's name for the event, used as the journey's deduplication key too. */
+    private const string BEGIN_EVENT = 'begin_identity_verification';
+
     private const array HELD_NOTICE = [
         JourneyState::VERIFICATION_FAILED => 'We could not confirm your identity from the details we hold, and we cannot continue until it is confirmed. There is nothing to change on this page — if one of the details you gave us earlier is wrong, go back and correct it. Otherwise contact support and we will confirm it with you.',
         JourneyState::VERIFICATION_INCONCLUSIVE => 'This check could not be completed just now, and we cannot continue until it has run. Nothing is wrong with the details you gave us. Try again in a few minutes, or contact support and we will complete it with you.',
@@ -135,12 +139,28 @@ final class VerifyController
         private readonly FunnelRouter $router,
         private readonly StepPreconditions $preconditions,
         private readonly OperatorLog $log,
+        private readonly SessionEventGateway $events,
     ) {
     }
 
+    /**
+     * Opening this page is when identity verification starts, so the first
+     * open of a journey reports `begin_identity_verification`. Once per
+     * journey, through the same deduplication the checkout's funnel events
+     * use: a reload, or a return after a held verdict, is the same check
+     * continuing rather than a new one.
+     */
     public function show(ServerRequestInterface $request, ResponseInterface $response): ResponseInterface
     {
-        return $this->render($request, $response, $this->cart(), $this->journeys->state(), attempted: false);
+        $state = $this->journeys->state();
+        $session = $this->journeys->sessionUuid();
+
+        if ($state !== null && $session !== null && !$state->hasEmrEvent(self::BEGIN_EVENT)) {
+            $this->events->beginIdentityVerification($session);
+            $state->recordEmrEvent(self::BEGIN_EVENT);
+        }
+
+        return $this->render($request, $response, $this->cart(), $state, attempted: false);
     }
 
     /**

@@ -12,13 +12,16 @@ use AsterMD\Storefront\Payment\PaymentDescriptor;
  * A reporter that counts what reached the EMR, so a case can assert on the
  * *number* of reports rather than only on their effects.
  *
- * That distinction is the point: the funnel keeps one checkout record per
- * session and updates it in place, so a second report of the same event
- * changes nothing observable at the destination and can only be caught here.
+ * That distinction is the point: a second report of an order event rewrites
+ * the same checkout record, so it changes nothing observable at that record
+ * and can only be caught here.
  */
 final class CountingCheckoutEventReporter implements CheckoutEventReporter
 {
     public int $visits = 0;
+
+    /** @var list<array{event: string, total_cents: int, product_id: ?string, payment_method: ?string}> */
+    public array $details = [];
 
     /** @var list<array{reference: ?string, reason: string}> */
     public array $declines = [];
@@ -35,6 +38,16 @@ final class CountingCheckoutEventReporter implements CheckoutEventReporter
     public function checkoutVisited(?string $sessionUuid, Totals $totals): void
     {
         ++$this->visits;
+    }
+
+    public function addedShippingInfo(?string $sessionUuid, Totals $totals, ?string $productId): void
+    {
+        $this->details[] = ['event' => 'added_shipping_info', 'total_cents' => $totals->totalCents, 'product_id' => $productId, 'payment_method' => null];
+    }
+
+    public function addedPaymentInfo(?string $sessionUuid, Totals $totals, ?string $productId, string $paymentMethod): void
+    {
+        $this->details[] = ['event' => 'added_payment_info', 'total_cents' => $totals->totalCents, 'product_id' => $productId, 'payment_method' => $paymentMethod];
     }
 
     /** @param list<string> $orderReferences */

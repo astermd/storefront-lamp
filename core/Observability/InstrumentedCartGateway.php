@@ -29,14 +29,14 @@ final class InstrumentedCartGateway implements CartGateway
     ) {
     }
 
-    public function create(string $session, array $items): CartMirrorResult
+    public function create(string $session, array $items, int $totalCents): CartMirrorResult
     {
-        return $this->mirror('create', $session, $items, fn (): CartMirrorResult => $this->inner->create($session, $items));
+        return $this->mirror('create', $session, $items, fn (): CartMirrorResult => $this->inner->create($session, $items, $totalCents));
     }
 
-    public function update(string $session, array $items): CartMirrorResult
+    public function update(string $session, array $items, int $totalCents): CartMirrorResult
     {
-        return $this->mirror('update', $session, $items, fn (): CartMirrorResult => $this->inner->update($session, $items));
+        return $this->mirror('update', $session, $items, fn (): CartMirrorResult => $this->inner->update($session, $items, $totalCents));
     }
 
     /**

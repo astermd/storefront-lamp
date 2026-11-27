@@ -8,6 +8,66 @@ names exactly which ones changed.
 
 ## [Unreleased]
 
+### Funnel tracking: page views, cart total, checkout detail events
+
+The AsterMD platform now hears more of the journey. Requires `astermd/sdk`
+0.0.9.
+
+- **Every page** reports a `page_view` with its type, path, full URL, title and
+  referrer, plus the product on a product page. It is sent after the response
+  (`fastcgi_finish_request()` under PHP-FPM), so no page waits on it. The
+  funnel's own routes are classified by the core; content pages are listed in
+  the new `app.session.page_types` in `config/app.php` (home, terms, privacy and
+  telehealth consent as shipped). Anything unlisted reports as `other`.
+- **The cart** sent on every change now carries its total (every line,
+  before any promotion) and the deployment's `payment.currency`.
+- **`added_shipping_info`** is reported once per journey when the checkout's
+  address block is complete: `checkout.js` posts the shipping fields alone to
+  the new `POST /checkout/shipping/`, which checks them against the submit's own
+  rules. Without JavaScript the submit reports it instead.
+- **`added_payment_info`** is reported once per journey by the submit, before
+  the charge, with the payment method. Both detail events carry the product,
+  the total and the currency, go through the checkout-event create endpoint,
+  and are written to the local trail as `checkout.shipping_added` and
+  `checkout.payment_added`.
+- **`begin_identity_verification`** is reported the first time a journey opens
+  `/verify/`, after the response.
+
+A `product_id` that is not a 24-hex EMR id is left out of every event: the
+platform refuses the whole page view (400) or checkout event (500) for one.
+`docs/INTEGRATION-NOTES.md` item 6 is corrected — each checkout-event create
+adds a record, and only updates rewrite the session's first one — and items
+35–37 record how the new endpoints behave.
+
+Nothing is sent while AsterMD analytics is off. A failed call is logged
+(`session_event.request_failed`, `after_response.task_failed`) and never
+reaches the visitor. `public/index.php` changed: a deployment that keeps its
+own copy must add the after-response call.
+
+- `composer.json`, `composer.lock`, `config/app.php`, `config/routes.php`,
+  `public/index.php`, `core/Support/AfterResponse.php`,
+  `core/Emr/SessionEventGateway.php`, `core/Emr/EmrSessionEventGateway.php`,
+  `core/Emr/NullSessionEventGateway.php`,
+  `core/Emr/DeferredSessionEventGateway.php`, `core/Emr/PageView.php`,
+  `core/Emr/CartGateway.php`, `core/Emr/EmrCartGateway.php`,
+  `core/Emr/NullCartGateway.php`, `core/Emr/CartMirror.php`,
+  `core/Http/Middleware/PageViewMiddleware.php`,
+  `core/Http/Controller/CheckoutController.php`,
+  `core/Http/Controller/VerifyController.php`,
+  `core/Checkout/CheckoutEventReporter.php`,
+  `core/Checkout/EmrCheckoutEventReporter.php`,
+  `core/Checkout/NullCheckoutEventReporter.php`,
+  `core/Checkout/CheckoutService.php`, `core/Observability/Boundary.php`,
+  `core/Observability/Instrumentation.php`,
+  `core/Observability/InstrumentedCartGateway.php`,
+  `core/Observability/InstrumentedCheckoutEventReporter.php`,
+  `core/Observability/InstrumentedSessionEventGateway.php`,
+  `core/Bootstrap/AppFactory.php`, `theme/js/checkout.js`,
+  `theme/templates/pages/checkout.twig`, `public/assets/build/`,
+  `core/Completion/Completion.php`, `core/Observability/OperationalCounts.php`,
+  `docs/ARCHITECTURE.md`, `docs/INTEGRATION-NOTES.md`, `docs/OPERATIONS.md`,
+  `README.md`, `CLAUDE.md`, `CHANGELOG.md`, and tests
+
 ### Checkout consent reaches the lead on the AsterMD platform
 
 The marketing and SMS consents asked at checkout were recorded only locally.

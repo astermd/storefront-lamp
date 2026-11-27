@@ -941,9 +941,8 @@ final class CheckoutServiceTest extends TestCase
 
     public function testTheFunnelVisitEventIsOpenedOncePerJourneyRatherThanOnEveryRender(): void
     {
-        // The EMR keeps one checkout record per session and `create()`
-        // overwrites its `event` field, so a second create after a decline
-        // erases the decline. Every sub-action's 303 -> GET fires one too, so
+        // Every `create()` becomes the session's `last_step`, so a second
+        // create after a decline leaves the journey standing at a visit. Every sub-action's 303 -> GET fires one too, so
         // the funnel reported zero declines, ever.
         $reporter = new class implements CheckoutEventReporter {
             public int $visits = 0;
@@ -951,6 +950,14 @@ final class CheckoutServiceTest extends TestCase
             public function checkoutVisited(?string $sessionUuid, Totals $totals): void
             {
                 ++$this->visits;
+            }
+
+            public function addedShippingInfo(?string $sessionUuid, Totals $totals, ?string $productId): void
+            {
+            }
+
+            public function addedPaymentInfo(?string $sessionUuid, Totals $totals, ?string $productId, string $paymentMethod): void
+            {
             }
 
             public function orderPlaced(?string $sessionUuid, Totals $totals, string $paymentMethod, array $orderReferences, ?PaymentDescriptor $payment = null): void

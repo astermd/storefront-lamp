@@ -27,7 +27,8 @@ they are dense.
 
 ```
 public/            document root — nothing else is web-reachable
-  index.php        front controller (requires the autoloader, builds the app, runs it)
+  index.php        front controller (requires the autoloader, builds the app, runs it, then
+                   sends the after-response queue)
   assets/build/    content-hashed CSS/JS, committed, plus manifest.json
   assets/media/    product images localized by theme:sync
 
@@ -77,7 +78,11 @@ web-server level by the shipped `deploy/` configs.
   └─────────────────────────────────────────────────────────────────┘
 ```
 
-`public/index.php` holds no logic at all — it is one `require` and one call. Everything the
+`public/index.php` holds no logic at all — a `require`, the app's `run()`, and then
+`Support\AfterResponse::run()`, which sends the tracking calls queued while the page was
+built once the response has gone out (`fastcgi_finish_request()` under PHP-FPM). Only
+stateless calls are queued — page views and the start of identity verification; anything
+journey state records, or whose order against other calls matters, stays inline. Everything the
 application knows about how its pieces fit together lives in `AppFactory::create()`, which
 is the one place all of them are allowed to know about each other. Everything else receives
 its collaborators through the container.
@@ -141,10 +146,11 @@ outermost
  3  SessionMiddleware           starts the native PHP session
  4  RetiredSessionMiddleware    clears the analytics cookie of a finished journey
  5  AttributionMiddleware       resolves the analytics session; first-touch capture
- 6  CsrfMiddleware              mints the token; rejects unauthenticated mutations
- 7  JourneyStateMiddleware      writes durable journey state back, once
- 8  StepGuardMiddleware         enforces funnel step preconditions
- 9  TemplateGlobalsMiddleware   publishes Twig globals before the handler runs
+ 6  PageViewMiddleware          reports each page shown as a `page_view` session event
+ 7  CsrfMiddleware              mints the token; rejects unauthenticated mutations
+ 8  JourneyStateMiddleware      writes durable journey state back, once
+ 9  StepGuardMiddleware         enforces funnel step preconditions
+10  TemplateGlobalsMiddleware   publishes Twig globals before the handler runs
     │
     ├── Slim routing middleware  (added first, therefore innermost)
     ▼
@@ -152,9 +158,9 @@ outermost
 ```
 
 `TwigMiddleware` and the error boundary are registered *after* the loop and therefore sit
-outside slot 1. Slim's routing middleware is registered *before* it and sits inside slot 9 —
-which is why the step guard matches steps by path rather than by route argument: there is
-no matched route to read yet.
+outside slot 1. Slim's routing middleware is registered *before* it and sits inside slot 10 —
+which is why the step guard matches steps by path rather than by route argument, and the
+page-view slot classifies pages by path: there is no matched route to read yet.
 
 ### Why the positions are what they are
 
@@ -167,7 +173,7 @@ header half and the source of the value the meta half renders. It has to reach e
 response the application produces, including the ones the session, journey and step-guard
 slots redirect away before a controller sees them.
 
-**3 outside 6.** CSRF needs somewhere to keep its token, and that is the native PHP session.
+**3 outside 7.** CSRF needs somewhere to keep its token, and that is the native PHP session.
 
 **4 outside 5, and this is load-bearing twice over.** The analytics cookie is issued on the
 way *out* by `AttributionMiddleware`, and a browser applies `Set-Cookie` headers in the
@@ -176,18 +182,24 @@ re-issue it is cancelling. And reading the retirement flag *after* attribution h
 a request that re-minted its session reads the fresh journey, which carries no flag, so a
 re-mint is left alone instead of being cleared into a mint loop.
 
-**5 outside 6 and 7.** Attribution is captured before anything reads it, and the state it
-mutates is still persisted on the way out.
+**5 outside 6, 7 and 8.** Attribution is captured before anything reads it, and the state it
+mutates is still persisted on the way out. The page view needs the analytics session it
+puts on the request.
 
-**6 outside 7.** A request rejected for a bad CSRF token never writes journey state —
+**6 outside everything that redirects.** A page view reports the page the visitor was shown,
+so it reads the final response — a step guard's redirect is seen and ignored, and the page
+the redirect leads to reports itself. Content pages are classified by
+`app.session.page_types`; the funnel's own routes by the core.
+
+**7 outside 8.** A request rejected for a bad CSRF token never writes journey state —
 correct, because such a request mutated nothing.
 
-**7 outside 8 and 9.** The save-back happens only after the handler is done with the state
+**8 outside 9 and 10.** The save-back happens only after the handler is done with the state
 it was given. Its flush sits in a `finally`, so a crashing handler still leaves the
 visitor's progress recorded: the error page is a better outcome than the error page *plus*
 a lost step.
 
-**9 innermost, and it runs before the handler.** The globals published on a mutating request
+**10 innermost, and it runs before the handler.** The globals published on a mutating request
 describe the cart as it looked on the way *in*. That is safe only because `CartController`
 answers every mutation with a 303 redirect and renders nothing itself — the response that
 would show a stale drawer is never produced, and the GET that follows rebuilds the globals
@@ -196,7 +208,7 @@ exception, is the invariant that keeps this true, and it has its own test.
 
 ### Degradation
 
-Slots 5, 7, 8 and 9 are error boundaries. Analytics session creation is a
+Slots 5, 8, 9 and 10 are error boundaries; slot 6 catches its own failures. Analytics session creation is a
 must-degrade-silently dependency: a visitor must get their page even from a storefront whose
 database is unreachable or unmigrated. Each of those four receives its collaborators as
 closures rather than instances, so that *building* them happens inside the same boundary
@@ -277,12 +289,14 @@ alphabetically.
 behind an interface. Each interface has a real implementation that talks to the system and a
 **Null implementation that talks to nothing**, and the container decides which one is bound.
 
-There are fifteen interfaces under `core/`; these are the ones with a Null counterpart:
+There are seventeen interfaces under `core/`; these are the ones with a Null counterpart:
 
 | Port | Real | Null |
 | --- | --- | --- |
 | `Emr\SessionGateway` | `EmrSessionGateway` | `NullSessionGateway` |
 | `Emr\CartGateway` | `EmrCartGateway` | `NullCartGateway` |
+| `Emr\SessionEventGateway` | `EmrSessionEventGateway` | `NullSessionEventGateway` |
+| `Emr\CouponGateway` | `EmrCouponGateway` | `NullCouponGateway` |
 | `Emr\VerificationGateway` | `EmrVerificationGateway` | `NullVerificationGateway` |
 | `Emr\AddressAutofill` | `EmrAddressAutofill` | `NullAddressAutofill` |
 | `Forms\TeleformGateway` | `EmrTeleformGateway` | `NullTeleformGateway` |
@@ -303,8 +317,8 @@ that names any step), and `Seo\StructuredData\Emitter`.
 
 Four configuration switches, all read inside `AppFactory::create()`:
 
-- **`app.session.analytics`** governs the EMR gateway family — session, cart, teleform,
-  intake, intake uploads, lead. Uploads follow the submission's switch because a file
+- **`app.session.analytics`** governs the EMR gateway family — session, session events,
+  cart, teleform, intake, intake uploads, lead. Uploads follow the submission's switch because a file
   answer reaches a clinician only inside the submission. `config/app.php` derives it as `APP_ENV !== 'test'`, so **under the test
   suite the whole EMR family is Null-bound and no test run can reach the network or write
   to the dev EMR.** Tests that exercise session or intake flows inject their own gateway

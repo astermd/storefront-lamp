@@ -279,8 +279,8 @@ final class Completion
      * money moved; the receipt is built from the local rows, which are written
      * afterwards and can be lost. Deriving "did this journey place anything"
      * from the rows is what let one failed `INSERT INTO orders` report a
-     * charged order to the EMR as *declined* — and because the EMR keeps one
-     * checkout-event record per session, updated in place, that overwrote the
+     * charged order to the EMR as *declined* — and because every update
+     * rewrites `event` on the session's one checkout-event record, that overwrote the
      * truthful `order_placed` record and the guard flag then made it permanent.
      *
      * A row that *was* read and says the order was not placed is not promoted:

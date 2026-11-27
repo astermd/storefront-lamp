@@ -120,6 +120,55 @@ final class EmrCheckoutEventReporterTest extends TestCase
         self::assertNotSame(12000, $body['order_value'], 'cents reached the EMR');
     }
 
+    /**
+     * Both detail events go to the create endpoint — the update one answers
+     * 404 for a session with no checkout record — carrying the discounted
+     * total in dollars, and the local trail records each one.
+     */
+    public function testTheDetailEventsAreCreatedWithTheTotalTheBuyerSees(): void
+    {
+        $reporter = $this->reporter();
+
+        $reporter->addedShippingInfo(self::SESSION, $this->totals(12999, 11999), '64b2f0c7e3a1d2b3c4e5f6b1');
+        $shipping = $this->bodyOf('/checkout-events/create');
+        $reporter->addedPaymentInfo(self::SESSION, $this->totals(12999, 11999), '64b2f0c7e3a1d2b3c4e5f6b1', 'token');
+        $payment = $this->bodyOf('/checkout-events/create');
+
+        self::assertSame([
+            'session' => self::SESSION,
+            'event' => 'added_shipping_info',
+            'order_total' => 119.99,
+            'currency' => 'USD',
+            'product_id' => '64b2f0c7e3a1d2b3c4e5f6b1',
+        ], $shipping);
+        self::assertSame('added_payment_info', $payment['event']);
+        self::assertSame('card', $payment['payment_method'], 'a provider token is a card in the EMR\'s vocabulary');
+        self::assertSame([], array_filter($this->calls(), static fn (string $path): bool => str_contains($path, '/update/')));
+        self::assertSame(['checkout.shipping_added', 'checkout.payment_added'], $this->localEvents());
+    }
+
+    /**
+     * A field the storefront cannot fill is left out rather than sent blank or
+     * invalid: the EMR refuses an unknown `payment_method` with a 400, and a
+     * blank `product_id` names a product that does not exist.
+     */
+    public function testADetailEventLeavesOutWhatItCannotFill(): void
+    {
+        $reporter = $this->reporter();
+
+        $reporter->addedPaymentInfo(self::SESSION, $this->totals(5000, 5000), null, 'something_new');
+
+        $body = $this->bodyOf('/checkout-events/create');
+        self::assertArrayNotHasKey('payment_method', $body);
+        self::assertArrayNotHasKey('product_id', $body);
+
+        // A placeholder id is answered with a 500 that records nothing, so it
+        // is dropped rather than allowed to cost the event.
+        $reporter->addedShippingInfo(self::SESSION, $this->totals(5000, 5000), 'REPLACE_ME_PRODUCT_ID');
+
+        self::assertArrayNotHasKey('product_id', $this->bodyOf('/checkout-events/create'));
+    }
+
     public function testAnAmountThatIsNotAWholeNumberOfDollarsKeepsItsDecimal(): void
     {
         // The companion to the case above: 10850 cents is 108.5 dollars, and a
@@ -155,9 +204,9 @@ final class EmrCheckoutEventReporterTest extends TestCase
 
     public function testADeclineIsRecordedLocallyEvenThoughTheEmrKeepsOnlyTheLatestState(): void
     {
-        // Recorded: `checkoutEvents` is one record per session, updated in
-        // place — an `order_declined` followed by an `order_placed` leaves
-        // only the latter. The audit trail `[18.1]` wants lives locally.
+        // Every update rewrites the session's one checkout record — an
+        // `order_declined` followed by an `order_placed` leaves only the
+        // latter. The audit trail `[18.1]` wants lives locally.
         $reporter = $this->reporter();
 
         $reporter->checkoutVisited(self::SESSION, $this->totals(12000, 12000));

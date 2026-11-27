@@ -30,10 +30,11 @@ use Psr\Http\Client\ClientInterface;
  * catches everything, returns nothing, and leaves the checkout path unable to
  * branch on the result.
  *
- * **Two destinations, and they are not redundant.** The EMR keeps *one*
- * checkout-event record per session and updates it in place: `create()` opens
- * the funnel and every later `update()` overwrites `event` on the same record,
- * so a decline followed by a success leaves only the success. That is fine for
+ * **Two destinations, and they are not redundant.** Every `update()` overwrites
+ * `event` on the session's first checkout-event record — the one the visit's
+ * `create()` opened — so a decline followed by a success leaves only the
+ * success. The detail events' creates add records of their own and never move
+ * it. That is fine for
  * the EMR's own funnel reporting and useless as an audit trail, which is why
  * `[18.1]`'s trail is the local `events` table — append-only, and the only
  * place a decline that was later retried successfully can still be read.
@@ -147,6 +148,70 @@ final class EmrCheckoutEventReporter implements CheckoutEventReporter
         $this->send($sessionUuid, 'checkout_visited', function (AsterMDClient $client) use ($sessionUuid, $totals): void {
             $client->checkoutEvents()->create($sessionUuid, self::money($totals) + ['currency' => $this->currency]);
         });
+    }
+
+    /**
+     * Sent through the create endpoint, not the update one: the update answers
+     * 404 for a session with no checkout record yet, and a checkout whose
+     * `checkout_visited` never landed is exactly where that happens.
+     */
+    public function addedShippingInfo(?string $sessionUuid, Totals $totals, ?string $productId): void
+    {
+        $this->record($sessionUuid, 'checkout.shipping_added', ['total_cents' => $totals->totalCents]);
+
+        if ($sessionUuid === null) {
+            return;
+        }
+
+        $payload = $this->detailPayload($totals, $productId);
+
+        $this->send($sessionUuid, CheckoutEvent::AddedShippingInfo->value, static function (AsterMDClient $client) use ($sessionUuid, $payload): void {
+            $client->checkoutEvents()->create($sessionUuid, $payload, CheckoutEvent::AddedShippingInfo);
+        });
+    }
+
+    /** Through the create endpoint for the reason {@see self::addedShippingInfo()} gives. */
+    public function addedPaymentInfo(?string $sessionUuid, Totals $totals, ?string $productId, string $paymentMethod): void
+    {
+        $this->record($sessionUuid, 'checkout.payment_added', [
+            'total_cents' => $totals->totalCents,
+            'payment_method' => $paymentMethod,
+        ]);
+
+        if ($sessionUuid === null) {
+            return;
+        }
+
+        $payload = $this->detailPayload($totals, $productId) + array_filter(
+            ['payment_method' => self::emrPaymentMethod($paymentMethod)],
+            static fn (?string $value): bool => $value !== null,
+        );
+
+        $this->send($sessionUuid, CheckoutEvent::AddedPaymentInfo->value, static function (AsterMDClient $client) use ($sessionUuid, $payload): void {
+            $client->checkoutEvents()->create($sessionUuid, $payload, CheckoutEvent::AddedPaymentInfo);
+        });
+    }
+
+    /**
+     * What both detail events carry: the total the buyer is looking at, its
+     * currency, and the product when a line names one — a blank `product_id`
+     * would be a claim about a product that does not exist.
+     *
+     * Only a 24-hex object id is sent. The create endpoint answers anything
+     * else with a 500 and records nothing, so a catalog line carrying a
+     * placeholder id would cost the whole event rather than one field.
+     *
+     * @return array<string, float|string>
+     */
+    private function detailPayload(Totals $totals, ?string $productId): array
+    {
+        $payload = ['order_total' => Totals::dollars($totals->totalCents), 'currency' => $this->currency];
+
+        if ($productId !== null && preg_match('/^[a-f\d]{24}$/i', $productId) === 1) {
+            $payload['product_id'] = $productId;
+        }
+
+        return $payload;
     }
 
     /** @param list<string> $orderReferences */

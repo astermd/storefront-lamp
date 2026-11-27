@@ -29,6 +29,13 @@ enum Boundary: string
     /** Replacing the remote cart for a session (`[7.12]`). */
     case CartMirror = 'emr.cart_mirror';
 
+    /**
+     * The browsing events only the storefront sees: page views and the start
+     * of identity verification. Sent after the response, so the latency here
+     * is the worker's and not the visitor's.
+     */
+    case SessionEvent = 'emr.session_event';
+
     /** The teleform metadata read and the signed-URL definition fetch behind it (`[3.6]`). */
     case FormDefinition = 'emr.form_definition';
 

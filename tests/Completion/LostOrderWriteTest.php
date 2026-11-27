@@ -81,8 +81,8 @@ final class LostOrderWriteTest extends TestCase
 
     public function testNoCompletionEventEverSaysTheJourneyDeclined(): void
     {
-        // The absence the whole fix exists for. The EMR keeps one checkout
-        // event per session and updates it in place, so a decline written here
+        // The absence the whole fix exists for. The EMR writes every order
+        // event onto one checkout record per session, so a decline written here
         // overwrites the truthful `order_placed` the checkout wrote — and the
         // guard flag set a moment later means no later load can put it back.
         $app = $this->appWithAChargeAndNoRow();

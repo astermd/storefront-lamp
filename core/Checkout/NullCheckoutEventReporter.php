@@ -23,6 +23,14 @@ final class NullCheckoutEventReporter implements CheckoutEventReporter
     {
     }
 
+    public function addedShippingInfo(?string $sessionUuid, Totals $totals, ?string $productId): void
+    {
+    }
+
+    public function addedPaymentInfo(?string $sessionUuid, Totals $totals, ?string $productId, string $paymentMethod): void
+    {
+    }
+
     /** @param list<string> $orderReferences */
     public function orderPlaced(?string $sessionUuid, Totals $totals, string $paymentMethod, array $orderReferences, ?PaymentDescriptor $payment = null): void
     {

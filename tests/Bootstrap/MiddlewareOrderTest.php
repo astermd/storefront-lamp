@@ -8,6 +8,7 @@ use AsterMD\Storefront\Bootstrap\AppFactory;
 use AsterMD\Storefront\Http\Middleware\AttributionMiddleware;
 use AsterMD\Storefront\Http\Middleware\CanonicalUrlMiddleware;
 use AsterMD\Storefront\Http\Middleware\CsrfMiddleware;
+use AsterMD\Storefront\Http\Middleware\PageViewMiddleware;
 use AsterMD\Storefront\Http\Middleware\JourneyStateMiddleware;
 use AsterMD\Storefront\Http\Middleware\RetiredSessionMiddleware;
 use AsterMD\Storefront\Http\Middleware\SeoMiddleware;
@@ -40,6 +41,7 @@ final class MiddlewareOrderTest extends TestCase
             SessionMiddleware::class,
             RetiredSessionMiddleware::class,
             AttributionMiddleware::class,
+            PageViewMiddleware::class,
             CsrfMiddleware::class,
             JourneyStateMiddleware::class,
             StepGuardMiddleware::class,
@@ -54,7 +56,7 @@ final class MiddlewareOrderTest extends TestCase
         // Headers are appended on the way OUT (innermost first), so the trace
         // reads innermost→outermost; reversed it must equal the declared order.
         self::assertSame(
-            ['globals', 'guard', 'journey', 'csrf', 'attribution', 'retired-session', 'session', 'seo', 'canonical'],
+            ['globals', 'guard', 'journey', 'csrf', 'page-view', 'attribution', 'retired-session', 'session', 'seo', 'canonical'],
             $response->getHeader('X-MW-Trace'),
         );
     }
