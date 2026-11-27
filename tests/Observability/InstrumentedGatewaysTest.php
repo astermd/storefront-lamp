@@ -120,19 +120,19 @@ final class InstrumentedGatewaysTest extends TestCase
     public function testTheCartBoundaryReportsTheThreeMirrorOutcomesByName(): void
     {
         $gateway = $this->instrumentation()->cartGateway(new class implements CartGateway {
-            public function create(string $session, array $items): CartMirrorResult
+            public function create(string $session, array $items, int $totalCents): CartMirrorResult
             {
                 return CartMirrorResult::NotFound;
             }
 
-            public function update(string $session, array $items): CartMirrorResult
+            public function update(string $session, array $items, int $totalCents): CartMirrorResult
             {
                 return CartMirrorResult::Ok;
             }
         });
 
-        $gateway->create('s-1', [['product_id' => 'p', 'name' => 'n', 'qty' => 2]]);
-        $gateway->update('s-1', []);
+        $gateway->create('s-1', [['product_id' => 'p', 'name' => 'n', 'qty' => 2]], 1000);
+        $gateway->update('s-1', [], 0);
 
         $lines = $this->lines();
         self::assertSame('not_found', $lines[0]['context']['outcome']);

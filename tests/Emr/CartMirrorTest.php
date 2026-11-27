@@ -98,6 +98,28 @@ final class CartMirrorTest extends TestCase
         self::assertTrue($state->cartMirrored);
     }
 
+    /**
+     * Children count — a mandatory bundle is a real charge (`[7.14b]`) — and
+     * the figure stays in cents until the gateway reaches the wire. The prices
+     * differ per line so a total built from the parent alone, or from unit
+     * prices without quantities, cannot land on the same number.
+     */
+    public function testEveryMirrorCarriesTheCartTotalInCentsIncludingChildLines(): void
+    {
+        $cart = new Cart();
+        $cart->put(new CartLine(slug: 'semaglutide', name: 'Semaglutide', kind: 'rx', emrProductId: 'emr-1', parentSlug: null, quantity: 1, unitPriceCents: 12999));
+        $cart->put(new CartLine(slug: 'syringes', name: 'Syringes', kind: 'otc', emrProductId: 'emr-2', parentSlug: 'semaglutide', quantity: 2, unitPriceCents: 500));
+        $gateway = new FakeCartGateway(updateResult: CartMirrorResult::NotFound);
+        $mirror = new CartMirror($gateway, $this->log());
+        $state = new JourneyState();
+        $state->cartMirrored = true;
+
+        $mirror->mirror('sess-1', $cart, $state);
+
+        self::assertSame(13999, $gateway->updateCalls[0][2]);
+        self::assertSame(13999, $gateway->createCalls[0][2], 'the create fallback carries the same total');
+    }
+
     public function testEverySubsequentMirrorUpdates(): void
     {
         $gateway = new FakeCartGateway();
@@ -222,12 +244,12 @@ final class CartMirrorTest extends TestCase
     public function testAThrowingGatewayIsAlsoSwallowed(): void
     {
         $gateway = new class implements CartGateway {
-            public function create(string $session, array $items): CartMirrorResult
+            public function create(string $session, array $items, int $totalCents): CartMirrorResult
             {
                 throw new \RuntimeException('boom');
             }
 
-            public function update(string $session, array $items): CartMirrorResult
+            public function update(string $session, array $items, int $totalCents): CartMirrorResult
             {
                 return CartMirrorResult::Ok;
             }

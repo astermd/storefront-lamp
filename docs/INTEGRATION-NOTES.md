@@ -173,25 +173,38 @@ Two further properties of this integration worth knowing before enabling it:
   buyer fails. The passing branch is exercised against a stub, deliberately,
   because there is no live input that produces one.
 
-### 6. The checkout event record is one row per session, updated in place
+### 6. Order events rewrite one checkout record per session; creates add records
 
-The EMR's checkout event is **not an append-only log.** It is a single record
-per analytics session, created once and then overwritten as the journey moves.
+The EMR's checkout events are **not one append-only log, and not one record
+either.**
 
-Two things follow, and both have already caused bugs:
+- **Every `create` adds a record** — `checkout_visited`, `added_shipping_info`
+  and `added_payment_info` each get their own `_id` — and becomes the session's
+  `last_step`.
+- **Every `update` rewrites `event` on the session's first record**, whatever
+  was created after it. The order and upsell events are all updates, so they
+  all land on the record the visit opened.
+- **An update for a session with no checkout record answers 404.** A create
+  needs no record before it.
 
-- **An update with no create before it is refused.** The funnel record has to
-  be opened when the checkout page is *rendered*, not when it is submitted, or
-  every subsequent order event is lost. That is why this storefront reports
-  `checkout.visited` on render.
-- **History does not survive.** A decline the buyer retried past is simply gone
-  from the record — the successful attempt overwrote it. So the EMR cannot
-  answer "how many declines happened", and neither can the local `orders`
-  table, since no order row exists for a charge that never landed.
+Three things follow, and the first two have already caused bugs:
+
+- **The funnel is opened on render.** The visit's create has to exist before
+  the submit's update, or every order event is lost. That is why this
+  storefront reports `checkout.visited` on render, and why the detail events
+  are creates: as updates they would 404 on a checkout whose visit never
+  landed, and would overwrite the order event's record if it had.
+- **A second visit create buries a decline.** It becomes the session's
+  `last_step`, so a journey that re-renders checkout after a decline stands at
+  `checkout_visited`. The visit is therefore reported once per journey.
+- **The record keeps no history.** A decline the buyer retried past is gone
+  from it — the successful attempt overwrote it — and no local order row exists
+  for a charge that never landed. The session's own event timeline does list
+  each event in order, but nothing here reads it for counts.
 
 This is why the decline rate and the "journeys reaching payment without a
 session" count are computed from the **local** `events` table, which *is*
-append-only. It is the only place either question can still be answered.
+append-only.
 
 The event enum also has no order-bump case; a bump is recorded locally and
 folded into the order total the EMR sees.
@@ -920,3 +933,43 @@ change the annotation.
 
 **When you find a new one, write it down here.** Each of these cost a day. The
 only thing that makes that a one-time cost is the note.
+
+---
+
+## Funnel tracking events
+
+### 35. `session-events/create` takes two events, and validates the page strictly
+
+- **Only `page_view` and `begin_identity_verification` are accepted.** Any
+  other `event` answers 400 (`Event must be one of: page_view,
+  begin_identity_verification`).
+- **`page.type` is a closed list** — `home`, `product`, `cart`, `intake`,
+  `checkout`, `upsell`, `thank_you`, `cms`, `other` — and anything else answers
+  400. `page.path` must not be empty.
+- **A `page.product_id` that is not a 24-hex object id answers 400 and records
+  nothing.** The whole page view is lost for one bad field, so
+  `Emr\PageView` leaves such an id out. A long title is accepted.
+- **A session the EMR has never minted is accepted** with a 201. Nothing ties
+  the event to a real journey, which is one more reason the storefront reports
+  only against the session attribution resolved.
+- **A page view never moves the session's `last_step`.** It does set
+  `last_page` (`{type, path, product_id}`) on the session read-model and
+  appears in the session's event timeline.
+- **The storefront's API credential cannot read the log back**:
+  `session-events/list` answers 403. The session read-model is where a page
+  view can be seen.
+
+### 36. A detail event's `product_id` must be an object id, or the create answers 500
+
+`checkout-events/create` with a `product_id` that is not a 24-hex object id
+answers **500** and records nothing — not the 400 a validation failure would
+give. `EmrCheckoutEventReporter` sends the id only when it has that shape.
+`payment_method` outside `card|apple_pay|google_pay|paypal` answers 400.
+
+### 37. The cart stores and echoes `cart_total` and `currency`
+
+`carts/create` and `carts/update` return `cart_total` and `currency` on the
+cart, and both appear in the `cart_initiated` / `cart_update` events on the
+session timeline. The total is stored exactly as sent, so the conversion from
+cents happens before it leaves the storefront, as item 4 requires for the
+checkout totals.

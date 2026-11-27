@@ -51,7 +51,7 @@
 
      `contents` keeps the two column divs as the grid items of `<main>`, the
      way partials/cart-remove-form.twig already spans a grid row. #}
-  <form method="post" action="{{ url('/checkout') }}" id="checkout-form" data-checkout-form novalidate class="contents">
+  <form method="post" action="{{ url('/checkout') }}" id="checkout-form" data-checkout-form data-shipping-url="{{ url('/checkout/shipping') }}" novalidate class="contents">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}" />
 
     {# Pressing Enter in a text field submits a form's *first* submit

@@ -18,8 +18,8 @@ use AsterMD\Storefront\Support\CardScrubber;
  * numbers for the same question.
  *
  * **Both figures here are read from `[18.1]`'s local trail** rather than from
- * the `orders` table, and the difference matters. The EMR keeps one checkout
- * record per session and updates it in place, so a decline the buyer retried
+ * the `orders` table, and the difference matters. The EMR writes every order
+ * event onto one checkout record per session, in place, so a decline the buyer retried
  * past is gone from it; and no order row exists at all for a charge that never
  * landed. The append-only `events` table is the only place either question can
  * still be answered.

@@ -76,6 +76,10 @@ return function (App $app): void {
     $app->get('/checkout/', CheckoutController::class . ':show')->setName('checkout');
     $app->post('/checkout/', CheckoutController::class . ':submit')->setName('checkout.submit');
     $app->post('/checkout/bump/', CheckoutController::class . ':bump')->setName('checkout.bump');
+    // Sent by checkout.js once the address block is complete, so the EMR hears
+    // `added_shipping_info` while the buyer is still on the page. A sub-action
+    // like the others; without JavaScript the submit reports it instead.
+    $app->post('/checkout/shipping/', CheckoutController::class . ':shippingInfo')->setName('checkout.shipping');
     $app->post('/checkout/promo/', CheckoutController::class . ':promoApply')->setName('checkout.promo.apply');
     $app->post('/checkout/promo/remove/', CheckoutController::class . ':promoRemove')->setName('checkout.promo.remove');
     $app->post('/checkout/plan/', CheckoutController::class . ':plan')->setName('checkout.plan');

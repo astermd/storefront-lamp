@@ -8,6 +8,7 @@ namespace AsterMD\Storefront\Emr;
 
 use AsterMD\Sdk\AsterMDClient;
 use AsterMD\Sdk\Exception\NotFoundException;
+use AsterMD\Storefront\Checkout\Totals;
 use AsterMD\Storefront\Support\OperatorLog;
 use Psr\Http\Client\ClientInterface;
 
@@ -44,17 +45,24 @@ final class EmrCartGateway implements CartGateway
 {
     private ?AsterMDClient $client = null;
 
+    /**
+     * @param string $currency ISO 4217 code of every total this gateway sends —
+     *                         the deployment's `payment.currency`, the same one
+     *                         the checkout events carry, so the EMR never sees
+     *                         one session's cart and order in two currencies
+     */
     public function __construct(
         private readonly ClientFactory $clients,
         private readonly OperatorLog $log,
         private readonly ?ClientInterface $httpClient = null,
+        private readonly string $currency = 'USD',
     ) {
     }
 
-    public function create(string $session, array $items): CartMirrorResult
+    public function create(string $session, array $items, int $totalCents): CartMirrorResult
     {
         try {
-            $this->client()->carts()->create($session, $items);
+            $this->client()->carts()->create($session, $items, Totals::dollars($totalCents), $this->currency);
 
             return CartMirrorResult::Ok;
         } catch (\Throwable $e) {
@@ -70,10 +78,10 @@ final class EmrCartGateway implements CartGateway
         }
     }
 
-    public function update(string $session, array $items): CartMirrorResult
+    public function update(string $session, array $items, int $totalCents): CartMirrorResult
     {
         try {
-            $this->client()->carts()->update($session, $items);
+            $this->client()->carts()->update($session, $items, Totals::dollars($totalCents), $this->currency);
 
             return CartMirrorResult::Ok;
         } catch (NotFoundException) {

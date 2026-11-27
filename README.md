@@ -521,9 +521,9 @@ that holds it.
 vendor/bin/phpunit
 ```
 
-**1995 tests, 7090 assertions.** A full run takes about ten seconds.
+**2622 tests, 8942 assertions.** A full run takes about ten seconds.
 
-A clone that has not synced a catalog is green too, at 7027 assertions — the cases that
+A clone that has not synced a catalog is green too, at 8820 assertions — the cases that
 assert something about *the shipped catalog* fall back to
 `config/products.generated.example.php` through `tests/Support/ShippedCatalog.php`. The
 assertion count is lower only because the example catalog is smaller than a real channel.

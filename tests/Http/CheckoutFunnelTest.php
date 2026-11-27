@@ -75,6 +75,8 @@ final class CheckoutFunnelTest extends TestCase
 
     private const string TELEFORM = '6a8aec0dec745c70f5f3e69a';
 
+    private const string TIRZEPATIDE_EMR_ID = '64b2f0c7e3a1d2b3c4e5f6b1';
+
     /** The card the happy path pays with, and the string every table is searched for. */
     private const string CARD = '4111111100084444';
 
@@ -449,11 +451,10 @@ final class CheckoutFunnelTest extends TestCase
 
     public function testADeclineIsNotErasedFromTheEmrFunnelByTheReRenderThatFollowsIt(): void
     {
-        // The EMR keeps one checkout record per session and updates `event` in
-        // place, and the submit answers a decline by re-rendering the page --
-        // which used to open the funnel a second time and overwrite the
-        // decline with a visit. The funnel therefore reported zero declines,
-        // ever, and the local trail being correct is why nothing caught it.
+        // Every create becomes the session's latest step, and the submit
+        // answers a decline by re-rendering the page -- which used to open the
+        // funnel a second time and leave every declined journey standing at a
+        // visit. The local trail being correct is why nothing caught it.
         $app = $this->app(['vrio-order-declined.json']);
         $token = $this->walkToCheckout($app);
 
@@ -466,16 +467,93 @@ final class CheckoutFunnelTest extends TestCase
 
         self::assertNotSame([], $funnel);
         self::assertStringEndsWith('/checkout-events/create', $funnel[0], 'the record is opened first');
-        self::assertCount(
-            1,
-            array_filter($funnel, static fn (string $path): bool => str_ends_with($path, '/create')),
-            'and opened exactly once, however many times the page renders',
+
+        // The detail events also travel the create endpoint, so the visit is
+        // told apart by what it says rather than by where it went.
+        self::assertSame(
+            ['checkout_visited', 'added_shipping_info', 'added_payment_info'],
+            $this->checkoutCreates(),
+            'opened exactly once, however many times the page renders, and the detail events once each before the charge',
         );
         self::assertStringContainsString(
             '/checkout-events/update/',
             (string) end($funnel),
             'so the decline is the last thing the EMR was told',
         );
+    }
+
+    /**
+     * The page reports the address block once it is complete, through the
+     * create endpoint — the update one answers 404 for a session with no
+     * checkout record — and the submit does not report it a second time.
+     */
+    public function testACompletedAddressIsReportedOnceAsAddedShippingInfo(): void
+    {
+        $app = $this->app();
+        $token = $this->walkToCheckout($app);
+        $shipping = ['_csrf' => $token] + array_diff_key($this->submittedFields(), ['email' => true, 'phone' => true]);
+
+        self::assertSame(204, $this->post($app, '/checkout/shipping/', $shipping)->getStatusCode());
+        $this->post($app, '/checkout/shipping/', $shipping);
+
+        $body = $this->emrBodyEndingWith('/checkout-events/create');
+        self::assertSame('added_shipping_info', $body['event']);
+        self::assertSame(self::SESSION, $body['session']);
+        self::assertSame(self::TIRZEPATIDE_EMR_ID, $body['product_id']);
+        // The 3-month plan at $120.00, in the dollars the EMR stores.
+        self::assertSame(120, $body['order_total']);
+        self::assertSame('USD', $body['currency']);
+
+        $this->post($app, '/checkout/', $this->submission($token));
+
+        self::assertSame(
+            ['checkout_visited', 'added_shipping_info', 'added_payment_info'],
+            $this->checkoutCreates(),
+            'once from the page, and not again from the submit',
+        );
+    }
+
+    /**
+     * Half an address is not a shipping step completed. The server applies
+     * the submit's own rules rather than trusting the page's "looks filled
+     * in", so a ZIP of the wrong shape reports nothing.
+     */
+    public function testAnIncompleteAddressIsNotReported(): void
+    {
+        $app = $this->app();
+        $token = $this->walkToCheckout($app);
+
+        $response = $this->post($app, '/checkout/shipping/', ['_csrf' => $token, 'postal_code' => '941'] + $this->submittedFields());
+
+        self::assertSame(204, $response->getStatusCode());
+        self::assertSame(['checkout_visited'], $this->checkoutCreates());
+    }
+
+    /**
+     * The submit reports the payment step before the charge, with the method
+     * in the EMR's vocabulary — a card number is a `card` — and the product
+     * the checkout is for.
+     */
+    public function testTheSubmitReportsAddedPaymentInfoBeforeTheOrderEvent(): void
+    {
+        $app = $this->app();
+        $token = $this->walkToCheckout($app);
+
+        $this->post($app, '/checkout/', $this->submission($token));
+
+        $payment = $this->emrBodyEndingWith('/checkout-events/create');
+        self::assertSame('added_payment_info', $payment['event']);
+        self::assertSame('card', $payment['payment_method']);
+        self::assertSame(self::TIRZEPATIDE_EMR_ID, $payment['product_id']);
+
+        $paths = $this->emrPaths();
+        $lastCreate = max(array_keys(array_filter($paths, static fn (string $path): bool => str_ends_with($path, '/checkout-events/create'))));
+        $firstUpdate = self::firstIndexEndingWith(
+            array_map(static fn (string $path): string => (string) preg_replace('~/update/.*$~', '/update', $path), $paths),
+            '/checkout-events/update',
+        );
+        self::assertNotNull($firstUpdate);
+        self::assertLessThan($firstUpdate, $lastCreate, 'the detail events reach the EMR before the order event');
     }
 
     public function testADisqualifiedJourneyCannotReachCheckoutAtAll(): void
@@ -769,6 +847,7 @@ final class CheckoutFunnelTest extends TestCase
                 'name' => 'Tirzepatide',
                 'kind' => 'rx',
                 'teleform_id' => self::TELEFORM,
+                'emr_product_id' => self::TIRZEPATIDE_EMR_ID,
                 'attachments' => ['sharps-bin'],
                 'variants' => [
                     ['id' => 't-1m', 'name' => '1 Month', 'price_cents' => 14000, 'provider' => ['offer_id' => '337', 'product_id' => '3414']],
@@ -992,6 +1071,27 @@ final class CheckoutFunnelTest extends TestCase
         $body->rewind();
 
         return (array) json_decode($body->getContents(), true, 512, JSON_THROW_ON_ERROR);
+    }
+
+    /**
+     * The `event` of every create sent to the checkout-event endpoint, in
+     * order. The visit and both detail events share that endpoint, so they
+     * are told apart by what they say.
+     *
+     * @return list<mixed>
+     */
+    private function checkoutCreates(): array
+    {
+        $events = [];
+        foreach ($this->emr->requests as $request) {
+            if (str_ends_with($request->getUri()->getPath(), '/checkout-events/create')) {
+                $body = $request->getBody();
+                $body->rewind();
+                $events[] = json_decode($body->getContents(), true, flags: JSON_THROW_ON_ERROR)['event'] ?? null;
+            }
+        }
+
+        return $events;
     }
 
     /** @return list<array<string, mixed>> */

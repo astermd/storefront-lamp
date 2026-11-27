@@ -83,7 +83,7 @@ final class EmrCartGatewayTest extends TestCase
         ]);
         $gateway = new EmrCartGateway($this->clientFactory(), $this->log(), $http);
 
-        $result = $gateway->create('sess-1', $this->items());
+        $result = $gateway->create('sess-1', $this->items(), 12999);
 
         self::assertSame(CartMirrorResult::Ok, $result);
         $create = array_values(array_filter(
@@ -93,6 +93,36 @@ final class EmrCartGatewayTest extends TestCase
         self::assertStringContainsString('/carts/create', $create->getUri()->getPath());
     }
 
+    /**
+     * Cents in, decimal dollars out: the EMR stores `cart_total` in major
+     * units and accepts a cents integer without complaint, so a skipped
+     * conversion would record a cart 100x its price and nothing would say so.
+     */
+    public function testTheTotalReachesTheWireInDollarsWithTheDeploymentCurrency(): void
+    {
+        $http = new FakeEmrHttpClient(self::TOKEN_ROUTE + [
+            '/carts/create' => [201, ['success' => true, 'data' => []]],
+            '/carts/update' => [200, ['success' => true, 'data' => []]],
+        ]);
+        $gateway = new EmrCartGateway($this->clientFactory(), $this->log(), $http, currency: 'CAD');
+
+        $gateway->create('sess-1', $this->items(), 12999);
+        $gateway->update('sess-1', $this->items(), 4550);
+
+        $bodies = [];
+        foreach ($http->requests as $request) {
+            if (str_contains($request->getUri()->getPath(), '/carts/')) {
+                $bodies[] = json_decode((string) $request->getBody(), true, flags: JSON_THROW_ON_ERROR);
+            }
+        }
+
+        self::assertCount(2, $bodies);
+        self::assertSame(129.99, $bodies[0]['cart_total']);
+        self::assertSame('CAD', $bodies[0]['currency']);
+        self::assertSame(45.5, $bodies[1]['cart_total']);
+        self::assertSame('CAD', $bodies[1]['currency']);
+    }
+
     public function testUpdateReportsNotFoundSoTheCallerCanRecreate(): void
     {
         $http = new FakeEmrHttpClient(self::TOKEN_ROUTE + [
@@ -100,7 +130,7 @@ final class EmrCartGatewayTest extends TestCase
         ]);
         $gateway = new EmrCartGateway($this->clientFactory(), $this->log(), $http);
 
-        $result = $gateway->update('sess-1', $this->items());
+        $result = $gateway->update('sess-1', $this->items(), 12999);
 
         self::assertSame(CartMirrorResult::NotFound, $result);
     }
@@ -112,7 +142,7 @@ final class EmrCartGatewayTest extends TestCase
         ]);
         $gateway = new EmrCartGateway($this->clientFactory(), $this->log(), $http);
 
-        $result = $gateway->create('sess-1', $this->items());
+        $result = $gateway->create('sess-1', $this->items(), 12999);
 
         self::assertSame(CartMirrorResult::Failed, $result);
         // Its own event name, not the `cart.mirror_failed` CartMirror writes:
@@ -135,7 +165,7 @@ final class EmrCartGatewayTest extends TestCase
         ]);
         $gateway = new EmrCartGateway($this->clientFactory(), $this->log(), $http);
 
-        $gateway->create('sess-1', $this->items());
+        $gateway->create('sess-1', $this->items(), 12999);
         $log = (string) file_get_contents($this->logFile);
 
         self::assertStringNotContainsString('Semaglutide', $log);

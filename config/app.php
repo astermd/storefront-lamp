@@ -59,6 +59,17 @@ return [
         // reach the network or write to the dev EMR; tests that exercise the
         // session flow inject their own gateway.
         'analytics' => ($env['APP_ENV'] ?? 'production') !== 'test',
+        // How each page is named in the EMR's `page_view` events, by the exact
+        // path it is served at. The funnel's own steps and product pages are
+        // classified by the core; list content pages here so they report as
+        // `cms`, and anything unlisted reports as `other`. Accepted values:
+        // home, product, cart, intake, checkout, upsell, thank_you, cms, other.
+        'page_types' => [
+            '/' => 'home',
+            '/terms/' => 'cms',
+            '/privacy/' => 'cms',
+            '/telehealth-consent/' => 'cms',
+        ],
     ],
 
     'attribution' => [

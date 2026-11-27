@@ -101,13 +101,18 @@ final class CartMirror
             return;
         }
 
+        // Every line, children included, and before any promotion: the
+        // promotion is a checkout decision, and the cart total is what the
+        // buyer's cart costs as it stands (`[7.14b]`).
+        $totalCents = $cart->subtotalCents();
+
         try {
             $result = $mirrored
-                ? $this->gateway->update($sessionUuid, $items)
-                : $this->gateway->create($sessionUuid, $items);
+                ? $this->gateway->update($sessionUuid, $items, $totalCents)
+                : $this->gateway->create($sessionUuid, $items, $totalCents);
 
             if ($result === CartMirrorResult::NotFound) {
-                $result = $this->gateway->create($sessionUuid, $items);
+                $result = $this->gateway->create($sessionUuid, $items, $totalCents);
             }
 
             if ($result !== CartMirrorResult::Ok) {

@@ -142,6 +142,22 @@ final class CheckoutController
     }
 
     /** `[27.10]`, `[27.11]`: the summary changes, the typed form does not. */
+    /**
+     * The page's signal that the shipping half of the form is complete.
+     *
+     * A beacon, so it answers `204` whatever happened: the buyer is mid-form
+     * and nothing here is theirs to act on. The body is the shipping fields
+     * alone and is never remembered as the buyer — it carries no contact
+     * details, and storing it would blank the ones already typed.
+     */
+    public function shippingInfo(ServerRequestInterface $request, ResponseInterface $response): ResponseInterface
+    {
+        $body = (array) ($request->getParsedBody() ?? []);
+        $this->checkout->shippingInfoCompleted(BuyerDetails::fromSubmitted($body));
+
+        return $response->withStatus(204);
+    }
+
     public function bump(ServerRequestInterface $request, ResponseInterface $response): ResponseInterface
     {
         $body = (array) ($request->getParsedBody() ?? []);

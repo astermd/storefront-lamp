@@ -1047,6 +1047,14 @@ final class RecordingUpsellReporter implements CheckoutEventReporter
     {
     }
 
+    public function addedShippingInfo(?string $sessionUuid, Totals $totals, ?string $productId): void
+    {
+    }
+
+    public function addedPaymentInfo(?string $sessionUuid, Totals $totals, ?string $productId, string $paymentMethod): void
+    {
+    }
+
     /** @param list<string> $orderReferences */
     public function orderPlaced(?string $sessionUuid, Totals $totals, string $paymentMethod, array $orderReferences, ?PaymentDescriptor $payment = null): void
     {
@@ -1157,6 +1165,16 @@ final class ThrowingUpsellRecorder implements OrderRecorder
 final class ThrowingUpsellReporter implements CheckoutEventReporter
 {
     public function checkoutVisited(?string $sessionUuid, Totals $totals): void
+    {
+        throw new \RuntimeException('reporting is down');
+    }
+
+    public function addedShippingInfo(?string $sessionUuid, Totals $totals, ?string $productId): void
+    {
+        throw new \RuntimeException('reporting is down');
+    }
+
+    public function addedPaymentInfo(?string $sessionUuid, Totals $totals, ?string $productId, string $paymentMethod): void
     {
         throw new \RuntimeException('reporting is down');
     }

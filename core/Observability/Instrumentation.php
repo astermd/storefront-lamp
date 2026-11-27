@@ -8,6 +8,7 @@ namespace AsterMD\Storefront\Observability;
 
 use AsterMD\Storefront\Checkout\CheckoutEventReporter;
 use AsterMD\Storefront\Emr\CartGateway;
+use AsterMD\Storefront\Emr\SessionEventGateway;
 use AsterMD\Storefront\Emr\SessionGateway;
 use AsterMD\Storefront\Forms\IntakeGateway;
 use AsterMD\Storefront\Forms\LeadGateway;
@@ -43,6 +44,11 @@ final class Instrumentation
     public function cartGateway(CartGateway $inner): CartGateway
     {
         return new InstrumentedCartGateway($inner, $this->timer);
+    }
+
+    public function sessionEventGateway(SessionEventGateway $inner): SessionEventGateway
+    {
+        return new InstrumentedSessionEventGateway($inner, $this->timer);
     }
 
     public function teleformGateway(TeleformGateway $inner): TeleformGateway

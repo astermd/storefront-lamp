@@ -463,8 +463,8 @@ always adds up to the total. A rising decline rate is usually a payment
 configuration problem, not a run of unlucky buyers.
 
 Both of the last two figures are read from the local `events` trail rather than
-the `orders` table, and the difference matters: the EMR keeps one checkout
-record per session and updates it in place, so a decline the buyer retried past
+the `orders` table, and the difference matters: the EMR writes every order event
+onto one checkout record per session, in place, so a decline the buyer retried past
 is gone from it, and no order row exists at all for a charge that never landed.
 The append-only local trail is the only place either question can still be
 answered.

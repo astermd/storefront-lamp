@@ -60,6 +60,21 @@ final class InstrumentedCheckoutEventReporter implements CheckoutEventReporter
         ], fn () => $this->inner->checkoutVisited($sessionUuid, $totals));
     }
 
+    public function addedShippingInfo(?string $sessionUuid, Totals $totals, ?string $productId): void
+    {
+        $this->report(Boundary::CheckoutEvent, 'added_shipping_info', $sessionUuid, [
+            'total_cents' => $totals->totalCents,
+        ], fn () => $this->inner->addedShippingInfo($sessionUuid, $totals, $productId));
+    }
+
+    public function addedPaymentInfo(?string $sessionUuid, Totals $totals, ?string $productId, string $paymentMethod): void
+    {
+        $this->report(Boundary::CheckoutEvent, 'added_payment_info', $sessionUuid, [
+            'total_cents' => $totals->totalCents,
+            'payment_method' => $paymentMethod,
+        ], fn () => $this->inner->addedPaymentInfo($sessionUuid, $totals, $productId, $paymentMethod));
+    }
+
     public function orderPlaced(?string $sessionUuid, Totals $totals, string $paymentMethod, array $orderReferences, ?PaymentDescriptor $payment = null): void
     {
         $this->report(Boundary::CheckoutEvent, 'order_placed', $sessionUuid, [

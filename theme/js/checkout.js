@@ -5,7 +5,7 @@
  * HTML form, and each sub-action (bump, promo, plan) is a submit button that
  * redirects it with `formaction`, so every one of them posts what is typed in
  * the boxes right now with no script involved ([8.7], [27.10]). What this
- * script adds on top is three things:
+ * script adds on top is four things:
  *
  * - the credit-card fields show and hide with the selected payment method,
  *   which is the mockup's own behaviour kept verbatim;
@@ -14,7 +14,9 @@
  *   ([13.11]);
  * - a submitted button goes busy and stops answering a second click, which is
  *   the content-loader state cart.js already establishes as this theme's
- *   pattern.
+ *   pattern;
+ * - a completed address block is reported as `added_shipping_info` while the
+ *   buyer is still on the page, rather than only when they pay.
  *
  * The busy state is comfort, not correctness. It removes the "did that click
  * register?" second click and nothing else: a reload, a browser-level retry,
@@ -403,4 +405,53 @@
       if (target.value === source.value) following = true;
     });
   });
+
+  // `added_shipping_info`: once the address block is complete, tell the
+  // server, which checks it against the submit's own rules and reports it
+  // once per journey. Only the shipping fields and the CSRF token are sent --
+  // never the whole form, which holds the card number. The check here is a
+  // cheap "is everything filled in"; the server decides whether it counts.
+  // Without this script the submit reports it instead.
+  var shippingUrl = form.getAttribute('data-shipping-url');
+  var SHIPPING_FIELDS = ['first_name', 'last_name', 'address_line', 'city', 'territory', 'postal_code'];
+  var shippingSent = false;
+
+  function shippingValue(name) {
+    var field = form.elements.namedItem(name);
+    return field && typeof field.value === 'string' ? field.value.trim() : '';
+  }
+
+  function reportShipping(event) {
+    var target = event.target;
+    if (shippingSent || !target || SHIPPING_FIELDS.indexOf(target.name) === -1) return;
+
+    for (var i = 0; i < SHIPPING_FIELDS.length; i++) {
+      if (shippingValue(SHIPPING_FIELDS[i]) === '') return;
+    }
+    if (!/^\d{5}(-?\d{4})?$/.test(shippingValue('postal_code'))) return;
+
+    shippingSent = true;
+    var body = new FormData();
+    body.append('_csrf', shippingValue('_csrf'));
+    SHIPPING_FIELDS.forEach(function (name) { body.append(name, shippingValue(name)); });
+
+    fetch(shippingUrl, {
+      method: 'POST',
+      body: body,
+      headers: { 'X-Requested-With': 'fetch' },
+      credentials: 'same-origin',
+      keepalive: true
+    }).then(function (response) {
+      // Refused (a stale token, a field the server reads differently): the
+      // next completed field may try again. The submit reports it regardless.
+      if (!response.ok) shippingSent = false;
+    }, function () {
+      shippingSent = false;
+    });
+  }
+
+  if (shippingUrl) {
+    form.addEventListener('focusout', reportShipping);
+    form.addEventListener('change', reportShipping);
+  }
 })();

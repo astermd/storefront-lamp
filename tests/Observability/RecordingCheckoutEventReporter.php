@@ -29,6 +29,16 @@ class RecordingCheckoutEventReporter implements CheckoutEventReporter
         $this->calls[] = ['checkoutVisited', $sessionUuid, $totals];
     }
 
+    public function addedShippingInfo(?string $sessionUuid, Totals $totals, ?string $productId): void
+    {
+        $this->calls[] = ['addedShippingInfo', $sessionUuid, $totals, $productId];
+    }
+
+    public function addedPaymentInfo(?string $sessionUuid, Totals $totals, ?string $productId, string $paymentMethod): void
+    {
+        $this->calls[] = ['addedPaymentInfo', $sessionUuid, $totals, $productId, $paymentMethod];
+    }
+
     public function orderPlaced(?string $sessionUuid, Totals $totals, string $paymentMethod, array $orderReferences, ?PaymentDescriptor $payment = null): void
     {
         $this->calls[] = ['orderPlaced', $sessionUuid, $totals, $paymentMethod, $orderReferences, $payment];

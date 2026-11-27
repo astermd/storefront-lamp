@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace AsterMD\Storefront\Tests\Http;
 
+use AsterMD\Sdk\Enum\PageType;
 use AsterMD\Storefront\Bootstrap\AppFactory;
 use AsterMD\Storefront\Domain\ProductCatalog;
+use AsterMD\Storefront\Emr\SessionEventGateway;
 use AsterMD\Storefront\Emr\SessionGateway;
 use AsterMD\Storefront\Forms\DefinitionCache;
 use AsterMD\Storefront\Forms\TeleformGateway;
@@ -18,6 +20,7 @@ use AsterMD\Storefront\Support\OperatorLog;
 use AsterMD\Storefront\Tests\Domain\FakeCatalog;
 use AsterMD\Storefront\Tests\Support\CapturedLog;
 use AsterMD\Storefront\Tests\Support\FakeSessionGateway;
+use AsterMD\Storefront\Tests\Support\RecordingSessionEventGateway;
 use AsterMD\Storefront\Tests\Support\TempDatabase;
 use AsterMD\Storefront\Verification\IdentityGateway;
 use AsterMD\Storefront\Verification\IdentityVerdict;
@@ -120,6 +123,25 @@ final class VerifyPageTest extends TestCase
         // that stops working with scripting off, and checkout already set the
         // precedent of one form with real sub-actions.
         self::assertStringNotContainsString('window.location', $body);
+    }
+
+    /**
+     * Opening the step is when verification starts, and the second open is
+     * the same check continuing: one `begin_identity_verification` per
+     * journey. The page itself reports as part of the questionnaire.
+     */
+    public function testTheFirstOpenOfTheStepReportsThatVerificationBegan(): void
+    {
+        $events = new RecordingSessionEventGateway();
+        $app = $this->app(overrides: [SessionEventGateway::class => $events]);
+
+        $this->render($app);
+        $this->render($app);
+
+        self::assertSame([self::SESSION], $events->verificationsBegun);
+        self::assertCount(2, $events->pageViews);
+        self::assertSame(PageType::Intake, $events->pageViews[0]['page']->type);
+        self::assertSame('/verify/', $events->pageViews[0]['page']->path);
     }
 
     public function testNoMockupSampleDataSurvivesAnywhereInTheRenderedPage(): void

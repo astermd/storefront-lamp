@@ -15,10 +15,10 @@ use AsterMD\Storefront\Emr\CartMirrorResult;
  */
 final class FakeCartGateway implements CartGateway
 {
-    /** @var list<array{0: string, 1: list<array{product_id: string, name: string, qty: int}>}> */
+    /** @var list<array{0: string, 1: list<array{product_id: string, name: string, qty: int}>, 2: int}> */
     public array $createCalls = [];
 
-    /** @var list<array{0: string, 1: list<array{product_id: string, name: string, qty: int}>}> */
+    /** @var list<array{0: string, 1: list<array{product_id: string, name: string, qty: int}>, 2: int}> */
     public array $updateCalls = [];
 
     public function __construct(
@@ -27,16 +27,16 @@ final class FakeCartGateway implements CartGateway
     ) {
     }
 
-    public function create(string $session, array $items): CartMirrorResult
+    public function create(string $session, array $items, int $totalCents): CartMirrorResult
     {
-        $this->createCalls[] = [$session, $items];
+        $this->createCalls[] = [$session, $items, $totalCents];
 
         return $this->createResult;
     }
 
-    public function update(string $session, array $items): CartMirrorResult
+    public function update(string $session, array $items, int $totalCents): CartMirrorResult
     {
-        $this->updateCalls[] = [$session, $items];
+        $this->updateCalls[] = [$session, $items, $totalCents];
 
         return $this->updateResult;
     }

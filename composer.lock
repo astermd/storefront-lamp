@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "cb26c3e18d7e1a45eaef177862472abe",
+    "content-hash": "912fd1573c9ed7872adaaa596453f2c0",
     "packages": [
         {
             "name": "astermd/checkoutchamp-client",
@@ -66,16 +66,16 @@
         },
         {
             "name": "astermd/sdk",
-            "version": "v0.0.7",
+            "version": "v0.0.9",
             "source": {
                 "type": "git",
                 "url": "https://github.com/astermd/php-sdk.git",
-                "reference": "a8e61d5f4ec371b62d62042a6da0c8789bec367d"
+                "reference": "c591af31110d8221c4c4972fbcb538d7abeaa89a"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/astermd/php-sdk/zipball/a8e61d5f4ec371b62d62042a6da0c8789bec367d",
-                "reference": "a8e61d5f4ec371b62d62042a6da0c8789bec367d",
+                "url": "https://api.github.com/repos/astermd/php-sdk/zipball/c591af31110d8221c4c4972fbcb538d7abeaa89a",
+                "reference": "c591af31110d8221c4c4972fbcb538d7abeaa89a",
                 "shasum": ""
             },
             "require": {
@@ -126,7 +126,7 @@
                 "issues": "https://github.com/astermd/php-sdk/issues",
                 "source": "https://github.com/astermd/php-sdk"
             },
-            "time": "2026-11-24T11:01:03+00:00"
+            "time": "2026-11-27T18:35:39+00:00"
         },
         {
             "name": "astermd/vrio-client",

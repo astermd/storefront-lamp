@@ -13,6 +13,7 @@ use AsterMD\Storefront\Domain\CartOutcome;
 use AsterMD\Storefront\Domain\CartRules;
 use AsterMD\Storefront\Domain\ProductCatalog;
 use AsterMD\Storefront\Domain\VariantPlans;
+use AsterMD\Storefront\Emr\NullVerificationGateway;
 use AsterMD\Storefront\Emr\VerificationGateway;
 use AsterMD\Storefront\Forms\AnswerSet;
 use AsterMD\Storefront\Forms\TeleformSource;
@@ -96,6 +97,16 @@ final class CheckoutService
 {
     /** Shown beside a blocking consent that was not granted (`[26.5]`). */
     public const string CONSENT_REQUIRED = 'Please agree to this to continue.';
+
+    /**
+     * The fields that make up the shipping half of the form: complete and
+     * well-formed, they are what `added_shipping_info` reports. Contact
+     * details are not among them — they belong to the buyer, not to where the
+     * order goes.
+     *
+     * @var list<string>
+     */
+    private const array SHIPPING_FIELDS = ['first_name', 'last_name', 'address_line', 'city', 'territory', 'postal_code'];
 
     /**
      * The outcome-level reason for a submission the form itself can fix.
@@ -263,15 +274,15 @@ final class CheckoutService
         }
 
         // The funnel event is opened on the render rather than on the submit:
-        // the EMR keeps one checkout record per session and refuses an update
-        // that no create preceded, so an order event with no visit before it
-        // is an event that never lands.
+        // the EMR refuses an update for a session with no checkout record, so
+        // an order event with no visit before it is an event that never lands.
         //
         // Fired once per journey, through the same deduplication `[4.13]` uses
-        // for the intake events. The EMR's create *overwrites* `event` on that
-        // one record, and this page re-renders after a decline and after every
-        // sub-action's 303 -- so a create per render erased every decline the
-        // funnel ever had. The mark is written whether or not the create
+        // for the intake events. Every create adds a record and becomes the
+        // session's `last_step`, and this page re-renders after a decline and
+        // after every sub-action's 303 -- so a create per render left every
+        // declined journey standing at `checkout_visited`, with the decline
+        // buried behind it. The mark is written whether or not the create
         // reached the EMR, because the alternative is retrying a create that
         // may have succeeded, and a second create is the very thing that
         // erases the decline.
@@ -458,6 +469,19 @@ final class CheckoutService
                 $recorded['records'],
             );
         }
+
+        //    The form validated, so both halves of it have been filled in.
+        //    Reported here, before anything is charged, so the EMR hears the
+        //    detail events ahead of the order event this request may send. The
+        //    shipping one normally went out from the page as the address was
+        //    completed; a buyer without JavaScript reaches this line first.
+        $this->reportShippingInfo($cart, $state, $totals);
+        $this->reportDetailOnce($state, CheckoutEvent::AddedPaymentInfo, fn () => $this->events->addedPaymentInfo(
+            $this->journeys->sessionUuid(),
+            $totals,
+            self::productIdFor($cart),
+            $credential->kind,
+        ));
 
         // 4b. `[13.11]`, `[14.6b]`. A provider told the amount rather than the
         //     code prices nothing itself, so the code is quoted once more as
@@ -934,6 +958,31 @@ final class CheckoutService
      * somewhere the next render can read them — which is journey state, the
      * same place a decline leaves them.
      */
+    /**
+     * The page says the shipping half of the form is complete; report it once
+     * when the server agrees.
+     *
+     * Checked here rather than trusted, against the same rules the submit
+     * applies, so a request that names a half-typed address reports nothing.
+     * The deliverability check is left out on purpose: it is a round trip to
+     * the EMR, and this runs while the buyer is still typing.
+     */
+    public function shippingInfoCompleted(BuyerDetails $buyer): void
+    {
+        $cart = $this->carts->cart();
+        if ($cart->isEmpty()) {
+            return;
+        }
+
+        $errors = BuyerValidator::validate($buyer, new NullVerificationGateway());
+        if (array_intersect_key($errors, array_flip(self::SHIPPING_FIELDS)) !== []) {
+            return;
+        }
+
+        $state = $this->journeys->state();
+        $this->reportShippingInfo($cart, $state, Totals::of($cart->subtotalCents(), Promotion::fromArray($state?->promotion)));
+    }
+
     public function rememberBuyer(BuyerDetails $buyer): void
     {
         // The stored buyer is the one the pending payment was sent for, and
@@ -966,6 +1015,57 @@ final class CheckoutService
      *
      * @param list<ConsentRecord> $consents
      */
+    private function reportShippingInfo(Cart $cart, ?JourneyState $state, Totals $totals): void
+    {
+        $this->reportDetailOnce($state, CheckoutEvent::AddedShippingInfo, fn () => $this->events->addedShippingInfo(
+            $this->journeys->sessionUuid(),
+            $totals,
+            self::productIdFor($cart),
+        ));
+    }
+
+    /**
+     * Once per journey, through the deduplication `checkout_visited` uses and
+     * for the same reason: a retried card or a re-typed address is the same
+     * step completed again, not a new one. The mark is written whether or not
+     * the report reached the EMR, as the visit's is.
+     *
+     * @param \Closure(): void $report
+     */
+    private function reportDetailOnce(?JourneyState $state, CheckoutEvent $event, \Closure $report): void
+    {
+        if ($state !== null && $state->hasEmrEvent($event->value)) {
+            return;
+        }
+
+        $report();
+        $state?->recordEmrEvent($event->value);
+    }
+
+    /**
+     * The product a checkout is for, in the EMR's terms: the first
+     * prescription line, which is what the visit was for, and otherwise the
+     * first line that carries an EMR id at all.
+     */
+    private static function productIdFor(Cart $cart): ?string
+    {
+        $fallback = null;
+
+        foreach ($cart->lines() as $line) {
+            if ($line->emrProductId === null || $line->emrProductId === '') {
+                continue;
+            }
+
+            if ($line->kind === 'rx' && !$line->isChild()) {
+                return $line->emrProductId;
+            }
+
+            $fallback ??= $line->emrProductId;
+        }
+
+        return $fallback;
+    }
+
     private function placed(
         ?JourneyState $state,
         Cart $cart,

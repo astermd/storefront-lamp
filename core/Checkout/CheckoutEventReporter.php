@@ -39,12 +39,32 @@ interface CheckoutEventReporter
     /**
      * The checkout page was reached.
      *
-     * Recorded on render rather than on submit because the EMR's checkout
-     * event is one record per session, created once and updated in place: an
-     * update with no create before it is refused, so the funnel has to be
-     * opened here or every order event is lost.
+     * Recorded on render rather than on submit because every later order
+     * event is an update, and the EMR answers an update for a session with no
+     * checkout record with a 404: the funnel has to be opened here or every
+     * order event is lost.
      */
     public function checkoutVisited(?string $sessionUuid, Totals $totals): void;
+
+    /**
+     * The buyer finished the shipping half of the checkout form.
+     *
+     * The form is one page, so "finished" is the address block becoming
+     * complete rather than a step being submitted; the caller decides when
+     * that is and fires this once per journey.
+     *
+     * @param ?string $productId the EMR id of the product being checked out, or null when no line carries one
+     */
+    public function addedShippingInfo(?string $sessionUuid, Totals $totals, ?string $productId): void;
+
+    /**
+     * The buyer submitted their payment details, before the provider is asked
+     * to charge them.
+     *
+     * @param ?string $productId     the EMR id of the product being checked out, or null when no line carries one
+     * @param string  $paymentMethod the credential's kind, as {@see \AsterMD\Storefront\Payment\PaymentCredential} names it
+     */
+    public function addedPaymentInfo(?string $sessionUuid, Totals $totals, ?string $productId, string $paymentMethod): void;
 
     /**
      * @param list<string>       $orderReferences the provider's own references for the orders placed
