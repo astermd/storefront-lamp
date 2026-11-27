@@ -11,6 +11,7 @@ use AsterMD\Storefront\Checkout\CheckoutViewModel;
 use AsterMD\Storefront\Checkout\ConsentRecord;
 use AsterMD\Storefront\Checkout\Consents;
 use AsterMD\Storefront\Checkout\IdempotencyKey;
+use AsterMD\Storefront\Checkout\LeadConsentSync;
 use AsterMD\Storefront\Checkout\NullCheckoutEventReporter;
 use AsterMD\Storefront\Checkout\NullOrderRecorder;
 use AsterMD\Storefront\Checkout\OrderBumps;
@@ -25,6 +26,8 @@ use AsterMD\Storefront\Domain\CartRules;
 use AsterMD\Storefront\Domain\ProductCatalog;
 use AsterMD\Storefront\Emr\NullVerificationGateway;
 use AsterMD\Storefront\Forms\DefinitionCache;
+use AsterMD\Storefront\Forms\LeadWriter;
+use AsterMD\Storefront\Forms\RecordMapper;
 use AsterMD\Storefront\Forms\NullTeleformGateway;
 use AsterMD\Storefront\Forms\TeleformGateway;
 use AsterMD\Storefront\Forms\TeleformMetadata;
@@ -54,6 +57,7 @@ use AsterMD\Storefront\Tests\Domain\FakeCatalog;
 use AsterMD\Storefront\Tests\Payment\RedeclaredAdapter;
 use AsterMD\Storefront\Tests\Support\CapturedLog;
 use AsterMD\Storefront\Tests\Support\DeadAfterChargePdo;
+use AsterMD\Storefront\Tests\Support\FakeLeadGateway;
 use AsterMD\Storefront\Tests\Support\FakeVrioTransport;
 use AsterMD\Storefront\Tests\Support\FrozenAttemptReadPdo;
 use AsterMD\Storefront\Tests\Support\TempDatabase;
@@ -544,6 +548,45 @@ final class CheckoutServiceTest extends TestCase
         self::assertTrue($granted['terms']);
         self::assertArrayHasKey('marketing', $granted);
         self::assertFalse($granted['marketing']);
+    }
+
+    private function leadConsent(FakeLeadGateway $gateway): LeadConsentSync
+    {
+        return new LeadConsentSync(
+            new LeadWriter($gateway, new RecordMapper($this->log->log), $this->log->log),
+            $gateway,
+            Consents::fromConfig((array) require dirname(__DIR__, 2) . '/config/consent.php'),
+            $this->log->log,
+        );
+    }
+
+    public function testAPlacedOrderSendsTheConsentAnswersToTheExistingLead(): void
+    {
+        $gateway = new FakeLeadGateway();
+        $this->journey->opportunityId = 'opp-intake';
+
+        $result = $this->service('vrio-order-approved.json', leadConsent: $this->leadConsent($gateway))
+            ->submit($this->buyer(), $this->card(), ['terms' => 'on', 'marketing' => 'on']);
+
+        self::assertTrue($result->outcome->isPlaced());
+        self::assertSame([], $gateway->creates);
+        self::assertSame(
+            [['opp-intake', ['marketing_consent' => true, 'communication_consent' => false]]],
+            $gateway->updates,
+        );
+    }
+
+    public function testADeclinedPaymentSendsNoConsentToTheLead(): void
+    {
+        $gateway = new FakeLeadGateway();
+        $this->journey->opportunityId = 'opp-intake';
+
+        $result = $this->service('vrio-order-declined.json', leadConsent: $this->leadConsent($gateway))
+            ->submit($this->buyer(), $this->card(), ['terms' => 'on', 'marketing' => 'on']);
+
+        self::assertFalse($result->outcome->isPlaced());
+        self::assertSame([], $gateway->creates);
+        self::assertSame([], $gateway->updates);
     }
 
     public function testAnInvalidBuyerStopsTheOrderBeforeTheProviderIsCalled(): void
@@ -1980,6 +2023,7 @@ final class CheckoutServiceTest extends TestCase
         ?bool $supportsAuthorizeCapture = null,
         ?PromotionQuote $quote = null,
         ?PaymentAdapter $adapter = null,
+        ?LeadConsentSync $leadConsent = null,
     ): CheckoutService {
         if ($sessionUuid !== self::SESSION_UUID) {
             $this->boot($sessionUuid);
@@ -2030,6 +2074,7 @@ final class CheckoutServiceTest extends TestCase
             postCharge: new PostChargeGuard($this->log->log),
             upsells: Upsells::fromConfig(['upsells' => $upsells], $catalog, $this->log->log),
             clock: $clock,
+            leadConsent: $leadConsent,
         );
     }
 

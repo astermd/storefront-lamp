@@ -10,6 +10,7 @@ use AsterMD\Sdk\AsterMDClient;
 use AsterMD\Sdk\Enum\CheckoutEvent;
 use AsterMD\Storefront\Emr\ClientFactory;
 use AsterMD\Storefront\Emr\VerificationGateway;
+use AsterMD\Storefront\Payment\PaymentCredential;
 use AsterMD\Storefront\Payment\PaymentDescriptor;
 use AsterMD\Storefront\Repository\EventRepository;
 use AsterMD\Storefront\Repository\OrderRepository;
@@ -475,8 +476,9 @@ final class EmrCheckoutEventReporter implements CheckoutEventReporter
             'provider_order_id' => $orderReferences,
         ];
 
-        if ($paymentMethod !== null) {
-            $payload['payment_method'] = $paymentMethod;
+        $emrPaymentMethod = self::emrPaymentMethod($paymentMethod);
+        if ($emrPaymentMethod !== null) {
+            $payload['payment_method'] = $emrPaymentMethod;
         }
 
         if ($opportunityId !== null) {
@@ -614,6 +616,28 @@ final class EmrCheckoutEventReporter implements CheckoutEventReporter
                 'status' => $e->getCode(),
             ]);
         }
+    }
+
+    /**
+     * The EMR's `payment_method` for what the order row recorded.
+     *
+     * The order row holds the credential's kind (`card|token|stored_instrument|
+     * order_reference`), which is how the charge was authorised, not how the
+     * buyer paid; the EMR accepts only `apple_pay|google_pay|card|paypal` and
+     * answers 400 for anything else. Every kind this storefront produces is a
+     * card (`[15.4c]`). A value that is already in the EMR's vocabulary passes
+     * through, and anything unrecognised is omitted rather than sent invalid.
+     */
+    private static function emrPaymentMethod(?string $recorded): ?string
+    {
+        return match ($recorded) {
+            'apple_pay', 'google_pay', 'paypal' => $recorded,
+            PaymentCredential::KIND_CARD,
+            PaymentCredential::KIND_TOKEN,
+            PaymentCredential::KIND_STORED_INSTRUMENT,
+            PaymentCredential::KIND_ORDER_REFERENCE => 'card',
+            default => null,
+        };
     }
 
     /**

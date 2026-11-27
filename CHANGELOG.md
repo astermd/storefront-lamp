@@ -8,6 +8,39 @@ names exactly which ones changed.
 
 ## [Unreleased]
 
+### Checkout consent reaches the lead on the AsterMD platform
+
+The marketing and SMS consents asked at checkout were recorded only locally.
+When an order is placed they are now sent to the buyer's lead (opportunity):
+`marketing` as `marketing_consent` and `transactional_sms` as
+`communication_consent`, a decline as `false`. A journey whose intake form
+already created a lead gets an update carrying only those fields; one without a
+lead (a product with no intake form) gets a lead created from the checkout
+buyer, linked to the session like any other. The mapping is the new optional
+`emr_field` on each consent in `config/consent.php`; the platform has no
+SMS-only field. Nothing is sent while AsterMD analytics is off, and a failure is
+logged as `checkout.lead_consent_failed` without affecting the order.
+
+- `config/consent.php`, `core/Checkout/ConsentDefinition.php`,
+  `core/Checkout/Consents.php`, `core/Checkout/LeadConsentSync.php`,
+  `core/Checkout/CheckoutService.php`, `core/Bootstrap/AppFactory.php`,
+  `tests/Checkout/LeadConsentSyncTest.php`, `tests/Checkout/ConsentsTest.php`,
+  `tests/Checkout/CheckoutServiceTest.php`, `CHANGELOG.md`
+
+### `theme:sync` builds products sold only through a subscription plan
+
+A channel can sell a product through a subscription plan without listing it
+under its products; Channel Details then returns it only on the plan's row
+(`subscriptions[].product`). The sync used to build the catalog from the
+product list alone, so such a product and its plan were dropped without a
+word. `CatalogBuilder` now builds it from the plan row, once however many plans
+sell it, keeping only the variants a plan sells. It applies only when a plan
+for the product parsed, so a channel whose provider takes no plans is
+unchanged, and a product the channel also lists is still built from the list.
+
+- `core/Catalog/CatalogBuilder.php`, `tests/Catalog/CatalogBuilderTest.php`,
+  `CHANGELOG.md`
+
 ### Affiliate links reach the session and the opportunity
 
 An affiliate landing was attributed only once an order was placed: the

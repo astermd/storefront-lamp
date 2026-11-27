@@ -141,7 +141,7 @@ Every file in `config/` becomes a top-level key. `config/app.php` is `app.*`,
 | `intake.php` | which renderer draws the questionnaire, definition caching, fallback disqualification rules |
 | `verification.php` | identity verification: whether it runs, where it sits, whether it blocks, which checks in what order |
 | `payment.php` | shipping profile id, currency, rate limits, stale-attempt window |
-| `consent.php` | the consent controls shown at checkout, their wording, and which of them block an order |
+| `consent.php` | the consent controls shown at checkout, their wording, which of them block an order, and which are sent to the buyer's lead on the AsterMD platform (`emr_field`) |
 | `cross-sells.php` | checkout order bumps — accepted *before* submission, ride along on the main order |
 | `upsells.php` | post-purchase upsells — charged *separately* after the first order settles |
 | `abandonment.php` | when a stopped journey counts as abandoned, and how far back a sweep looks |

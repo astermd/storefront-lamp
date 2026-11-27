@@ -77,6 +77,7 @@ use AsterMD\Storefront\Checkout\CheckoutService;
 use AsterMD\Storefront\Checkout\Consents;
 use AsterMD\Storefront\Checkout\DatabaseOrderRecorder;
 use AsterMD\Storefront\Checkout\EmrCheckoutEventReporter;
+use AsterMD\Storefront\Checkout\LeadConsentSync;
 use AsterMD\Storefront\Checkout\OrderBumps;
 use AsterMD\Storefront\Checkout\OrderRecorder;
 use AsterMD\Storefront\Checkout\PostChargeGuard;
@@ -937,8 +938,16 @@ final class AppFactory
             $c->get(PostChargeGuard::class),
             $c->get(Upsells::class),
             $c->get(SettlementPolicy::class),
+            null,
+            $c->get(LeadConsentSync::class),
         ));
-        $container->set(CheckoutController::class, static fn (Container $c): CheckoutController => new CheckoutController(
+        $container->set(LeadConsentSync::class, static fn (Container $c): LeadConsentSync => new LeadConsentSync(
+            $c->get(LeadWriter::class),
+            $c->get(LeadGateway::class),
+            $c->get(Consents::class),
+            $c->get(OperatorLog::class),
+        ));
+        $container->set(CheckoutController::class,static fn (Container $c): CheckoutController => new CheckoutController(
             $c->get(CheckoutService::class),
             $c->get(CartStore::class),
         ));
