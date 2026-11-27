@@ -45,94 +45,41 @@ final class CatalogBuilder
         /** @var array<string, array<string, mixed>> $products keyed by slug, in first-seen order */
         $products = [];
 
-        foreach ($channelData['products'] ?? [] as $entry) {
-            $product = is_array($entry['product'] ?? null) ? $entry['product'] : [];
+        /** @var array<string, true> $seen EMR ids of top-level products already considered */
+        $seen = [];
 
-            // Rule 11 [visibility gate]: only channel products that are both
-            // active (`status === 1`) and public are surfaced in the
-            // generated catalog. Nested lab/add-on children are NOT
-            // re-checked here — as long as their parent survives, they are
-            // kept regardless of their own status/visibility fields.
-            if (($product['status'] ?? null) !== 1 || ($product['visibility'] ?? null) !== 'Public') {
+        foreach ($channelData['products'] ?? [] as $entry) {
+            if (!is_array($entry)) {
                 continue;
             }
-
-            $mappings = is_array($entry['product_mappings'] ?? null) ? $entry['product_mappings'] : [];
-
-            // Rule 6 [2.12, 2.14]: every labtest entry becomes a standalone
-            // `lab` product; the same nested `_id` referenced by more than
-            // one parent is emitted once (checked via slug membership in
-            // self::addNestedProduct), and every parent that references it
-            // records its slug in `bundles`.
-            $bundles = [];
-            foreach ($product['labtest'] ?? [] as $lab) {
-                if (is_array($lab)) {
-                    $bundles[] = self::addNestedProduct($products, $lab, 'lab');
-                }
+            $product = is_array($entry['product'] ?? null) ? $entry['product'] : [];
+            if (isset($product['_id'])) {
+                $seen[(string) $product['_id']] = true;
             }
+            self::addEntry($products, $entry, $planIndex, planOnly: false);
+        }
 
-            // Rule 7 [2.13]: every add_ons entry becomes a standalone
-            // product, recorded in the parent's `attachments`. It is a
-            // `free-addon` unless the channel prices it, in which case it is
-            // a `priced-addon` (see addNestedProduct).
-            $attachments = [];
-            foreach ($entry['add_ons'] ?? [] as $addOn) {
-                if (is_array($addOn)) {
-                    $attachments[] = self::addNestedProduct($products, $addOn, 'free-addon');
-                }
+        // Rule 12 [plan-only products]: a channel can sell a product through
+        // a subscription plan without listing it under `products` — the
+        // Channel Details response then carries it only on the plan's row
+        // (`subscriptions[].product`, same shape as `products[].product`).
+        // Such a product is built from that row, once however many plans sell
+        // it, and only when at least one of those plans parsed into
+        // `$planIndex`: that keeps it off a channel whose provider takes no
+        // plans (the sync passes no plans there) and off a plan the storefront
+        // cannot price. A product the channel also lists is built from
+        // `products` above and skipped here.
+        foreach ($channelData['subscriptions'] ?? [] as $row) {
+            $product = is_array($row) && is_array($row['product'] ?? null) ? $row['product'] : null;
+            if ($product === null || !isset($product['_id'])) {
+                continue;
             }
-
-            $slug = self::makeSlug((string) $product['_id'], (string) $product['name']);
-
-            // Unlike addNestedProduct's intentional dedupe (rule 6/7, same
-            // shared lab/add-on referenced by multiple parents -> one
-            // product), two DIFFERENT top-level EMR products colliding on
-            // the same slug is a data-integrity problem, not a legitimate
-            // dedupe: silently overwriting one with the other is catalog
-            // data loss. Fail loudly, naming both colliding EMR product ids,
-            // so the operator can re-key via overrides at sync time.
-            if (isset($products[$slug])) {
-                throw new \RuntimeException(sprintf(
-                    'CatalogBuilder: slug collision "%s" between EMR product ids "%s" and "%s"',
-                    $slug,
-                    (string) $products[$slug]['emr_product_id'],
-                    (string) $product['_id'],
-                ));
+            $productId = (string) $product['_id'];
+            if (isset($seen[$productId]) || !self::hasPlanFor($planIndex, $productId)) {
+                continue;
             }
-
-            $variants = self::attachPlans(
-                self::buildVariants($product['variants'] ?? [], $product, $mappings),
-                (string) $product['_id'],
-                $planIndex,
-            );
-
-            $products[$slug] = [
-                'slug' => $slug,
-                'name' => $product['name'],
-                'subtitle' => null,
-                // Rule 2: EMR `type` of `prescription` -> `rx`; every other
-                // type (`standard`, etc.) -> `otc`.
-                'kind' => self::kindOf($product['type'] ?? null),
-                'categories' => self::namesOf($product['categories'] ?? []),
-                'condition_treated' => self::namesOf($product['condition_treated'] ?? []),
-                'description' => $product['description_long'] ?? $product['description_short'] ?? '',
-                // Product-level price mirrors the first variant's price.
-                'price_cents' => $variants[0]['price_cents'] ?? 0,
-                'price_unit' => self::PRICE_UNIT,
-                'image' => self::PLACEHOLDER_IMAGE,
-                'gallery' => [self::PLACEHOLDER_IMAGE],
-                'badges' => [],
-                'emr_product_id' => $product['_id'],
-                'remote_image' => $product['image'] ?? null,
-                // Rule 8: first teleform's id, or null when none configured.
-                'teleform_id' => $product['teleforms'][0]['_id'] ?? null,
-                'max_buy_qty' => $product['max_buy_qty'] ?? null,
-                'min_buy_qty' => $product['min_buy_qty'] ?? null,
-                'restrict_multiple' => (bool) ($product['restrict_multiple'] ?? false),
-                'variants' => $variants,
-                'bundles' => $bundles,
-                'attachments' => $attachments,
-            ];
+            $seen[$productId] = true;
+            self::addEntry($products, $row, $planIndex, planOnly: true);
         }
 
         return [
@@ -142,6 +89,120 @@ final class CatalogBuilder
                 'currency' => $currency,
             ],
             'products' => $products,
+        ];
+    }
+
+    /**
+     * Builds one top-level channel entry — a `products[]` entry, or a
+     * `subscriptions[]` row for a plan-only product — into `$products`.
+     *
+     * A plan-only product keeps only the variants a plan sells: the channel
+     * never offered its other variants for one-off sale, so emitting them at
+     * their list price would sell something the channel does not. When no
+     * variant is left, nothing is emitted.
+     *
+     * @param array<string, array<string, mixed>> $products
+     * @param array<string, mixed> $entry
+     * @param array<string, list<array{id: string, name: string, description: string, first_payment_cents: int, allow_coupons: bool, settlement: string}>> $planIndex
+     */
+    private static function addEntry(array &$products, array $entry, array $planIndex, bool $planOnly): void
+    {
+        $product = is_array($entry['product'] ?? null) ? $entry['product'] : [];
+
+        // Rule 11 [visibility gate]: only channel products that are both
+        // active (`status === 1`) and public are surfaced in the
+        // generated catalog. Nested lab/add-on children are NOT
+        // re-checked here — as long as their parent survives, they are
+        // kept regardless of their own status/visibility fields.
+        if (($product['status'] ?? null) !== 1 || ($product['visibility'] ?? null) !== 'Public') {
+            return;
+        }
+
+        $mappings = is_array($entry['product_mappings'] ?? null) ? $entry['product_mappings'] : [];
+
+        $variants = self::attachPlans(
+            self::buildVariants($product['variants'] ?? [], $product, $mappings),
+            (string) $product['_id'],
+            $planIndex,
+        );
+
+        if ($planOnly) {
+            $variants = array_values(array_filter(
+                $variants,
+                static fn (array $variant): bool => isset($variant['plan']),
+            ));
+            if ($variants === []) {
+                return;
+            }
+        }
+
+        // Rule 6 [2.12, 2.14]: every labtest entry becomes a standalone
+        // `lab` product; the same nested `_id` referenced by more than
+        // one parent is emitted once (checked via slug membership in
+        // self::addNestedProduct), and every parent that references it
+        // records its slug in `bundles`.
+        $bundles = [];
+        foreach ($product['labtest'] ?? [] as $lab) {
+            if (is_array($lab)) {
+                $bundles[] = self::addNestedProduct($products, $lab, 'lab');
+            }
+        }
+
+        // Rule 7 [2.13]: every add_ons entry becomes a standalone
+        // product, recorded in the parent's `attachments`. It is a
+        // `free-addon` unless the channel prices it, in which case it is
+        // a `priced-addon` (see addNestedProduct).
+        $attachments = [];
+        foreach ($entry['add_ons'] ?? [] as $addOn) {
+            if (is_array($addOn)) {
+                $attachments[] = self::addNestedProduct($products, $addOn, 'free-addon');
+            }
+        }
+
+        $slug = self::makeSlug((string) $product['_id'], (string) $product['name']);
+
+        // Unlike addNestedProduct's intentional dedupe (rule 6/7, same
+        // shared lab/add-on referenced by multiple parents -> one
+        // product), two DIFFERENT top-level EMR products colliding on
+        // the same slug is a data-integrity problem, not a legitimate
+        // dedupe: silently overwriting one with the other is catalog
+        // data loss. Fail loudly, naming both colliding EMR product ids,
+        // so the operator can re-key via overrides at sync time.
+        if (isset($products[$slug])) {
+            throw new \RuntimeException(sprintf(
+                'CatalogBuilder: slug collision "%s" between EMR product ids "%s" and "%s"',
+                $slug,
+                (string) $products[$slug]['emr_product_id'],
+                (string) $product['_id'],
+            ));
+        }
+
+        $products[$slug] = [
+            'slug' => $slug,
+            'name' => $product['name'],
+            'subtitle' => null,
+            // Rule 2: EMR `type` of `prescription` -> `rx`; every other
+            // type (`standard`, etc.) -> `otc`.
+            'kind' => self::kindOf($product['type'] ?? null),
+            'categories' => self::namesOf($product['categories'] ?? []),
+            'condition_treated' => self::namesOf($product['condition_treated'] ?? []),
+            'description' => $product['description_long'] ?? $product['description_short'] ?? '',
+            // Product-level price mirrors the first variant's price.
+            'price_cents' => $variants[0]['price_cents'] ?? 0,
+            'price_unit' => self::PRICE_UNIT,
+            'image' => self::PLACEHOLDER_IMAGE,
+            'gallery' => [self::PLACEHOLDER_IMAGE],
+            'badges' => [],
+            'emr_product_id' => $product['_id'],
+            'remote_image' => $product['image'] ?? null,
+            // Rule 8: first teleform's id, or null when none configured.
+            'teleform_id' => $product['teleforms'][0]['_id'] ?? null,
+            'max_buy_qty' => $product['max_buy_qty'] ?? null,
+            'min_buy_qty' => $product['min_buy_qty'] ?? null,
+            'restrict_multiple' => (bool) ($product['restrict_multiple'] ?? false),
+            'variants' => $variants,
+            'bundles' => $bundles,
+            'attachments' => $attachments,
         ];
     }
 
@@ -306,6 +367,23 @@ final class CatalogBuilder
         }
 
         return $index;
+    }
+
+    /**
+     * Whether any parsed plan sells a variant of `$productId` — the gate for
+     * building a plan-only product (Rule 12).
+     *
+     * @param array<string, list<array<string, mixed>>> $planIndex keyed `product_id|variant_id`
+     */
+    private static function hasPlanFor(array $planIndex, string $productId): bool
+    {
+        foreach (array_keys($planIndex) as $key) {
+            if (str_starts_with((string) $key, $productId . '|')) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

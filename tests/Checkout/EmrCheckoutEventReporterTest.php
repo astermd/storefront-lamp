@@ -18,6 +18,7 @@ use AsterMD\Storefront\Support\Config;
 use AsterMD\Storefront\Tests\Support\CapturedLog;
 use AsterMD\Storefront\Tests\Support\FakeEmrHttpClient;
 use AsterMD\Storefront\Tests\Support\TempDatabase;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -539,6 +540,41 @@ final class EmrCheckoutEventReporterTest extends TestCase
         self::assertSame(['34789'], $body['provider_order_id'] ?? null);
         self::assertArrayNotHasKey('payment_method', $body, 'a method nobody paid by is not invented');
         self::assertArrayNotHasKey('opportunity_id', $body, 'and neither is an opportunity nobody captured');
+    }
+
+    /**
+     * @return iterable<string, array{?string, ?string}>
+     */
+    public static function recordedPaymentMethods(): iterable
+    {
+        yield 'stripe token' => ['token', 'card'];
+        yield 'stored instrument' => ['stored_instrument', 'card'];
+        yield 'order reference' => ['order_reference', 'card'];
+        yield 'raw card' => ['card', 'card'];
+        yield 'already EMR vocabulary' => ['paypal', 'paypal'];
+        yield 'unknown kind' => ['bitcoin', null];
+    }
+
+    #[DataProvider('recordedPaymentMethods')]
+    public function testTheFinalFunnelEventSendsOnlyAPaymentMethodTheEmrAccepts(?string $recorded, ?string $expected): void
+    {
+        $this->reporter()->journeyCompleted(
+            self::SESSION,
+            anyOrderPlaced: true,
+            orderValueCents: 12000,
+            paidTotalCents: 12000,
+            paymentMethod: $recorded,
+            orderReferences: ['34788'],
+            opportunityId: null,
+        );
+
+        $body = $this->bodyOf('/checkout-events/update/');
+
+        if ($expected === null) {
+            self::assertArrayNotHasKey('payment_method', $body, 'an unknown kind is omitted, not sent invalid');
+        } else {
+            self::assertSame($expected, $body['payment_method'] ?? null);
+        }
     }
 
     public function testTheFinalFunnelEventLeavesItsLocalTrailRowWithNoSession(): void

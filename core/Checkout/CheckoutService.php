@@ -219,6 +219,7 @@ final class CheckoutService
         private readonly Upsells $upsells,
         private readonly SettlementPolicy $settlement,
         ?\Closure $clock = null,
+        private readonly ?LeadConsentSync $leadConsent = null,
     ) {
         $this->clock = $clock ?? static fn (): string => gmdate('c');
     }
@@ -1063,6 +1064,18 @@ final class CheckoutService
             $consents,
             $this->adapter->capabilities()->providerCategory,
         ));
+        // The consent answers reach the buyer's lead on the platform, creating
+        // the lead when no intake form did. After the order is recorded so a
+        // slow or failing platform call can never cost the local record.
+        $sessionUuid = $this->journeys->sessionUuid();
+        if ($this->leadConsent !== null && $state !== null && $sessionUuid !== null) {
+            $leadConsent = $this->leadConsent;
+            $this->postCharge->run('sync_lead_consent', $reference, static function () use ($leadConsent, $sessionUuid, $state, $consents): mixed {
+                $leadConsent->sync($sessionUuid, $state, BuyerDetails::fromSubmitted($state->buyer()), $consents);
+
+                return null;
+            });
+        }
         $this->postCharge->run('report_order_placed', $reference, fn (): mixed => $this->events->orderPlaced(
             $this->journeys->sessionUuid(),
             $totals,

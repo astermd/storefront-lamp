@@ -13,6 +13,11 @@ namespace AsterMD\Storefront\Checkout;
  * deploy-time check that every legal document resolves (`[26.9]`) needs them
  * as data, and parsing them back out of markup would break the moment someone
  * writes an href with single quotes.
+ *
+ * `$emrField` names the opportunity field the answer is stored in on the
+ * AsterMD platform (`marketing_consent` or `communication_consent`), or null
+ * for a consent that stays local ({@see LeadConsentSync}). It routes the
+ * answer and is not part of the copy, so it does not enter the version hash.
  */
 final class ConsentDefinition
 {
@@ -23,6 +28,7 @@ final class ConsentDefinition
         public readonly string $html,
         public readonly bool $blocking,
         public readonly array $links,
+        public readonly ?string $emrField = null,
     ) {
     }
 }

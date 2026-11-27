@@ -21,6 +21,13 @@
  * later order, and existing records keep pointing at the wording they were
  * shown. The stamp is a hash of the copy, so editing a comma is a new version
  * without anyone having to remember to bump a number.
+ *
+ * `emr_field` sends the answer to the buyer's lead (opportunity) on the AsterMD
+ * platform when an order is placed: `marketing_consent` or
+ * `communication_consent`, or leave it out to keep a consent local. The
+ * platform has no SMS-only field — `marketing_consent` covers promotional
+ * email and SMS, `communication_consent` order and care messages. A decline is
+ * sent as `false`. Nothing is sent while AsterMD analytics is off.
  */
 return [
     'consents' => [
@@ -37,6 +44,7 @@ return [
             'html' => 'I agree to receive marketing emails about products and offers.',
             'blocking' => false,
             'links' => [],
+            'emr_field' => 'marketing_consent',
         ],
         [
             'key' => 'transactional_sms',
@@ -44,6 +52,7 @@ return [
             'html' => 'I agree to receive order and care messages by SMS. Message and data rates may apply.',
             'blocking' => false,
             'links' => [],
+            'emr_field' => 'communication_consent',
         ],
     ],
 ];

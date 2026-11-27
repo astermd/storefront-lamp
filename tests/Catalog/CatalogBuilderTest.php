@@ -653,6 +653,93 @@ final class CatalogBuilderTest extends TestCase
         self::assertSame('capture', $catalog['products']['sub01x-subscription-product']['variants'][0]['plan']['settlement']);
     }
 
+    /** A `subscriptions[]` row as Channel Details returns it: the plan's product embedded beside the plan. */
+    private static function subscriptionRow(string $productName = 'Subscription Product'): array
+    {
+        $row = self::minimalEntry('subrow01', 'sub01xxxxxxxxxxxxxxxxxxxxx', $productName);
+        unset($row['add_ons']);
+        $row['plan_id'] = 'plan-a';
+        $row['type'] = 'subscription';
+        $row['product']['type'] = 'subscription';
+        $row['product']['variants'] = [
+            ['_id' => 'variantA', 'name' => '1mg', 'default_price' => 100],
+            ['_id' => 'variantB', 'name' => '2mg', 'default_price' => 120],
+        ];
+
+        return $row;
+    }
+
+    public function testAProductSoldOnlyThroughAPlanIsBuiltWithOnlyItsPlannedVariants(): void
+    {
+        $catalog = CatalogBuilder::build(
+            ['_id' => 'chan01', 'name' => 'Synthetic Channel', 'products' => [], 'subscriptions' => [self::subscriptionRow()]],
+            'USD',
+            [self::planRow('plan-a', 'variantA', 10000)],
+        );
+
+        self::assertSame(['sub01x-subscription-product'], array_keys($catalog['products']));
+        $product = $catalog['products']['sub01x-subscription-product'];
+        self::assertSame('sub01xxxxxxxxxxxxxxxxxxxxx', $product['emr_product_id']);
+        self::assertSame(['variantA'], array_column($product['variants'], 'id'), 'the channel never offered 2mg one-off');
+        self::assertSame('plan-a', $product['variants'][0]['plan']['id']);
+        self::assertSame(10000, $product['price_cents']);
+    }
+
+    public function testAProductTheChannelAlsoListsIsBuiltOnceFromItsListing(): void
+    {
+        $entry = self::minimalEntry('entry01', 'sub01xxxxxxxxxxxxxxxxxxxxx', 'Subscription Product');
+        $entry['product']['variants'] = self::subscriptionRow()['product']['variants'];
+
+        $catalog = CatalogBuilder::build(
+            ['_id' => 'chan01', 'name' => 'Synthetic Channel', 'products' => [$entry], 'subscriptions' => [self::subscriptionRow()]],
+            'USD',
+            [self::planRow('plan-a', 'variantA', 10000)],
+        );
+
+        self::assertCount(1, $catalog['products']);
+        self::assertSame(['variantA', 'variantB'], array_column($catalog['products']['sub01x-subscription-product']['variants'], 'id'));
+    }
+
+    public function testSeveralPlansSellingOneUnlistedProductBuildItOnce(): void
+    {
+        $catalog = CatalogBuilder::build(
+            ['_id' => 'chan01', 'name' => 'Synthetic Channel', 'products' => [], 'subscriptions' => [self::subscriptionRow(), self::subscriptionRow()]],
+            'USD',
+            [self::planRow('plan-a', 'variantA', 10000), self::planRow('plan-b', 'variantB', 12000)],
+        );
+
+        self::assertCount(1, $catalog['products']);
+        self::assertSame(['variantA', 'variantB'], array_column($catalog['products']['sub01x-subscription-product']['variants'], 'id'));
+    }
+
+    public function testAnUnlistedProductWithNoUsablePlanIsNotBuilt(): void
+    {
+        // No plans is what the sync passes for a provider that takes none.
+        $catalog = CatalogBuilder::build(
+            ['_id' => 'chan01', 'name' => 'Synthetic Channel', 'products' => [], 'subscriptions' => [self::subscriptionRow()]],
+        );
+
+        self::assertSame([], $catalog['products']);
+    }
+
+    public function testAnUnlistedProductThatIsInactiveOrNotPublicIsNotBuilt(): void
+    {
+        $inactive = self::subscriptionRow();
+        $inactive['product']['status'] = 0;
+        $hidden = self::subscriptionRow();
+        $hidden['product']['visibility'] = 'Private';
+
+        foreach ([$inactive, $hidden] as $row) {
+            $catalog = CatalogBuilder::build(
+                ['_id' => 'chan01', 'name' => 'Synthetic Channel', 'products' => [], 'subscriptions' => [$row]],
+                'USD',
+                [self::planRow('plan-a', 'variantA', 10000)],
+            );
+
+            self::assertSame([], $catalog['products']);
+        }
+    }
+
     public function testFractionalDollarPricesRoundCorrectlyBeforeCastToCents(): void
     {
         $entry = self::minimalEntry('entry01', 'fract01xxxxxxxxxxxxxxxxxxx', 'Fractional Widget');

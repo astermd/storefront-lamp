@@ -22,6 +22,13 @@ namespace AsterMD\Storefront\Checkout;
  */
 final class Consents
 {
+    /**
+     * The opportunity fields the sales API stores consent in. It has no
+     * SMS-only field: `marketing_consent` covers promotional email and SMS,
+     * `communication_consent` operational and care messages.
+     */
+    public const array EMR_FIELDS = ['marketing_consent', 'communication_consent'];
+
     /** @param list<ConsentDefinition> $definitions */
     private function __construct(
         private readonly array $definitions,
@@ -56,12 +63,26 @@ final class Consents
                 }
             }
 
+            // Refused loudly rather than dropped: a misspelt field would
+            // otherwise send nothing, and the platform would go on holding
+            // whatever it held before while every order looked recorded.
+            $emrField = $row['emr_field'] ?? null;
+            if ($emrField !== null && !in_array($emrField, self::EMR_FIELDS, true)) {
+                throw new \InvalidArgumentException(sprintf(
+                    'config/consent.php: consent "%s" has emr_field %s; expected one of %s, or none.',
+                    $key,
+                    var_export($emrField, true),
+                    implode(', ', self::EMR_FIELDS),
+                ));
+            }
+
             $definitions[] = new ConsentDefinition(
                 key: $key,
                 label: (string) ($row['label'] ?? $key),
                 html: (string) ($row['html'] ?? ''),
                 blocking: ($row['blocking'] ?? false) === true,
                 links: $links,
+                emrField: $emrField,
             );
         }
 
@@ -132,6 +153,34 @@ final class Consents
         }
 
         return ['records' => $records, 'missing' => $missing];
+    }
+
+    /**
+     * The opportunity fields these records set: one boolean per record whose
+     * consent names an `emr_field`, a decline included as `false` so a box
+     * left unticked clears a grant made on an earlier journey.
+     *
+     * @param  list<ConsentRecord> $records
+     * @return array<string, bool>
+     */
+    public function leadFields(array $records): array
+    {
+        $fieldOf = [];
+        foreach ($this->definitions as $definition) {
+            if ($definition->emrField !== null) {
+                $fieldOf[$definition->key] = $definition->emrField;
+            }
+        }
+
+        $fields = [];
+        foreach ($records as $record) {
+            if (isset($fieldOf[$record->key])) {
+                // Two consents mapped to one field grant it if either does.
+                $fields[$fieldOf[$record->key]] = ($fields[$fieldOf[$record->key]] ?? false) || $record->granted;
+            }
+        }
+
+        return $fields;
     }
 
     /** @param list<ConsentDefinition> $definitions */

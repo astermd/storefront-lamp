@@ -136,4 +136,48 @@ final class ConsentsTest extends TestCase
 
         self::assertSame(['/terms/', '/privacy/', '/telehealth-consent/'], $terms->links);
     }
+
+    public function testTheShippedDefaultsSendMarketingAndSmsToTheLeadAndKeepTermsLocal(): void
+    {
+        $consents = Consents::fromConfig(require __DIR__ . '/../../config/consent.php');
+
+        $fields = [];
+        foreach ($consents->definitions() as $definition) {
+            $fields[$definition->key] = $definition->emrField;
+        }
+
+        self::assertSame(
+            ['terms' => null, 'marketing' => 'marketing_consent', 'transactional_sms' => 'communication_consent'],
+            $fields,
+        );
+    }
+
+    public function testLeadFieldsCarryGrantsAndDeclinesForMappedConsentsOnly(): void
+    {
+        $consents = $this->consents([
+            ['key' => 'terms', 'html' => 'Terms.', 'blocking' => true],
+            ['key' => 'marketing', 'html' => 'Offers.', 'emr_field' => 'marketing_consent'],
+            ['key' => 'transactional_sms', 'html' => 'Texts.', 'emr_field' => 'communication_consent'],
+        ]);
+
+        $records = $consents->record(['terms' => 'on', 'marketing' => 'on'])['records'];
+
+        self::assertSame(['marketing_consent' => true, 'communication_consent' => false], $consents->leadFields($records));
+    }
+
+    public function testAnUnknownEmrFieldIsRefusedRatherThanSilentlySendingNothing(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('marketing');
+
+        $this->consents([['key' => 'marketing', 'html' => 'Offers.', 'emr_field' => 'sms_consent']]);
+    }
+
+    public function testTheEmrFieldDoesNotChangeTheRecordedCopyVersion(): void
+    {
+        $plain = $this->consents([['key' => 'marketing', 'html' => 'Offers.']]);
+        $mapped = $this->consents([['key' => 'marketing', 'html' => 'Offers.', 'emr_field' => 'marketing_consent']]);
+
+        self::assertSame($plain->version(), $mapped->version());
+    }
 }
